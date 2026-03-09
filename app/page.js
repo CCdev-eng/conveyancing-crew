@@ -1,18 +1,8 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import { supabase } from "../lib/supabase";
 
 // ─── DATA ──────────────────────────────────────────────────────────────────────
-const MATTERS = [
-  { id:"CC-2025-041", client:"Sarah & Tom Mitchell", phone:"0412 345 678", email:"sarah.mitchell@email.com", type:"Purchase", address:"14 Harbour View Tce, Balmain NSW 2041", price:"$1,420,000", priceNum:1420000, source:"Website", settlement:"2025-04-14", stage:"Searches Ordered", stageIdx:3, state:"NSW", agent:"McGrath Balmain", agentPhone:"02 9555 1234", opened:"2025-03-01", status:"active", urgency:"high", staff:"J. Chen", daysOpen:7, deposit:"$71,000", depositPaid:true, lender:"Commonwealth Bank", specialConditions:"Subject to finance — 14 days. Pool compliance certificate required.", notes:"Client requested quick turnaround. Finance approved.", searches:{title:"done",council:"pending",water:"pending",strata:"n/a"}, pexa:{status:"Not Created",workspaceId:null}, },
-  { id:"CC-2025-039", client:"James Nguyen", phone:"0498 221 443", email:"jnguyen@gmail.com", type:"Sale", address:"8/22 Crown St, Surry Hills NSW 2010", price:"$890,000", priceNum:890000, source:"Referral", settlement:"2025-04-07", stage:"Contract Sent", stageIdx:2, state:"NSW", agent:"Ray White Surry Hills", agentPhone:"02 9361 9999", opened:"2025-02-24", status:"active", urgency:"high", staff:"J. Chen", daysOpen:12, deposit:"$44,500", depositPaid:true, lender:"N/A (Cash)", specialConditions:"Sold as-is. Inclusions: dishwasher, blinds, AC.", notes:"Strata report received. Awaiting buyer's solicitor.", searches:{title:"done",council:"done",water:"done",strata:"done"}, pexa:{status:"Not Created",workspaceId:null}, },
-  { id:"CC-2025-037", client:"Priya Sharma", phone:"0433 887 221", email:"priya.sharma@hotmail.com", type:"Purchase", address:"33 Oak Ave, Box Hill VIC 3128", price:"$760,000", priceNum:760000, source:"Email", settlement:"2025-04-21", stage:"PEXA Ready", stageIdx:4, state:"VIC", agent:"Jellis Craig Box Hill", agentPhone:"03 9890 1234", opened:"2025-02-18", status:"active", urgency:"medium", staff:"A. Patel", daysOpen:18, deposit:"$38,000", depositPaid:true, lender:"ANZ Bank", specialConditions:"Early access required 3 days prior.", notes:"All searches in. PEXA workspace created.", searches:{title:"done",council:"done",water:"done",strata:"n/a"}, pexa:{status:"Active — Ready",workspaceId:"WS-9801-2025"}, },
-  { id:"CC-2025-034", client:"David & Karen Wu", phone:"0401 556 772", email:"dwu@wuenterprises.com.au", type:"Purchase", address:"102 Pacific Hwy, Pymble NSW 2073", price:"$2,150,000", priceNum:2150000, source:"Website", settlement:"2025-05-02", stage:"Contract Review", stageIdx:1, state:"NSW", agent:"LJ Hooker Pymble", agentPhone:"02 9449 5000", opened:"2025-03-04", status:"active", urgency:"high", staff:"J. Chen", daysOpen:4, deposit:"$107,500", depositPaid:false, lender:"Westpac", specialConditions:"Pool cert required. Subject to pest & building — 10 days.", notes:"High value. Special conditions re: pool compliance.", searches:{title:"pending",council:"pending",water:"pending",strata:"n/a"}, pexa:{status:"Not Created",workspaceId:null}, },
-  { id:"CC-2025-028", client:"Anika Patel", phone:"0455 119 334", email:"anika.p@outlook.com", type:"Sale", address:"5 Wattle St, Ultimo NSW 2007", price:"$620,000", priceNum:620000, source:"Referral", settlement:"2025-03-28", stage:"Settled", stageIdx:5, state:"NSW", agent:"BresicWhitney", agentPhone:"02 8332 0900", opened:"2025-02-01", status:"closed", urgency:"none", staff:"J. Chen", daysOpen:35, deposit:"$31,000", depositPaid:true, lender:"N/A (Cash)", specialConditions:"None.", notes:"Settled. Invoice sent.", searches:{title:"done",council:"done",water:"done",strata:"done"}, pexa:{status:"Settled ✓",workspaceId:"WS-9765-2025"}, },
-  { id:"CC-2025-021", client:"Michael Torres", phone:"0477 234 891", email:"mtorres@icloud.com", type:"Purchase", address:"11 Rosebery Ave, Rosebery NSW 2018", price:"$945,000", priceNum:945000, source:"Website", settlement:"2025-03-15", stage:"Settled", stageIdx:5, state:"NSW", agent:"Raine & Horne", agentPhone:"02 9699 3333", opened:"2025-01-20", status:"closed", urgency:"none", staff:"M. Torres", daysOpen:28, deposit:"$47,250", depositPaid:true, lender:"NAB", specialConditions:"None.", notes:"Settled. Client referred a friend.", searches:{title:"done",council:"done",water:"done",strata:"done"}, pexa:{status:"Settled ✓",workspaceId:"WS-9744-2025"}, },
-  { id:"CC-2025-043", client:"Helen & David Park", phone:"0412 778 991", email:"hpark@gmail.com", type:"Lease", address:"Unit 4/88 Miller St, North Sydney NSW 2060", price:"$42,000 p.a.", priceNum:42000, source:"Referral", settlement:"2025-04-01", stage:"Contract Review", stageIdx:1, state:"NSW", agent:"Knight Frank", agentPhone:"02 9241 1234", opened:"2025-03-05", status:"active", urgency:"medium", staff:"J. Chen", daysOpen:3, deposit:"$3,500", depositPaid:false, lender:"N/A", specialConditions:"Retail lease — 3 year term + 3 year option.", notes:"Commercial lease preparation for retail tenancy.", searches:{title:"n/a",council:"n/a",water:"n/a",strata:"n/a"}, pexa:{status:"N/A",workspaceId:null}, },
-  { id:"CC-2025-044", client:"Sophie Anderson", phone:"0401 223 556", email:"s.anderson@icloud.com", type:"Contract Review", address:"77 Darling St, Balmain NSW 2041", price:"$1,150,000", priceNum:1150000, source:"Website", settlement:"2025-04-10", stage:"Contract Review", stageIdx:1, state:"NSW", agent:"Belle Property", agentPhone:"02 9810 1000", opened:"2025-03-06", status:"active", urgency:"high", staff:"J. Chen", daysOpen:2, deposit:"N/A", depositPaid:false, lender:"N/A", specialConditions:"Pre-purchase contract review only. Auction on 15 Mar.", notes:"Urgent — auction Saturday. Client needs review by Thursday.", searches:{title:"n/a",council:"n/a",water:"n/a",strata:"n/a"}, pexa:{status:"N/A",workspaceId:null}, },
-  { id:"CC-2025-045", client:"Robert Kim", phone:"0455 667 889", email:"r.kim@business.com", type:"General Enquiry", address:"—", price:"N/A", priceNum:0, source:"Website", settlement:null, stage:"Intake", stageIdx:0, state:"NSW", agent:"N/A", agentPhone:"N/A", opened:"2025-03-08", status:"active", urgency:"low", staff:"J. Chen", daysOpen:0, deposit:"N/A", depositPaid:false, lender:"N/A", specialConditions:"N/A", notes:"Client enquiring about stamp duty obligations on inherited property.", searches:{title:"n/a",council:"n/a",water:"n/a",strata:"n/a"}, pexa:{status:"N/A",workspaceId:null}, },
-];
 
 const TASKS = [
   { id:1, matter:"CC-2025-034", client:"David & Karen Wu", task:"Follow up council + water searches", due:"Today", urgency:"critical", done:false },
@@ -514,13 +504,13 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .settle-value{font-size:12px;font-weight:700;color:var(--teal);font-family:var(--font-mono)}
 
 /* AI Panel */
-.ai-panel{grid-row:1/4;background:var(--ink);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;position:relative;border:1px solid var(--ink-2);box-shadow:var(--shadow-lg)}
+.ai-panel{grid-row:1/4;background:var(--ink);border-radius:var(--radius-lg);display:flex;flex-direction:column;height:100%;overflow:hidden;position:relative;border:1px solid var(--ink-2);box-shadow:var(--shadow-lg)}
 .ai-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:200px;background:radial-gradient(ellipse at 50% 0%,rgba(201,168,76,0.12) 0%,transparent 70%);pointer-events:none}
 .ai-panel-hdr{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.06);position:relative;z-index:1}
 .ai-panel-title{font-size:11px;font-family:var(--font-mono);color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
 .ai-model-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.25);border-radius:20px;padding:4px 10px;font-size:10px;font-weight:600;color:var(--gold-dim);font-family:var(--font-mono)}
 .ai-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2s ease infinite}
-.ai-messages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.ai-messages{flex:1;overflow-y:scroll;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-height:0;max-height:400px;}
 .ai-messages::-webkit-scrollbar{width:0}
 .ai-msg{display:flex;gap:8px;max-width:100%}
 .ai-msg.user{flex-direction:row-reverse}
@@ -770,6 +760,8 @@ export default function App() {
   const [matterTab, setMatterTab] = useState("Overview");
   const [selectedMatter, setSelectedMatter] = useState(null);
   const [mFilter, setMFilter] = useState("all");
+  const [MATTERS, setMATTERS] = useState([]);
+  const [mattersLoading, setMattersLoading] = useState(true);
   const [selectedRef, setSelectedRef] = useState(null);
   const [selectedCommId, setSelectedCommId] = useState(1);
   const [commTab, setCommTab] = useState("all");
@@ -787,6 +779,26 @@ export default function App() {
   const aiEndRef = useRef(null);
 
   useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [aiMessages, isTyping]);
+
+  useEffect(() => {
+    const fetchMatters = async () => {
+      setMattersLoading(true);
+      const { data, error } = await supabase
+        .from("matters")
+        .select("*");
+
+      if (error) {
+        console.error("Error fetching matters from Supabase:", error);
+        setMATTERS([]);
+      } else {
+        setMATTERS(data || []);
+      }
+
+      setMattersLoading(false);
+    };
+
+    fetchMatters();
+  }, []);
 
   const sendAI = (q) => {
     const msg = q || aiInput.trim();
@@ -1123,62 +1135,72 @@ export default function App() {
           ══════════════════════════════════════════════ */}
           {page === "matters" && !selectedMatter && (
             <div className="content">
-              <div className="stat-row fade-up">
-                {[
-                  {label:"Total Active",value:activeM.length,sub:"matters",cls:""},
-                  {label:"High Urgency",value:MATTERS.filter(m=>m.urgency==="high"&&m.status==="active").length,sub:"needs attention",cls:"stat-red"},
-                  {label:"Due This Week",value:"2",sub:"deadlines",cls:"stat-gold"},
-                  {label:"Settled YTD",value:closedM.length,sub:"completed",cls:"stat-accent"},
-                  {label:"Pipeline Value",value:"$5.22M",sub:"active matters",cls:"stat-gold"},
-                ].map(s=>(
-                  <div key={s.label} className={`stat ${s.cls}`}>
-                    <div className="stat-label">{s.label}</div>
-                    <div className="stat-value">{s.value}</div>
-                    <div className="stat-sub">{s.sub}</div>
+              {mattersLoading ? (
+                <div className="matter-table fade-up-2">
+                  <div style={{padding:20,textAlign:"center",color:"var(--text-2)"}}>
+                    Loading matters...
                   </div>
-                ))}
-              </div>
-              <div className="filter-bar fade-up-1">
-                {["all","active","closed"].map(f=>(
-                  <button key={f} className={`filter-btn ${mFilter===f?"active":""}`} onClick={()=>setMFilter(f)}>
-                    {f==="all"?`All (${MATTERS.length})`:f==="active"?`Active (${activeM.length})`:`Closed (${closedM.length})`}
-                  </button>
-                ))}
-                <div className="filter-sep"/>
-                <button className="btn-ghost" style={{fontSize:12,padding:"6px 14px"}}>↓ Export</button>
-                <button className="btn-gold" onClick={()=>setModal("intake")}>＋ New Matter</button>
-              </div>
-              <div className="matter-table fade-up-2">
-                <div className="mt-thead">
-                  {["Matter ID","Client / Address","Type","Stage","Value","Staff","Action"].map(h=><div key={h} className="mt-th">{h}</div>)}
                 </div>
-                {(mFilter==="all"?MATTERS:mFilter==="active"?activeM:closedM).map(m=>(
-                  <div key={m.id} className="mt-row"
-                    onClick={()=>{setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
-                    <div className="mt-id">{m.id}</div>
-                    <div>
-                      <div className="mt-client">{m.client}</div>
-                      <div className="mt-addr">{m.address}</div>
-                    </div>
-                    <div>
-                      <span className={`tag ${m.type==="Purchase"?"tag-teal":m.type==="Sale"?"tag-amber":m.type==="Lease"?"tag-purple":m.type==="Contract Review"?"tag-blue":"tag-gray"}`}>{m.type}</span>
-                      <div style={{marginTop:3}}><span className={`tag ${m.state==="NSW"?"tag-blue":"tag-purple"}`}>{m.state}</span></div>
-                    </div>
-                    <div className="mt-stage">
-                      <div className="stage-dot" style={{background:STAGE_COLORS[m.stage]||"#94a3b8"}}/>
-                      {m.stage}
-                    </div>
-                    <div style={{fontSize:12,fontWeight:700,color:"var(--text)",fontFamily:"var(--font-mono)"}}>{m.price}</div>
-                    <div style={{fontSize:12,color:"var(--text-2)"}}>{m.staff}</div>
-                    <div>
-                      <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}}
-                        onClick={e=>{e.stopPropagation();setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
-                        Open →
-                      </button>
-                    </div>
+              ) : (
+                <>
+                  <div className="stat-row fade-up">
+                    {[
+                      {label:"Total Active",value:activeM.length,sub:"matters",cls:""},
+                      {label:"High Urgency",value:MATTERS.filter(m=>m.urgency==="high"&&m.status==="active").length,sub:"needs attention",cls:"stat-red"},
+                      {label:"Due This Week",value:"2",sub:"deadlines",cls:"stat-gold"},
+                      {label:"Settled YTD",value:closedM.length,sub:"completed",cls:"stat-accent"},
+                      {label:"Pipeline Value",value:"$5.22M",sub:"active matters",cls:"stat-gold"},
+                    ].map(s=>(
+                      <div key={s.label} className={`stat ${s.cls}`}>
+                        <div className="stat-label">{s.label}</div>
+                        <div className="stat-value">{s.value}</div>
+                        <div className="stat-sub">{s.sub}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                  <div className="filter-bar fade-up-1">
+                    {["all","active","closed"].map(f=>(
+                      <button key={f} className={`filter-btn ${mFilter===f?"active":""}`} onClick={()=>setMFilter(f)}>
+                        {f==="all"?`All (${MATTERS.length})`:f==="active"?`Active (${activeM.length})`:`Closed (${closedM.length})`}
+                      </button>
+                    ))}
+                    <div className="filter-sep"/>
+                    <button className="btn-ghost" style={{fontSize:12,padding:"6px 14px"}}>↓ Export</button>
+                    <button className="btn-gold" onClick={()=>setModal("intake")}>＋ New Matter</button>
+                  </div>
+                  <div className="matter-table fade-up-2">
+                    <div className="mt-thead">
+                      {["Matter ID","Client / Address","Type","Stage","Value","Staff","Action"].map(h=><div key={h} className="mt-th">{h}</div>)}
+                    </div>
+                    {(mFilter==="all"?MATTERS:mFilter==="active"?activeM:closedM).map(m=>(
+                      <div key={m.id} className="mt-row"
+                        onClick={()=>{setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
+                        <div className="mt-id">{m.id}</div>
+                        <div>
+                          <div className="mt-client">{m.client}</div>
+                          <div className="mt-addr">{m.address}</div>
+                        </div>
+                        <div>
+                          <span className={`tag ${m.type==="Purchase"?"tag-teal":m.type==="Sale"?"tag-amber":m.type==="Lease"?"tag-purple":m.type==="Contract Review"?"tag-blue":"tag-gray"}`}>{m.type}</span>
+                          <div style={{marginTop:3}}><span className={`tag ${m.state==="NSW"?"tag-blue":"tag-purple"}`}>{m.state}</span></div>
+                        </div>
+                        <div className="mt-stage">
+                          <div className="stage-dot" style={{background:STAGE_COLORS[m.stage]||"#94a3b8"}}/>
+                          {m.stage}
+                        </div>
+                        <div style={{fontSize:12,fontWeight:700,color:"var(--text)",fontFamily:"var(--font-mono)"}}>{m.price}</div>
+                        <div style={{fontSize:12,color:"var(--text-2)"}}>{m.staff}</div>
+                        <div>
+                          <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}}
+                            onClick={e=>{e.stopPropagation();setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
+                            Open →
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
