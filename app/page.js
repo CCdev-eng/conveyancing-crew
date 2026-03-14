@@ -752,10 +752,36 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 
 /* ── SETTINGS STUB ── */
 .under-construction{display:flex;align-items:center;justify-content:center;flex:1;height:100%}
+
+/* ── LOGIN SCREEN ── */
+.login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--surface);font-family:var(--font-body)}
+.login-card{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-lg);padding:40px;width:100%;max-width:380px}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center}
+.login-logo-mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--gold) 0%,#a07830 100%);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 12px rgba(201,168,76,0.35)}
+.login-logo-text{font-family:var(--font-display);font-size:22px;font-weight:500;color:var(--text);letter-spacing:-0.2px}
+.login-logo-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px}
+.login-field{margin-bottom:18px}
+.login-field label{display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;font-family:var(--font-body)}
+.login-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;color:var(--text);background:var(--white);font-family:var(--font-body);outline:none;transition:border-color 0.15s}
+.login-input:focus{border-color:var(--gold-dim);box-shadow:0 0 0 3px var(--gold-light)}
+.login-input::placeholder{color:var(--text-3)}
+.login-btn{width:100%;padding:12px;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font-body);background:linear-gradient(135deg,var(--gold) 0%,#a07830 100%);color:var(--ink);transition:all 0.15s;margin-top:8px}
+.login-btn:hover:not(:disabled){box-shadow:0 4px 16px rgba(201,168,76,0.35);transform:translateY(-1px)}
+.login-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
+.login-error{font-size:12px;color:var(--red);margin-top:12px;padding:8px 12px;background:var(--red-light);border-radius:var(--radius-sm);font-family:var(--font-body)}
+.login-loading{font-family:var(--font-display);font-size:18px;color:var(--text-2)}
+.sb-signout{background:none;border:none;color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;font-family:var(--font-body);padding:4px 8px;border-radius:6px;margin-left:auto}
+.sb-signout:hover{color:var(--gold-dim);background:rgba(255,255,255,0.06)}
 `;
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   const [page, setPage] = useState("dashboard");
   const [matterTab, setMatterTab] = useState("Overview");
   const [selectedMatter, setSelectedMatter] = useState(null);
@@ -777,6 +803,17 @@ export default function App() {
   const [aiInput, setAiInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const aiEndRef = useRef(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [aiMessages, isTyping]);
 
@@ -836,6 +873,23 @@ export default function App() {
     setTimeout(() => { setIntakeExtracting(false); setIntakeStep(2); }, 1600);
   };
 
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError("");
+    setLoginLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
+    setLoginLoading(false);
+    if (error) {
+      setLoginError(error.message);
+      return;
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
   const activeM = MATTERS.filter(m => m.status === "active");
   const closedM = MATTERS.filter(m => m.status === "closed");
   const selMatterObj = MATTERS.find(m => m.id === selectedMatter);
@@ -858,6 +912,68 @@ export default function App() {
   ];
 
   const AVATAR_COLORS = ["#0f766e","#1d4ed8","#7c3aed","#ca8a04","#dc2626","#ea580c"];
+
+  if (authLoading) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="login-screen">
+          <div className="login-loading">Checking auth...</div>
+        </div>
+      </>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="login-screen">
+          <div className="login-card">
+            <div className="login-logo">
+              <div className="login-logo-mark">⚖️</div>
+              <div>
+                <div className="login-logo-text">Conveyancing Crew</div>
+                <div className="login-logo-sub">Practice OS · NSW & VIC</div>
+              </div>
+            </div>
+            <form onSubmit={handleLogin}>
+              <div className="login-field">
+                <label htmlFor="login-email">Email</label>
+                <input
+                  id="login-email"
+                  type="email"
+                  className="login-input"
+                  placeholder="you@example.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              <div className="login-field">
+                <label htmlFor="login-password">Password</label>
+                <input
+                  id="login-password"
+                  type="password"
+                  className="login-input"
+                  placeholder="••••••••"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+              <button type="submit" className="login-btn" disabled={loginLoading}>
+                {loginLoading ? "Signing in…" : "Sign In"}
+              </button>
+              {loginError && <div className="login-error">{loginError}</div>}
+            </form>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -891,10 +1007,11 @@ export default function App() {
           </div>
           <div className="sb-footer">
             <div className="sb-avatar">JC</div>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div className="sb-user-name">Jessica Chen</div>
               <div className="sb-user-role">Conveyancer · NSW</div>
             </div>
+            <button type="button" className="sb-signout" onClick={handleSignOut}>Sign out</button>
             <div className="sb-online"/>
           </div>
         </div>
