@@ -855,17 +855,53 @@ export default function App() {
     fetchMatters();
   }, []);
 
-  const sendAI = (q) => {
+  const sendAI = async (q) => {
     const msg = q || aiInput.trim();
     if (!msg) return;
-    setAiMessages(p => [...p, { id:p.length, role:"user", text:msg }]);
+    setAiMessages((p) => [...p, { id: p.length, role: "user", text: msg }]);
     setAiInput("");
     setIsTyping(true);
-    setTimeout(() => {
-      const r = matchAI(msg);
-      setAiMessages(p => [...p, { id:p.length, role:"ai", text:r.text, bullets:r.bullets }]);
+
+    const apiMessages = aiMessages.map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.text + (m.bullets ? "\n" + m.bullets.join("\n") : ""),
+    }));
+    apiMessages.push({ role: "user", content: msg });
+
+    const mattersContext = MATTERS.length
+      ? MATTERS.map(
+          (m) =>
+            `Matter ${m.id}: Client ${m.client}, Type ${m.type}, Stage ${m.stage}, Urgency ${m.urgency || "—"}, Opened ${m.opened || "—"}${m.settlement ? ", Settlement " + m.settlement : ""}`
+        ).join("\n")
+      : "No matters in the system.";
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages, mattersContext }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to get AI response");
+      }
+      setAiMessages((p) => [
+        ...p,
+        { id: p.length, role: "ai", text: data.content || "" },
+      ]);
+    } catch (err) {
+      setAiMessages((p) => [
+        ...p,
+        {
+          id: p.length,
+          role: "ai",
+          text: "Sorry, I couldn’t complete that. " + (err.message || "Please try again."),
+        },
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 900 + Math.random()*500);
+    }
   };
 
   const runExtract = () => {
