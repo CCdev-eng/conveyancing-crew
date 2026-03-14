@@ -782,16 +782,34 @@ export default function App() {
 
   useEffect(() => {
     const fetchMatters = async () => {
+      console.log("Matters fetch started");
       setMattersLoading(true);
       const { data, error } = await supabase
         .from("matters")
         .select("*");
 
       if (error) {
-        console.error("Error fetching matters from Supabase:", error);
+        console.error("Supabase error fetching matters:", error);
         setMATTERS([]);
       } else {
-        setMATTERS(data || []);
+        console.log("Raw data from Supabase:", data);
+        const rows = data || [];
+        const mapped = rows.map((row) => ({
+          id: row.matter_ref,
+          client: row.client_name,
+          email: row.client_email,
+          phone: row.client_phone,
+          type: row.type,
+          address: row.address,
+          state: row.state,
+          opened: row.opened_date,
+          stage: row.stage,
+          status: row.status,
+          urgency: row.urgency,
+          staff: row.staff,
+        }));
+        console.log("Final MATTERS state after setting:", mapped);
+        setMATTERS(mapped);
       }
 
       setMattersLoading(false);
