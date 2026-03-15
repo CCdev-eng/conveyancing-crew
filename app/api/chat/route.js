@@ -38,9 +38,9 @@ CRITICAL RESPONSE FORMAT RULES - always follow these without exception:
       messages: messages,
     });
 
-    return Response.json({ 
-      content: response.content[0].text 
-    });
+    const textBlock = response.content?.[0];
+    const content = textBlock?.type === "text" ? textBlock.text : (textBlock?.text ?? "");
+    return Response.json({ content: content || "" });
 
   } catch (error) {
     console.error("Claude API error - full error object:", error);

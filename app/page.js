@@ -3,58 +3,16 @@ import { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
 // ─── DATA ──────────────────────────────────────────────────────────────────────
+// MATTERS, tasks, contacts, calendarEvents etc. are loaded from Supabase via useState + useEffect.
 
-const TASKS = [
-  { id:1, matter:"CC-2025-034", client:"David & Karen Wu", task:"Follow up council + water searches", due:"Today", urgency:"critical", done:false },
-  { id:2, matter:"CC-2025-039", client:"James Nguyen", task:"Create PEXA workspace — settlement 7 Apr", due:"Today", urgency:"critical", done:false },
-  { id:3, matter:"CC-2025-041", client:"Sarah & Tom Mitchell", task:"Chase pool compliance cert from vendor", due:"Today", urgency:"high", done:false },
-  { id:4, matter:"CC-2025-039", client:"James Nguyen", task:"Pay Mark Delaney referral fee — $300", due:"Today", urgency:"medium", done:false },
-  { id:5, matter:"CC-2025-037", client:"Priya Sharma", task:"Send PEXA ready confirmation to client", due:"Tomorrow", urgency:"medium", done:false },
-  { id:6, matter:"CC-2025-041", client:"Sarah & Tom Mitchell", task:"Order strata report if applicable", due:"15 Mar", urgency:"low", done:false },
-  { id:7, matter:"CC-2025-034", client:"David & Karen Wu", task:"Review special conditions — pool cert", due:"15 Mar", urgency:"low", done:true },
-];
-
-const COMMS = [
-  { id:1, from:"Sarah Mitchell", channel:"email", preview:"Hi, just confirming — has the pool certificate come through yet? We're a bit anxious about the settlement date approaching...", time:"9:14 AM", unread:true, matter:"CC-2025-041", urgent:true },
-  { id:2, from:"Mark Delaney", channel:"email", preview:"Following up on the Mitchell referral fee — happy to invoice if that's easier for you...", time:"8:52 AM", unread:true, matter:"CC-2025-041", urgent:false },
-  { id:3, from:"James Nguyen", channel:"whatsapp", preview:"Hey, any update on when we can expect settlement confirmation? My removalists need to book...", time:"Yesterday", unread:true, matter:"CC-2025-039", urgent:true },
-  { id:4, from:"LJ Hooker Pymble", channel:"email", preview:"Re: CC-2025-034 — vendor has confirmed they are available for settlement on 2 May...", time:"Yesterday", unread:false, matter:"CC-2025-034", urgent:false },
-  { id:5, from:"ANZ Bank", channel:"email", preview:"PEXA workspace WS-9801-2025 — all parties have confirmed participation...", time:"Mon", unread:false, matter:"CC-2025-037", urgent:false },
-];
-
-const SETTLEMENTS = [
-  { date:"7 Apr", client:"James Nguyen", matter:"CC-2025-039", value:"$890K", daysLeft:30 },
-  { date:"14 Apr", client:"Sarah & Tom Mitchell", matter:"CC-2025-041", value:"$1.42M", daysLeft:37 },
-  { date:"21 Apr", client:"Priya Sharma", matter:"CC-2025-037", value:"$760K", daysLeft:44 },
-  { date:"2 May", client:"David & Karen Wu", matter:"CC-2025-034", value:"$2.15M", daysLeft:55 },
-];
-
-const REFERRERS = [
-  { id:"REF-001", name:"Mark Delaney", company:"Delaney Finance", type:"Mortgage Broker", phone:"0422 556 991", email:"mark@delaneyfinance.com.au", since:"Jun 2023", referrals:6, feeOwed:300, totalFees:1500, formalAgreement:true, notes:"Best broker partner. Sends 3–4 clients/year. Consistent high-value referrals." },
-  { id:"REF-002", name:"Jellis Craig Box Hill", company:"Jellis Craig", type:"Real Estate Agent", phone:"03 9890 1234", email:"boxhill@jelliscraig.com.au", since:"Sep 2023", referrals:4, feeOwed:0, totalFees:1200, formalAgreement:true, notes:"Sends VIC buyers consistently. Consider increasing to $400 fee." },
-  { id:"REF-003", name:"Rachel Chen", company:"Individual", type:"Past Client", phone:"0411 887 223", email:"rachel.chen@gmail.com", since:"Mar 2024", referrals:2, feeOwed:0, totalFees:600, formalAgreement:false, notes:"Happy past client. Referred 2 friends. Keep warm — Christmas card list." },
-  { id:"REF-004", name:"Raine & Horne Redfern", company:"Raine & Horne", type:"Real Estate Agent", phone:"02 9699 3333", email:"redfern@rainehorne.com.au", since:"Jan 2024", referrals:3, feeOwed:0, totalFees:0, formalAgreement:false, notes:"No formal fee arrangement. Consider formalising relationship." },
-  { id:"REF-005", name:"McGrath Balmain", company:"McGrath", type:"Real Estate Agent", phone:"02 9555 1234", email:"balmain@mcgrath.com.au", since:"Jan 2025", referrals:1, feeOwed:0, totalFees:0, formalAgreement:false, notes:"New relationship. High-value referral. Formal agreement opportunity." },
-];
-
-const INVOICES = [
-  { id:"INV-2025-041", client:"Sarah & Tom Mitchell", matter:"CC-2025-041", amount:2800, status:"pending", due:"1 May 2025" },
-  { id:"INV-2025-039", client:"James Nguyen", matter:"CC-2025-039", amount:1650, status:"pending", due:"7 Apr 2025" },
-  { id:"INV-2025-028", client:"Anika Patel", matter:"CC-2025-028", amount:1400, status:"paid", due:"28 Mar 2025" },
-  { id:"INV-2025-021", client:"Michael Torres", matter:"CC-2025-021", amount:1750, status:"paid", due:"15 Mar 2025" },
-];
-
-const firmYTD_data = [
-  {m:"Jul",v:2900},{m:"Aug",v:1550},{m:"Sep",v:4200},{m:"Oct",v:1450},
-  {m:"Nov",v:2900},{m:"Dec",v:1380},{m:"Jan",v:1550},{m:"Feb",v:2800},{m:"Mar",v:5200},
-];
+const firmYTD_data = [];
 
 const AI_CANNED = {
-  "today": { text:"Here's your day at a glance:", bullets:["4 critical tasks — PEXA creation for Nguyen is most urgent (settlement 7 Apr, 30 days)","Sarah Mitchell emailed about the pool cert — needs a response today","Wu searches ($2.15M Pymble) are overdue — follow up council & water immediately","Mark Delaney is chasing his $300 referral fee — pay today to protect your best referral channel"] },
-  "email": { text:"Here's a draft response to Sarah Mitchell about the pool compliance certificate:", bullets:["\"Dear Sarah, Thank you for your message. We've been in contact with McGrath Balmain and have requested the pool compliance certificate as a priority. We expect to receive this by 14 March. Rest assured we are monitoring this closely and will update you as soon as it comes through. Kind regards, Jessica Chen\""] },
-  "urgent": { text:"Matters requiring immediate attention:", bullets:["CC-2025-039 Nguyen — PEXA workspace not created, settlement in 30 days. Create today or risk delay.","CC-2025-034 Wu ($2.15M) — All 3 searches overdue since 6 Mar. Finance condition expires 14 Mar.","CC-2025-041 Mitchell — Pool cert outstanding. Special condition at risk if not received by 21 Mar."] },
-  "revenue": { text:"Financial summary for your active pipeline:", bullets:["Total active pipeline: $5.22M across 4 matters","YTD revenue recognised: $23,930 (Jul 2024 – Mar 2025)","Outstanding invoices: $4,450 across 2 matters","Best month: March 2025 — $5,200 in fees from 4 new matters","Top client by value: Wu ($2.15M) — premium fee tier applies"] },
-  "default": { text:"I can help you with your practice. Try:", bullets:["\"Summarise today's tasks\"","\"Draft an email to Sarah Mitchell\"","\"What matters are most urgent?\"","\"Show me revenue summary\""] },
+  "today": { text:"Here's your day at a glance:", bullets:["Critical tasks and upcoming settlements","Emails needing a response today","Overdue searches — follow up council & water","Referral fees to pay — protect your referral channels"] },
+  "email": { text:"Here's a draft response:", bullets:["Draft text based on your matter and email context. Edit as needed before sending."] },
+  "urgent": { text:"Matters requiring immediate attention:", bullets:["PEXA workspaces not created — create before settlement","Overdue searches — finance condition at risk","Outstanding certificates — special conditions at risk"] },
+  "revenue": { text:"Financial summary for your active pipeline:", bullets:["Total active pipeline value","YTD revenue recognised","Outstanding invoices","Top clients by value"] },
+  "default": { text:"I can help you with your practice. Try:", bullets:["\"Summarise today's tasks\"","\"Draft an email\"","\"What matters are most urgent?\"","\"Show me revenue summary\""] },
 };
 const matchAI = q => {
   const l = q.toLowerCase();
@@ -483,7 +441,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .tb-search input::placeholder{color:var(--text-3)}
 .icon-btn{width:34px;height:34px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;position:relative;transition:all 0.15s}
 .icon-btn:hover{background:var(--white);border-color:#82a7d4}
-.icon-btn .dot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:var(--red);border-radius:50%;border:1.5px solid var(--white)}
+.icon-btn .dot{position:absolute;top:4px;right:4px;width:auto;min-width:14px;height:14px;background:var(--red);border-radius:20px;border:1.5px solid var(--white);font-size:8px;font-weight:700;color:white;font-family:var(--font-mono);display:flex;align-items:center;justify-content:center;padding:0 3px}
 .btn-primary{background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all 0.15s;display:flex;align-items:center;gap:6px}
 .btn-primary:hover{background:var(--ink-2);box-shadow:var(--shadow)}
 .btn-gold{background:linear-gradient(135deg,#245eb0 0%,#1a4a9e 100%);color:white;border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
@@ -664,6 +622,46 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .qa-btn.qa-primary{background:var(--ink);color:var(--white);border-color:var(--ink)}
 .qa-btn.qa-primary:hover{background:var(--ink-2)}
 
+/* ── DASHBOARD REDESIGN ── */
+.dash-hero{background:linear-gradient(135deg,var(--ink) 0%,#1e3a6e 100%);padding:24px 28px;border-radius:var(--radius-lg);margin-bottom:20px;position:relative;overflow:hidden}
+.dash-hero::before{content:'';position:absolute;top:-50px;right:-50px;width:200px;height:200px;background:radial-gradient(circle,rgba(36,94,176,0.3) 0%,transparent 70%);pointer-events:none}
+.dash-hero::after{content:'';position:absolute;bottom:-30px;left:20%;width:300px;height:100px;background:radial-gradient(ellipse,rgba(36,94,176,0.15) 0%,transparent 70%);pointer-events:none}
+.dash-greeting{font-family:var(--font-display);font-size:28px;font-weight:500;color:white;letter-spacing:-0.5px;margin-bottom:4px}
+.dash-date{font-size:11px;font-family:var(--font-mono);color:rgba(255,255,255,0.4);margin-bottom:8px}
+.dash-summary{font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5}
+.dash-hero-stats{display:flex;gap:32px;align-items:center}
+.dash-hero-stat-val{font-family:var(--font-display);font-size:32px;font-weight:500;color:white;line-height:1;margin-bottom:4px}
+.dash-hero-stat-label{font-size:9px;font-family:var(--font-mono);color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1.5px}
+.dash-alerts{background:#fff8ed;border-bottom:3px solid var(--amber);border-radius:var(--radius);padding:10px 16px;margin-bottom:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.dash-alert-pill{display:flex;align-items:center;gap:8px;background:white;border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11px;color:var(--text)}
+.dash-main-grid{display:grid;grid-template-columns:1fr 1fr 380px;gap:20px;margin-bottom:20px}
+.dash-bottom-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+.pipeline-stages{display:flex;flex-direction:column;gap:8px;padding:14px 18px}
+.pipeline-stage-row{display:flex;align-items:center;gap:12px;cursor:pointer;padding:6px 8px;border-radius:8px;transition:background 0.12s}
+.pipeline-stage-row:hover{background:var(--surface)}
+.pipeline-stage-name{font-size:9px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:1px;width:110px;flex-shrink:0}
+.pipeline-stage-count{font-family:var(--font-display);font-size:18px;font-weight:500;color:var(--text);width:28px;flex-shrink:0;text-align:right}
+.pipeline-stage-bar-wrap{flex:1;height:6px;background:var(--surface);border-radius:10px;overflow:hidden}
+.pipeline-stage-bar{height:100%;border-radius:10px;transition:width 0.5s ease}
+.ai-brief-card{background:var(--ink);border-radius:var(--radius-lg);padding:20px;margin-bottom:16px;position:relative;overflow:hidden}
+.ai-brief-card::before{content:'';position:absolute;top:0;right:0;width:120px;height:120px;background:radial-gradient(circle,rgba(36,94,176,0.2) 0%,transparent 70%);pointer-events:none}
+.ai-brief-label{font-size:9px;font-family:var(--font-mono);color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.ai-brief-text{font-size:13px;color:rgba(255,255,255,0.75);line-height:1.8;white-space:pre-wrap}
+.mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.mini-cal-day{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:8px;cursor:pointer;transition:background 0.12s}
+.mini-cal-day:hover{background:var(--surface)}
+.mini-cal-day.today{background:var(--blue-light)}
+.mini-cal-day-name{font-size:8px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.mini-cal-day-num{font-size:13px;font-weight:600;color:var(--text);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:4px}
+.mini-cal-day.today .mini-cal-day-num{background:var(--blue);color:white}
+.mini-cal-dots{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;min-height:8px}
+.mini-cal-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.dash-ai-messages{overflow-y:scroll;scrollbar-gutter:stable}
+.dash-ai-messages::-webkit-scrollbar{width:8px}
+.dash-ai-messages::-webkit-scrollbar-track{background:rgba(0,0,0,0.15);border-radius:10px}
+.dash-ai-messages::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.35);border-radius:10px}
+.dash-ai-messages::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.5)}
+
 /* ── MATTERS TABLE ── */
 .matter-table{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)}
 .mt-thead{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px}
@@ -732,6 +730,12 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .ai-sum-item{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-2);font-size:11px;color:var(--text-2);line-height:1.5}
 .ai-sum-item:last-child{border-bottom:none}
 .ai-sum-dot{width:5px;height:5px;border-radius:50%;background:var(--teal);margin-top:5px;flex-shrink:0}
+.comms-page{display:flex;height:calc(100vh - 58px);overflow:hidden}
+.comms-page-left{display:flex;flex-direction:column;overflow:hidden;background:var(--white);border-right:1px solid var(--border)}
+.comms-page-mid{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);min-width:300px}
+.comms-page-right{display:flex;flex-direction:column;overflow:hidden;background:var(--ink);border-left:1px solid rgba(255,255,255,0.06)}
+.comms-page-divider{width:4px;background:var(--border-2);cursor:col-resize;flex-shrink:0;transition:background 0.15s}
+.comms-page-divider:hover{background:var(--blue)}
 
 /* ── REFERRALS ── */
 .ref-layout{display:grid;grid-template-columns:290px 1fr;gap:16px;height:calc(100vh - 160px);overflow:hidden}
@@ -776,6 +780,24 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 /* Contact list table (reuse matter-table) */
 .contacts-table .mt-thead,.contacts-table .mt-row{grid-template-columns:minmax(180px,1.2fr) 90px 120px minmax(140px,1fr) 72px 44px}
 .contacts-table .mt-row{cursor:default}
+
+/* ── CALENDAR ── */
+.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border);width:100%}
+.calendar-day-header{background:var(--surface);padding:8px;text-align:center;font-size:10px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
+.calendar-day{background:var(--white);padding:6px;min-height:110px;cursor:pointer;transition:background 0.12s;vertical-align:top;overflow:hidden}
+.calendar-day:hover{background:#f8faff}
+.calendar-day.other-month{background:#fafafa}
+.calendar-day.other-month .cal-day-num{color:var(--text-3)}
+.calendar-day.today .cal-day-num{background:var(--blue);color:white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.cal-day-num{font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.cal-event-pill{font-size:10px;padding:2px 6px;border-radius:4px;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-left:2px solid;transition:opacity 0.12s}
+.cal-event-pill:hover{opacity:0.8}
+.week-grid{display:grid;grid-template-columns:50px repeat(7,1fr);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+.week-time-col{background:var(--surface);border-right:1px solid var(--border)}
+.week-day-col{border-right:1px solid var(--border-2);min-height:600px;position:relative}
+.week-day-col:last-child{border-right:none}
+.week-day-header{padding:8px;text-align:center;background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;font-weight:600}
+.week-day-header.today{background:var(--blue-light);color:var(--blue)}
 
 .contact-modal-overlay{position:fixed;inset:0;background:rgba(26,39,68,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
 .contact-modal{width:95vw;max-width:1200px;height:90vh;background:var(--white);border-radius:20px;display:flex;flex-direction:column;box-shadow:var(--shadow-xl);overflow:hidden}
@@ -914,6 +936,38 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .login-loading{font-family:var(--font-display);font-size:18px;color:var(--text-2)}
 .sb-signout{background:none;border:none;color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;font-family:var(--font-body);padding:4px 8px;border-radius:6px;margin-left:auto}
 .sb-signout:hover{color:#82a7d4;background:rgba(255,255,255,0.06)}
+
+@media (max-width: 768px) {
+  .sidebar { display: none !important; }
+  .app { flex-direction: column; }
+  .main { width: 100vw; }
+  .topbar { padding: 0 14px; height: 52px; }
+  .content { padding: 14px; padding-bottom: 80px; }
+  .stat-row { grid-template-columns: repeat(2,1fr) !important; }
+  .dash-main-grid { grid-template-columns: 1fr !important; }
+  .dash-bottom-grid { grid-template-columns: 1fr !important; }
+  .contacts-layout { grid-template-columns: 1fr !important; }
+  .matter-table { font-size: 11px; }
+  .mt-thead { display: none; }
+  .mt-row { grid-template-columns: 1fr !important; gap: 4px !important; }
+  .ws-tabs { overflow-x: auto; white-space: nowrap; }
+  .ws-tab { font-size: 11px !important; padding: 8px 12px !important; }
+  .calendar-grid { font-size: 10px; }
+  .calendar-day { min-height: 60px !important; padding: 3px !important; }
+  .cal-day-num { font-size: 10px !important; }
+  .cal-event-pill { font-size: 9px !important; }
+  .contact-modal { width: 100vw !important; height: 100vh !important; border-radius: 0 !important; max-width: 100vw !important; }
+  .contact-modal-body { grid-template-columns: 1fr !important; }
+  .contact-modal-left { display: none; }
+  .contact-modal-right { display: none; }
+  .comms-layout { grid-template-columns: 1fr !important; }
+  .ref-layout { grid-template-columns: 1fr !important; }
+  .intake-grid { grid-template-columns: 1fr !important; }
+  .intake-source-grid { grid-template-columns: repeat(2,1fr) !important; }
+  .wf-progress { overflow-x: auto; }
+  .rdt-summary { grid-template-columns: repeat(2,1fr) !important; }
+  .ws-content { padding: 12px !important; }
+}
 `;
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
@@ -933,7 +987,10 @@ export default function App() {
   const [selectedRef, setSelectedRef] = useState(null);
   const [selectedCommId, setSelectedCommId] = useState(1);
   const [commTab, setCommTab] = useState("all");
-  const [tasks, setTasks] = useState(TASKS);
+  const [tasks, setTasks] = useState([]);
+  const [comms, setComms] = useState([]);
+  const [referrers, setReferrers] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [modal, setModal] = useState(null);
   const [intakeStep, setIntakeStep] = useState(0);
   const [intakeSource, setIntakeSource] = useState(null);
@@ -967,7 +1024,7 @@ export default function App() {
   const addressInputRef = useRef(null);
   const autocompleteAttachedRef = useRef(false);
   const [aiMessages, setAiMessages] = useState([
-    { id:0, role:"ai", text:"Good morning, Jessica. Here's what needs your attention today.", bullets:["3 critical tasks — PEXA creation for Nguyen is most urgent","Sarah Mitchell has emailed about the pool cert — needs a reply now","Wu ($2.15M) searches are overdue — follow up immediately"] }
+    { id: 0, role: "ai", text: "Good morning. Here's what needs your attention today.", bullets: ["Critical tasks and settlements", "Emails needing a reply", "Overdue items — follow up"] }
   ]);
   const [aiInput, setAiInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -1024,6 +1081,60 @@ export default function App() {
   const [mattersCommsAISummaryLoading, setMattersCommsAISummaryLoading] = useState(false);
   const [mattersCommsAISummaryExpanded, setMattersCommsAISummaryExpanded] = useState(false);
   const mattersCommsModalRef = useRef(null);
+  const [allEmails, setAllEmails] = useState([]);
+  const [allEmailsLoading, setAllEmailsLoading] = useState(false);
+  const [commsPageSelectedEmailId, setCommsPageSelectedEmailId] = useState(null);
+  const [commsSortAsc, setCommsSortAsc] = useState(false);
+  const [commsTab, setCommsTab] = useState("all");
+  const [commsSearch, setCommsSearch] = useState("");
+  const [commsPageAIChat, setCommsPageAIChat] = useState([]);
+  const [commsPageAIChatInput, setCommsPageAIChatInput] = useState("");
+  const [commsPageAITyping, setCommsPageAITyping] = useState(false);
+  const [commsPageAISummary, setCommsPageAISummary] = useState(null);
+  const [commsPageAISummaryLoading, setCommsPageAISummaryLoading] = useState(false);
+  const [commsPanelWidths, setCommsPanelWidths] = useState([280, null, 300]);
+  const [mobileCommsView, setMobileCommsView] = useState("list");
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const [marketData, setMarketData] = useState(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [insightsAIChat, setInsightsAIChat] = useState([]);
+  const [insightsAIChatInput, setInsightsAIChatInput] = useState("");
+  const [insightsAITyping, setInsightsAITyping] = useState(false);
+  const [insightsAutoSummary, setInsightsAutoSummary] = useState(null);
+  const [insightsAutoLoading, setInsightsAutoLoading] = useState(false);
+  const [insightsAutoError, setInsightsAutoError] = useState(null);
+
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [notifAI, setNotifAI] = useState(null);
+  const notifRef = useRef(null);
+
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarView, setCalendarView] = useState("month");
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [tooltip, setTooltip] = useState(null);
+  const [eventModal, setEventModal] = useState(false);
+  const [addEventModal, setAddEventModal] = useState(false);
+  const [aiCalendarLoading, setAiCalendarLoading] = useState(false);
+  const [dashMorningBrief, setDashMorningBrief] = useState(null);
+  const [dashBriefLoading, setDashBriefLoading] = useState(false);
+  const [dashAIChat, setDashAIChat] = useState([]);
+  const [dashAIChatInput, setDashAIChatInput] = useState("");
+  const [dashAITyping, setDashAITyping] = useState(false);
+  const [newEvent, setNewEvent] = useState({
+    title: "", event_type: "meeting", matter_ref: "", client_name: "", date: "", time: "", notes: ""
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1037,6 +1148,121 @@ export default function App() {
   }, []);
 
   useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [aiMessages, isTyping]);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) setSearchOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target) && !e.target.closest(".icon-btn")) setNotifOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key !== "Escape") return;
+
+      if (modal) {
+        setModal(null);
+        setIntakeStep(0);
+        setIntakeSource(null);
+        return;
+      }
+
+      if (mattersCommsModal) {
+        setMattersCommsModal(false);
+        setMatterTab("Overview");
+        return;
+      }
+
+      if (viewingContact) {
+        setViewingContact(null);
+        setContactAIChat([]);
+        return;
+      }
+
+      if (contactModal) {
+        setContactModal(false);
+        return;
+      }
+
+      if (notifOpen) {
+        setNotifOpen(false);
+        return;
+      }
+
+      if (searchOpen) {
+        setSearchOpen(false);
+        setGlobalSearch("");
+        return;
+      }
+
+      if (composeModal) {
+        setComposeModal(false);
+        return;
+      }
+
+      if (eventModal) {
+        setEventModal(false);
+        setSelectedEvent(null);
+        return;
+      }
+
+      if (addEventModal) {
+        setAddEventModal(false);
+        return;
+      }
+
+      if (tooltip) {
+        setTooltip(null);
+        return;
+      }
+
+      if (page === "matter_workspace") {
+        setPage("matters");
+        setSelectedMatter(null);
+        setMatterTab("Overview");
+        return;
+      }
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [
+    modal,
+    mattersCommsModal,
+    viewingContact,
+    contactModal,
+    notifOpen,
+    searchOpen,
+    composeModal,
+    eventModal,
+    addEventModal,
+    tooltip,
+    page,
+  ]);
+
+  useEffect(() => {
+    const check = () => setIsMobile(typeof window !== "undefined" && window.innerWidth <= 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  useEffect(() => {
+    if (page !== "communications") setMobileCommsView("list");
+  }, [page]);
+
+  useEffect(() => {
+    if (page === "insights") {
+      generateInsightsSummary();
+      fetchMarketIntelligence();
+    }
+  }, [page]);
+
+  useEffect(() => {
+    setNotifAI(null);
+  }, [calendarEvents, tasks]);
 
   useEffect(() => {
     const fetchMatters = async () => {
@@ -1056,6 +1282,7 @@ export default function App() {
           id: row.matter_ref,
           matter_ref: row.matter_ref,
           client: row.client_name,
+          client_name: row.client_name,
           email: row.client_email,
           phone: row.client_phone,
           type: row.type,
@@ -1067,6 +1294,8 @@ export default function App() {
           urgency: row.urgency,
           staff: row.staff,
           notes: row.notes,
+          settlement: row.settlement_date,
+          settlement_date: row.settlement_date,
           pexa: row.pexa ? { workspaceId: row.pexa.workspaceId } : undefined,
         }));
         console.log("Final MATTERS state after setting:", mapped);
@@ -1078,6 +1307,41 @@ export default function App() {
 
     fetchMatters();
   }, []);
+
+  useEffect(() => {
+    const fetchCalendarEvents = async () => {
+      setCalendarLoading(true);
+      const { data, error } = await supabase.from("calendar_events").select("*").order("date");
+      if (error) {
+        console.error("Error fetching calendar events:", error);
+        setCalendarEvents([]);
+        setCalendarLoading(false);
+        return;
+      }
+      let events = data || [];
+      const existingRefs = new Set(events.map((e) => (e.matter_ref || "") + (e.event_type || "")));
+      const missingSettlements = MATTERS.filter(
+        (m) => (m.settlement_date || m.settlement) && !existingRefs.has((m.matter_ref || m.id) + "settlement")
+      ).map((m) => ({
+        title: "Settlement — " + (m.client_name || m.client),
+        event_type: "settlement",
+        matter_ref: m.matter_ref || m.id,
+        client_name: m.client_name || m.client,
+        date: String(m.settlement_date || m.settlement || "").slice(0, 10),
+        source: "auto",
+        ai_extracted: false
+      }));
+      if (missingSettlements.length > 0) {
+        await supabase.from("calendar_events").insert(missingSettlements);
+        const { data: updated } = await supabase.from("calendar_events").select("*").order("date");
+        events = updated || [];
+      }
+      setCalendarEvents(events);
+      console.log("Calendar events:", events.length, events.map((e) => e.title + " " + e.date));
+      setCalendarLoading(false);
+    };
+    fetchCalendarEvents();
+  }, [MATTERS]);
 
   useEffect(() => {
     const fetchContacts = async () => {
@@ -1093,6 +1357,38 @@ export default function App() {
       setContactsLoading(false);
     };
     fetchContacts();
+  }, []);
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
+      if (data) setTasks(data);
+    };
+    fetchTasks();
+  }, []);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      const { data, error } = await supabase.from("invoices").select("*").order("created_at", { ascending: false });
+      if (error) {
+        setInvoices([]);
+        return;
+      }
+      setInvoices(data || []);
+    };
+    fetchInvoices();
+  }, []);
+
+  useEffect(() => {
+    const fetchReferrers = async () => {
+      const { data, error } = await supabase.from("referrers").select("*").order("name");
+      if (error) {
+        setReferrers([]);
+        return;
+      }
+      setReferrers(data || []);
+    };
+    fetchReferrers();
   }, []);
 
   const contactForAI = viewingContact || selectedContact;
@@ -1321,6 +1617,897 @@ export default function App() {
     window.addEventListener("mouseup", onUp);
   };
 
+  const fetchAllEmails = async () => {
+    setAllEmailsLoading(true);
+    try {
+      const res = await fetch("/api/email?allEmails=true&top=50");
+      const data = await res.json();
+      const emails = data.emails || data || [];
+      setAllEmails(emails);
+      generateCommsPageSummary(emails);
+    } catch (e) {
+      setAllEmails([]);
+    }
+    setAllEmailsLoading(false);
+  };
+
+  const generateCommsPageSummary = async (emails) => {
+    if (!emails || emails.length === 0) return;
+    setCommsPageAISummaryLoading(true);
+    const MAILBOX = process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL || "gitu@conveyancingcrew.com.au";
+    const fromAddr = (e) => (e.from?.emailAddress?.address || e.from?.address || "").toLowerCase();
+    const inboxEmails = emails.filter((e) => fromAddr(e) !== MAILBOX.toLowerCase());
+    const sentEmails = emails.filter((e) => fromAddr(e) === MAILBOX.toLowerCase());
+    const today = new Date().toISOString().split("T")[0];
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `You are reviewing both inbox and sent messages for Gitu Kaur at Conveyancing Crew, an Australian conveyancing practice. Consider incoming and outgoing emails together.\nToday: ${today}\n\nINBOX (${inboxEmails.length} emails):\n${inboxEmails.slice(0, 15).map((e) => `From: ${e.from?.emailAddress?.name || e.from?.name} | Subject: ${e.subject} | Date: ${new Date(e.receivedDateTime).toLocaleDateString("en-AU")} | Preview: ${(e.bodyPreview || "").slice(0, 150)}`).join("\n")}\n\nSENT (${sentEmails.length} emails):\n${sentEmails.slice(0, 15).map((e) => `To: ${e.toRecipients?.[0]?.emailAddress?.name || e.toRecipients?.[0]?.address} | Subject: ${e.subject} | Date: ${new Date(e.receivedDateTime).toLocaleDateString("en-AU")} | Preview: ${(e.bodyPreview || "").slice(0, 150)}`).join("\n")}\n\nKNOWN MATTERS:\n${MATTERS.filter((m) => m.status === "active").slice(0, 10).map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join("\n")}\n\nPlease provide a comprehensive email intelligence summary covering BOTH inbox and sent:\n\n1. OVERVIEW: How many emails (inbox + sent), general activity level (2 sentences)\n\n2. URGENT: List any emails needing immediate attention (replies overdue, urgent requests, deadlines mentioned) — from either inbox or sent\n\n3. BY MATTER: Group emails by which matter they relate to. For each matter mention what the email activity shows (incoming and outgoing).\n\n4. FOLLOW UPS NEEDED: List specific actions Gitu needs to take based on what she has received or sent\n\n5. PATTERNS: Any notable patterns (e.g. a client emailing multiple times, unanswered emails, threads where she has replied)\n\nPlain English only. No markdown symbols. Keep each section concise.`
+          }],
+          mattersContext: "Communications page email summary"
+        })
+      });
+      const data = await res.json();
+      setCommsPageAISummary(data.content || null);
+    } catch (_) {
+      setCommsPageAISummary(null);
+    }
+    setCommsPageAISummaryLoading(false);
+  };
+
+  const handleCommsPanelResize = (e, panelIndex) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panelIndex === 0 ? commsPanelWidths[0] : commsPanelWidths[2];
+    const onMove = (ev) => {
+      const diff = ev.clientX - startX;
+      const newWidths = [...commsPanelWidths];
+      if (panelIndex === 0) newWidths[0] = Math.max(200, startWidth + diff);
+      else newWidths[2] = Math.max(200, startWidth - diff);
+      setCommsPanelWidths(newWidths);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const sendCommsPageAI = async (question) => {
+    const q = (question || commsPageAIChatInput || "").trim();
+    if (!q) return;
+    setCommsPageAIChat((prev) => [...prev, { role: "user", text: q }]);
+    setCommsPageAIChatInput("");
+    setCommsPageAITyping(true);
+    const selectedEmail = allEmails.find((e) => e.id === commsPageSelectedEmailId);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            ...commsPageAIChat.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text })),
+            { role: "user", content: q }
+          ],
+          mattersContext: `Communications context:\nTotal emails: ${allEmails.length}\n${selectedEmail ? `Currently viewing email:\nFrom: ${selectedEmail.from?.emailAddress?.name || selectedEmail.from?.name}\nSubject: ${selectedEmail.subject}\nPreview: ${(selectedEmail.bodyPreview || "").slice(0, 300)}` : "No email selected"}\n\nActive matters: ${MATTERS.filter((m) => m.status === "active").map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join(", ")}\n\nPlain English only. No markdown. End with one clear next action.`
+        })
+      });
+      const data = await res.json();
+      setCommsPageAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry, could not get a response." }]);
+    } catch (_) {
+      setCommsPageAIChat((prev) => [...prev, { role: "ai", text: "Sorry, could not get a response." }]);
+    }
+    setCommsPageAITyping(false);
+  };
+
+  const fetchMarketIntelligence = async () => {
+    setMarketLoading(true);
+    try {
+      const suburbs = [...new Set(
+        MATTERS.filter((m) => m.address)
+          .map((m) => {
+            const parts = (m.address || "").split(" ");
+            const stateIdx = parts.findIndex((p) => p === "NSW" || p === "VIC");
+            return stateIdx > 0 ? parts[stateIdx - 1] : parts[parts.length - 3];
+          })
+          .filter(Boolean)
+      )].slice(0, 5);
+      const res = await fetch("/api/insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suburbs: suburbs.length ? suburbs : ["Sydney", "Melbourne"] })
+      });
+      const data = await res.json();
+      setMarketData(data?.error ? null : data);
+    } catch (_) {
+      setMarketData(null);
+    }
+    setMarketLoading(false);
+  };
+
+  const generateInsightsSummary = async () => {
+    setInsightsAutoLoading(true);
+    setInsightsAutoError(null);
+    try {
+      const activeM = MATTERS.filter((m) => m.status === "active");
+      const settledM = MATTERS.filter((m) => m.stage === "Settled");
+      const totalM = MATTERS.length;
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `Provide a comprehensive business intelligence summary for Conveyancing Crew practice.\n\nFIRM DATA:\nTotal matters: ${totalM}\nActive matters: ${activeM.length}\nSettled matters: ${settledM.length}\nSettlement rate: ${totalM ? Math.round((settledM.length / totalM) * 100) : 0}%\n\nMatter types: ${["Purchase", "Sale", "Lease", "Contract Review", "General Enquiry"].map((t) => `${t}: ${MATTERS.filter((m) => m.type === t).length}`).join(", ")}\n\nStates: NSW: ${MATTERS.filter((m) => m.state === "NSW").length}, VIC: ${MATTERS.filter((m) => m.state === "VIC").length}\n\nClient sources: ${[...new Set(MATTERS.map((m) => m.source).filter(Boolean))].map((s) => `${s}: ${MATTERS.filter((m) => m.source === s).length}`).join(", ") || "Not tracked"}\n\nActive pipeline stages:\n${["Intake", "Contract Review", "Contract Sent", "Searches Ordered", "PEXA Ready"].map((s) => `${s}: ${activeM.filter((m) => m.stage === s).length}`).join(", ")}\n\nProvide:\n1. PERFORMANCE SUMMARY: How is the practice doing overall\n2. STRENGTHS: What is working well\n3. OPPORTUNITIES: Areas for growth\n4. PIPELINE HEALTH: Assessment of current active matters\n5. RECOMMENDATIONS: 3 specific actionable recommendations\n\nPlain English. No markdown. Conversational tone. Under 250 words total.`
+          }],
+          mattersContext: "Insights page auto-summary"
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setInsightsAutoSummary(null);
+        setInsightsAutoError(data.error || "Report could not be generated.");
+        return;
+      }
+      const text = data.content != null ? String(data.content).trim() : "";
+      setInsightsAutoSummary(text || null);
+      if (!text) setInsightsAutoError("No report content returned.");
+    } catch (e) {
+      setInsightsAutoSummary(null);
+      setInsightsAutoError("Report could not be generated. Check your connection or try again.");
+    } finally {
+      setInsightsAutoLoading(false);
+    }
+  };
+
+  const sendInsightsAI = async (question) => {
+    const q = (question || insightsAIChatInput || "").trim();
+    if (!q) return;
+    setInsightsAIChat((prev) => [...prev, { role: "user", text: q }]);
+    setInsightsAIChatInput("");
+    setInsightsAITyping(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            ...insightsAIChat.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text })),
+            { role: "user", content: q }
+          ],
+          mattersContext: `Practice Intelligence Context:\nTotal matters: ${MATTERS.length}\nActive: ${MATTERS.filter((m) => m.status === "active").length}\nSettled: ${MATTERS.filter((m) => m.stage === "Settled").length}\nTypes: ${["Purchase", "Sale", "Lease"].map((t) => `${t}:${MATTERS.filter((m) => m.type === t).length}`).join(", ")}\nStates: NSW:${MATTERS.filter((m) => m.state === "NSW").length} VIC:${MATTERS.filter((m) => m.state === "VIC").length}\n${marketData?.marketOverview ? `Market: Sydney ${(marketData.marketOverview.sydney || "").slice(0, 100)}` : ""}\n\nPlain English only. No markdown. End with one recommendation.`
+        })
+      });
+      const data = await res.json();
+      setInsightsAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry could not get a response." }]);
+    } catch (_) {
+      setInsightsAIChat((prev) => [...prev, { role: "ai", text: "Sorry could not get a response." }]);
+    }
+    setInsightsAITyping(false);
+  };
+
+  const scanEmailsForEvents = async () => {
+    setAiCalendarLoading(true);
+    try {
+      console.log("Fetching PEXA emails...");
+      const pexaRes = await fetch("/api/email?pexa=true");
+      const pexaData = await pexaRes.json();
+      const pexaEmails = pexaData.emails || pexaData || [];
+      console.log("PEXA emails found:", pexaEmails.length);
+
+      const pexaWithBodies = await Promise.all(
+        pexaEmails.slice(0, 30).map(async (e) => {
+          try {
+            const res = await fetch(`/api/email?emailId=${e.id}`);
+            const data = await res.json();
+            const rawBody = data.body != null ? data.body : "";
+            const fullBody = String(rawBody)
+              .replace(/<[^>]*>/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 800);
+            return { ...e, fullBody };
+          } catch {
+            return e;
+          }
+        })
+      );
+
+      const matterContext = MATTERS.map((m) => {
+        const skipWords = ["and", "the", "of", "&", "mr", "mrs", "ms", "dr"];
+        const allNameParts = ((m.client_name || m.client || "") + " " + (m.other_party || ""))
+          .split(/[\s,&|\/\\]+/)
+          .map((n) => n.trim().toLowerCase())
+          .filter((n) => n.length >= 3 && !skipWords.includes(n));
+        return {
+          matter_ref: m.matter_ref || m.id,
+          client_name: m.client_name || m.client,
+          address: m.address,
+          settlement_date: m.settlement_date || m.settlement,
+          name_keywords: [...new Set(allNameParts)],
+          other_party: m.other_party || ""
+        };
+      });
+
+      pexaWithBodies.forEach((email) => {
+        const emailText = (email.subject + " " + (email.bodyPreview || email.fullBody || "")).toLowerCase();
+        const matchedMatter = matterContext.find((m) =>
+          m.name_keywords.some((keyword) => emailText.includes(keyword))
+        );
+        if (matchedMatter) {
+          email.preMatchedMatter = matchedMatter.matter_ref;
+          email.preMatchedClient = matchedMatter.client_name;
+          console.log("Pre-matched:", email.subject, "→", matchedMatter.matter_ref, matchedMatter.client_name);
+        }
+      });
+
+      console.log("Sending to Claude for extraction...");
+
+      const today = new Date().toISOString().split("T")[0];
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `You are extracting settlement dates from PEXA emails for Conveyancing Crew, an Australian conveyancing practice.
+
+PEXA always sends emails confirming settlement workspace details and settlement dates. Match each PEXA email to a matter by looking for client last names, property addresses, or matter references in the email content.
+
+TODAY: ${today}
+
+OUR MATTERS (match PEXA emails to these):
+${matterContext
+  .map(
+    (m) =>
+      `Matter: ${m.matter_ref}
+   Client: ${m.client_name}
+   Address: ${m.address || ""}
+   Other party: ${m.other_party || ""}
+   Current settlement date in DB: ${m.settlement_date || "NOT SET - needs extraction"}`
+  )
+  .join("\n---\n")}
+
+MATCHING RULES - match PEXA emails to matters by:
+1. Look for ANY name keyword from the matter in the email subject OR body content
+   Example: matter has 'Verma, Nitin' → look for 'verma' or 'nitin'
+   Example: matter has 'Singh & Kaur' → look for 'singh' or 'kaur'
+2. PEXA workspace IDs (WS-XXXX) if visible note them
+3. If multiple matters share a common name, use other context clues like suburb, property type, or date to disambiguate
+4. If you cannot confidently match, set confidence to 'low'
+
+NAME KEYWORDS PER MATTER:
+${matterContext
+  .map((m) => `${m.matter_ref} (${m.client_name}): look for → [${m.name_keywords.join(", ")}]`)
+  .join("\n")}
+
+PEXA EMAIL MATCHING EXAMPLES:
+- Subject 'Verma purchase PEXA workspace ready' → match to matter with 'verma' in name keywords
+- Subject 'Singh Kaur settlement 17/03/2026' → match to matter with 'singh' or 'kaur'
+- Body mentions 'settlement date 17 March 2026' + client name 'Nitin' → extract date 2026-03-17
+
+PEXA EMAILS TO ANALYSE:
+${pexaWithBodies
+  .map(
+    (e) =>
+      `Email ID: ${e.id}
+   Pre-matched to matter: ${e.preMatchedMatter || "unmatched"}
+   From: ${e.from?.name || ""} <${e.from?.address || ""}>
+   Subject: ${e.subject || ""}
+   Received: ${e.receivedDateTime ? new Date(e.receivedDateTime).toLocaleDateString("en-AU") : ""}
+   Content: ${e.fullBody || e.bodyPreview || ""}`
+  )
+  .join("\n===\n")}
+
+TASK:
+1. Match each PEXA email to one of our matters above (use name keywords; pre-match hint if present)
+2. Extract the settlement DATE and TIME from each email
+3. Create a calendar event for each confirmed settlement
+
+DATE EXTRACTION:
+- PEXA uses format: DD/MM/YYYY or D Month YYYY
+- Look for words: "settlement date", "settle on", "scheduled for", "confirmed for", "workspace"
+- Also look for time: "10:00 AM", "2:00 PM" etc
+
+Return ONLY a valid JSON array:
+[
+  {
+    "title": "Settlement — [Client Last Name]",
+    "event_type": "settlement",
+    "date": "YYYY-MM-DD",
+    "time": "HH:MM AM/PM or null",
+    "matter_ref": "matter ref or null",
+    "client_name": "full client name",
+    "notes": "PEXA workspace details + source email subject",
+    "confidence": "high/medium/low",
+    "matched_by": "how you matched this email to the matter"
+  }
+]
+
+Only include events where you are reasonably confident about the date and the matter match.
+If no matches found return: []`
+          }],
+          mattersContext: "PEXA settlement extraction"
+        })
+      });
+
+      const data = await response.json();
+      const rawText = data.content || "[]";
+      console.log("AI PEXA extraction response:", rawText);
+
+      let aiEvents = [];
+      try {
+        const clean = rawText.replace(/```json|```/g, "").trim();
+        const jsonMatch = clean.match(/\[[\s\S]*\]/);
+        if (jsonMatch) aiEvents = JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        console.log("Parse error:", e);
+      }
+      console.log("Events extracted by AI:", aiEvents);
+
+      const goodEvents = (Array.isArray(aiEvents) ? aiEvents : []).filter(
+        (e) =>
+          e.confidence !== "low" &&
+          e.date &&
+          /^\d{4}-\d{2}-\d{2}$/.test(String(e.date).slice(0, 10)) &&
+          e.title
+      );
+
+      const existing = (calendarEvents || []).map((e) => ((e.matter_ref || "") + (e.date || "")).toLowerCase());
+      const newEvents = goodEvents.filter((e) => !existing.includes(((e.matter_ref || "") + (e.date || "").slice(0, 10)).toLowerCase()));
+
+      console.log("New events to add:", newEvents);
+
+      if (newEvents.length > 0) {
+        const toInsert = newEvents.map((e) => ({
+          title: e.title,
+          event_type: "settlement",
+          matter_ref: e.matter_ref || null,
+          client_name: e.client_name || null,
+          date: String(e.date).slice(0, 10),
+          time: e.time || null,
+          notes: e.notes || null,
+          source: "pexa_email",
+          ai_extracted: true
+        }));
+
+        await supabase.from("calendar_events").insert(toInsert);
+
+        for (const event of newEvents) {
+          if (!event.matter_ref) continue;
+
+          const matterUpdates = {};
+          if (event.event_type === "settlement" && event.date) {
+            matterUpdates.settlement_date = String(event.date).slice(0, 10);
+            const matter = MATTERS.find((m) => (m.matter_ref || m.id) === event.matter_ref);
+            if (matter && ["Intake", "Contract Review", "Contract Sent", "Searches Ordered"].includes(matter.stage)) {
+              matterUpdates.stage = "PEXA Ready";
+            }
+          }
+          if (Object.keys(matterUpdates).length > 0) {
+            const { error: matterError } = await supabase
+              .from("matters")
+              .update(matterUpdates)
+              .eq("matter_ref", event.matter_ref);
+            if (matterError) {
+              console.log("Matter update error:", matterError);
+            } else {
+              console.log("Updated matter:", event.matter_ref, matterUpdates);
+            }
+          }
+
+          if (event.client_name) {
+            const firstNamePart = event.client_name.split(",")[0].trim();
+            const { data: contact } = await supabase
+              .from("contacts")
+              .select("id, notes")
+              .ilike("name", "%" + firstNamePart + "%")
+              .maybeSingle();
+            if (contact) {
+              const newNote =
+                "Settlement: " +
+                event.date +
+                (event.time ? " at " + event.time : "") +
+                (contact.notes ? "\n" + contact.notes : "");
+              await supabase.from("contacts").update({ notes: newNote }).eq("id", contact.id);
+              console.log("Updated contact:", event.client_name);
+            }
+          }
+
+          if (event.event_type === "settlement" && event.date) {
+            const settlementDate = new Date(event.date + "T00:00:00");
+            const today = new Date();
+            const daysUntil = Math.ceil((settlementDate - today) / (1000 * 60 * 60 * 24));
+            if (daysUntil > 0 && daysUntil <= 30) {
+              const { data: existingTask } = await supabase
+                .from("tasks")
+                .select("id")
+                .eq("matter_ref", event.matter_ref)
+                .ilike("task", "%settlement%")
+                .maybeSingle();
+              if (!existingTask) {
+                await supabase.from("tasks").insert({
+                  matter_ref: event.matter_ref,
+                  client_name: event.client_name,
+                  task:
+                    "Settlement due — " +
+                    event.date +
+                    (event.time ? " at " + event.time : "") +
+                    " — confirm PEXA workspace ready",
+                  due_date: event.date,
+                  urgency: daysUntil <= 3 ? "critical" : daysUntil <= 7 ? "high" : "medium",
+                  done: false
+                });
+                console.log("Created settlement task for:", event.matter_ref);
+              }
+            }
+          }
+        }
+      }
+
+      let newTasks = [];
+      let newCalEvents = [];
+
+      const activeMatters = MATTERS.filter((m) => m.status === "active" && (m.address || "").length > 5).slice(0, 10);
+      const allMatterEmailsForTasks = [];
+      for (const m of activeMatters) {
+        try {
+          const [inboxRes, sentRes] = await Promise.all([
+            fetch(`/api/email?address=${encodeURIComponent(m.address)}&sent=false`),
+            fetch(`/api/email?address=${encodeURIComponent(m.address)}&sent=true`)
+          ]);
+          const inboxData = await inboxRes.json();
+          const sentData = await sentRes.json();
+          const inboxList = inboxData.emails || inboxData || [];
+          const sentList = sentData.emails || sentData || [];
+          const emails = [
+            ...inboxList.map((e) => ({ ...e, matterRef: m.matter_ref, clientName: m.client_name, address: m.address, direction: "inbox" })),
+            ...sentList.map((e) => ({ ...e, matterRef: m.matter_ref, clientName: m.client_name, address: m.address, direction: "sent" }))
+          ];
+          allMatterEmailsForTasks.push(...emails);
+        } catch (err) {
+          console.log("Error fetching emails for", m.matter_ref, err);
+        }
+      }
+      const seenIds = new Set();
+      const uniqueMatterEmails = allMatterEmailsForTasks
+        .filter((e) => {
+          if (seenIds.has(e.id)) return false;
+          seenIds.add(e.id);
+          return true;
+        })
+        .sort((a, b) => new Date(b.receivedDateTime || 0) - new Date(a.receivedDateTime || 0))
+        .slice(0, 50);
+
+      const fromName = (e) => e.from?.name || e.from?.emailAddress?.name || "";
+      const taskExtractionRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content:
+                `You are scanning emails for Conveyancing Crew to find actionable tasks and deadlines.\n\nTODAY: ${new Date().toISOString().split("T")[0]}\n\nACTIVE MATTERS:\n${MATTERS.filter((m) => m.status === "active")
+                  .map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage} | ${m.address}`)
+                  .join("\n")}\n\nEMAILS TO SCAN (both sent and received):\n${uniqueMatterEmails
+                  .map(
+                    (e) =>
+                      `[${(e.direction || "").toUpperCase()}] Matter:${e.matterRef} | From:${fromName(e)} | Subject:${e.subject || ""} | Date:${e.receivedDateTime ? new Date(e.receivedDateTime).toLocaleDateString("en-AU") : ""} | Content:${(e.bodyPreview || "").slice(0, 200)}`
+                  )
+                  .join("\n---\n")}\n\nTASK EXTRACTION RULES:\nFind ALL actionable items including:\n1. Documents requested but not yet received\n2. Information requested from client\n3. Deadlines mentioned\n4. Follow-ups needed\n5. Things promised but not done\n6. Urgent requests\n7. Search orders needed\n8. PEXA actions needed\n9. Payment actions\n10. Certificate requests\n\nFor each task found return:\n{"task":"clear description","matter_ref":"...","client_name":"...","due_date":"YYYY-MM-DD or null","urgency":"critical/high/medium/low","source":"brief description","type":"document|information|deadline|followup|payment|search|pexa|certificate|other"}\n\nOnly include tasks that are ACTIONABLE and NOT YET DONE. Return ONLY a valid JSON array. Empty array if nothing found.`
+            }
+          ],
+          mattersContext: "Task extraction from emails"
+        })
+      });
+      const taskData = await taskExtractionRes.json();
+      const rawTaskText = taskData.content || "[]";
+      let extractedTasks = [];
+      try {
+        const clean = rawTaskText.replace(/```json|```/g, "").trim();
+        const match = clean.match(/\[[\s\S]*\]/);
+        if (match) extractedTasks = JSON.parse(match[0]);
+      } catch (parseErr) {
+        console.log("Task parse error:", parseErr);
+      }
+
+      if (extractedTasks.length > 0) {
+        const { data: existingTasks } = await supabase.from("tasks").select("task,matter_ref");
+        const existingTaskKeys = new Set((existingTasks || []).map((t) => (String(t.task) + String(t.matter_ref)).toLowerCase().slice(0, 50)));
+        newTasks = extractedTasks
+          .filter((t) => t.task && t.matter_ref)
+          .filter((t) => !existingTaskKeys.has((String(t.task) + String(t.matter_ref)).toLowerCase().slice(0, 50)))
+          .map((t) => ({
+            task: t.task,
+            matter_ref: t.matter_ref,
+            client_name: t.client_name || null,
+            due_date: t.due_date || null,
+            urgency: t.urgency || "medium",
+            done: false,
+            notes: "AI extracted from email: " + (t.source || "")
+          }));
+        if (newTasks.length > 0) {
+          const { error: taskError } = await supabase.from("tasks").insert(newTasks);
+          if (taskError) console.error("Tasks insert error:", taskError);
+        }
+      }
+
+      const taskCalendarEvents = (extractedTasks || [])
+        .filter((t) => t.due_date && t.matter_ref && /^\d{4}-\d{2}-\d{2}$/.test(t.due_date))
+        .map((t) => ({
+          title: (t.task || "").slice(0, 60),
+          event_type: t.type === "deadline" ? "deadline" : t.type === "payment" ? "finance" : t.type === "pexa" ? "settlement" : "task",
+          matter_ref: t.matter_ref,
+          client_name: t.client_name,
+          date: t.due_date,
+          notes: "AI extracted: " + (t.source || ""),
+          source: "ai_email_scan",
+          ai_extracted: true
+        }));
+      const existingCalKeys = new Set((calendarEvents || []).map((e) => (String(e.title) + String(e.date)).toLowerCase().slice(0, 50)));
+      newCalEvents = taskCalendarEvents.filter((e) => !existingCalKeys.has((String(e.title) + String(e.date)).toLowerCase().slice(0, 50)));
+      if (newCalEvents.length > 0) {
+        await supabase.from("calendar_events").insert(newCalEvents);
+      }
+
+      const { data: updatedCal } = await supabase.from("calendar_events").select("*").order("date");
+      setCalendarEvents(updatedCal || []);
+      const { data: updatedTasks } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
+      setTasks(updatedTasks || []);
+      const { data: updatedMatters } = await supabase.from("matters").select("*").order("opened_date", { ascending: false });
+      setMATTERS(updatedMatters || []);
+
+      const settlementCount = newEvents?.length || 0;
+      const taskCount = newTasks?.length || 0;
+      const calEventCount = newCalEvents?.length || 0;
+      alert(
+        "✦ Email Intelligence Scan Complete!\n\n" +
+          "Settlements found: " +
+          settlementCount +
+          "\nTasks extracted: " +
+          taskCount +
+          "\nCalendar events added: " +
+          (calEventCount + settlementCount) +
+          "\n\n" +
+          (taskCount > 0 ? "New tasks:\n" + newTasks.slice(0, 5).map((t) => "• " + t.task + " (" + (t.urgency || "medium") + ")").join("\n") : "No new tasks found in emails.")
+      );
+    } catch (err) {
+      console.log("Scan error:", err);
+      alert("Scan failed — check console for details");
+    }
+    setAiCalendarLoading(false);
+  };
+
+  const handleGlobalSearch = (query) => {
+    setGlobalSearch(query);
+    if (!query || query.length < 2) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
+    }
+    const q = query.toLowerCase();
+    const matterResults = MATTERS.filter(
+      (m) =>
+        (m.client_name || m.client || "").toLowerCase().includes(q) ||
+        (m.matter_ref || m.id || "").toLowerCase().includes(q) ||
+        (m.address || "").toLowerCase().includes(q) ||
+        (m.stage || "").toLowerCase().includes(q) ||
+        (m.type || "").toLowerCase().includes(q)
+    )
+      .slice(0, 5)
+      .map((m) => ({
+        type: "matter",
+        id: m.matter_ref || m.id,
+        title: m.client_name || m.client,
+        subtitle: m.address,
+        meta: m.stage,
+        tag: m.type,
+        action: () => {
+          setSelectedMatter(m.matter_ref || m.id);
+          setPage("matter_workspace");
+          setMatterTab("Overview");
+          setSearchOpen(false);
+          setGlobalSearch("");
+        }
+      }));
+    const contactResults = (contacts || [])
+      .filter(
+        (c) =>
+          (c.name || "").toLowerCase().includes(q) ||
+          (c.email || "").toLowerCase().includes(q) ||
+          (c.phone || "").includes(q) ||
+          (c.company || "").toLowerCase().includes(q)
+      )
+      .slice(0, 5)
+      .map((c) => ({
+        type: "contact",
+        id: c.id,
+        title: c.name,
+        subtitle: c.email || c.phone,
+        meta: c.type,
+        tag: c.type,
+        action: () => {
+          setPage("contacts");
+          setViewingContact(c);
+          setSearchOpen(false);
+          setGlobalSearch("");
+        }
+      }));
+    const calendarResults = (calendarEvents || [])
+      .filter(
+        (e) =>
+          (e.title || "").toLowerCase().includes(q) ||
+          (e.client_name || "").toLowerCase().includes(q) ||
+          (e.matter_ref || "").toLowerCase().includes(q)
+      )
+      .slice(0, 3)
+      .map((e) => ({
+        type: "calendar",
+        id: e.id,
+        title: e.title,
+        subtitle: new Date(e.date + "T00:00:00").toLocaleDateString("en-AU", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric"
+        }),
+        meta: e.event_type,
+        tag: e.event_type,
+        action: () => {
+          setPage("calendar");
+          setCalendarDate(new Date(e.date + "T00:00:00"));
+          setSearchOpen(false);
+          setGlobalSearch("");
+        }
+      }));
+    const results = [...matterResults, ...contactResults, ...calendarResults];
+    setSearchResults(results);
+    setSearchOpen(results.length > 0);
+  };
+
+  const buildNotifications = () => {
+    const notifs = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    (calendarEvents || [])
+      .filter((e) => e.event_type === "settlement")
+      .forEach((e) => {
+        const d = new Date(e.date + "T00:00:00");
+        const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+        if (days >= 0 && days <= 7) {
+          notifs.push({
+            id: "settle-" + e.id,
+            type: "settlement",
+            urgency: days <= 1 ? "critical" : days <= 3 ? "high" : "medium",
+            title:
+              days === 0
+                ? "Settlement TODAY"
+                : days === 1
+                  ? "Settlement TOMORROW"
+                  : "Settlement in " + days + " days",
+            body: e.title + (e.time ? " at " + e.time : ""),
+            matter_ref: e.matter_ref,
+            date: e.date,
+            icon: "🏠"
+          });
+        }
+      });
+    (tasks || [])
+      .filter((t) => !t.done && t.due_date)
+      .forEach((t) => {
+        const d = new Date(t.due_date + "T00:00:00");
+        const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+        if (days < 0) {
+          notifs.push({
+            id: "task-" + t.id,
+            type: "task",
+            urgency: "high",
+            title: "Overdue task",
+            body: t.task + " — " + (t.client_name || t.client),
+            matter_ref: t.matter_ref || t.matter,
+            date: t.due_date,
+            icon: "⚠️"
+          });
+        } else if (days === 0) {
+          notifs.push({
+            id: "task-today-" + t.id,
+            type: "task",
+            urgency: t.urgency === "critical" ? "critical" : "high",
+            title: "Task due today",
+            body: t.task + " — " + (t.client_name || t.client),
+            matter_ref: t.matter_ref || t.matter,
+            date: t.due_date,
+            icon: "📋"
+          });
+        }
+      });
+    const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    notifs.sort((a, b) => (urgencyOrder[a.urgency] || 3) - (urgencyOrder[b.urgency] || 3));
+    return notifs;
+  };
+
+  const openNotifications = async () => {
+    setNotifOpen(true);
+    const notifs = buildNotifications();
+    setNotifications(notifs);
+    if (notifs.length > 0 && !notifAI) {
+      setNotifLoading(true);
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                content: `Based on these notifications for a conveyancing practice,
+provide 3-5 specific suggested next actions in plain English.
+Be practical and specific.
+
+Notifications:
+${notifs.map((n) => `${n.urgency.toUpperCase()}: ${n.title} — ${n.body}`).join("\n")}
+
+Format as a simple numbered list of actions.
+No markdown. Plain English only.`
+              }
+            ],
+            mattersContext: "Notification action suggestions"
+          })
+        });
+        const data = await res.json();
+        setNotifAI(data.content || null);
+      } catch (err) {
+        console.log("Notif AI error:", err);
+      }
+      setNotifLoading(false);
+    }
+  };
+
+  const generateMorningBrief = async () => {
+    setDashBriefLoading(true);
+    setDashMorningBrief(null);
+    const today = new Date().toISOString().split("T")[0];
+    const todayObj = new Date();
+    todayObj.setHours(0, 0, 0, 0);
+    const activeMatters = MATTERS.filter((m) => m.status === "active");
+    const settlementsThisWeek = (calendarEvents || []).filter((e) => {
+      if (e.event_type !== "settlement") return false;
+      const d = new Date(e.date + "T00:00:00");
+      const weekEnd = new Date(todayObj);
+      weekEnd.setDate(todayObj.getDate() + 7);
+      return d >= todayObj && d <= weekEnd;
+    }).length;
+    const overdueTasks = (tasks || []).filter((t) => {
+      if (t.done) return false;
+      if (t.due_date) return new Date(t.due_date + "T00:00:00") < todayObj;
+      return false;
+    }).length;
+    const tasksDueToday = (tasks || []).filter((t) => {
+      if (t.done) return false;
+      if (t.due_date && t.due_date === today) return true;
+      if (t.due === "Today") return true;
+      return false;
+    }).length;
+    const criticalMatters = activeMatters.filter((m) => m.urgency === "critical" || m.urgency === "high").length;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: `You are an AI assistant for Gitu Kaur at Conveyancing Crew.
+Today is ${today}.
+
+Active matters: ${activeMatters.length}
+Settlements this week: ${settlementsThisWeek}
+Overdue tasks: ${overdueTasks}
+Tasks due today: ${tasksDueToday}
+Critical matters: ${criticalMatters}
+
+Top matters by urgency:
+${activeMatters
+                .slice(0, 5)
+                .map((m) => `${m.matter_ref || m.id}: ${m.client_name || m.client} - ${m.stage} - Settlement: ${m.settlement_date || m.settlement || "TBD"}`)
+                .join("\n")}
+
+Provide a morning briefing in plain English:
+1. One sentence summary of the day
+2. Top 3 priorities for today (numbered list)
+3. One thing to watch out for this week
+
+Keep it under 150 words. Conversational tone. No markdown symbols.`
+            }
+          ],
+          mattersContext: "Morning briefing"
+        })
+      });
+      const data = await res.json();
+      setDashMorningBrief(data.content || null);
+    } catch (err) {
+      console.log("Morning brief error:", err);
+    }
+    setDashBriefLoading(false);
+  };
+
+  const sendDashAI = async (question) => {
+    const q = question || dashAIChatInput.trim();
+    if (!q) return;
+    setDashAIChat((prev) => [...prev, { role: "user", text: q }]);
+    setDashAIChatInput("");
+    setDashAITyping(true);
+    const today = new Date().toISOString().split("T")[0];
+    const activeMatters = MATTERS.filter((m) => m.status === "active");
+    const dueTasks = (tasks || []).filter((t) => !t.done);
+    const upcomingSettlements = (calendarEvents || [])
+      .filter((e) => e.event_type === "settlement")
+      .filter((e) => new Date(e.date + "T00:00:00") >= new Date())
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(0, 5);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            ...dashAIChat.map((m) => ({
+              role: m.role === "user" ? "user" : "assistant",
+              content: m.text
+            })),
+            { role: "user", content: q }
+          ],
+          mattersContext: `Today: ${today}
+Practice: Conveyancing Crew — Gitu Kaur, NSW & VIC
+Active matters: ${activeMatters.length}
+Outstanding tasks: ${dueTasks.length}
+Upcoming settlements: ${upcomingSettlements.map((e) => `${e.client_name} on ${e.date}`).join(", ") || "none"}
+
+Top active matters:
+${activeMatters
+            .slice(0, 8)
+            .map(
+              (m) =>
+                `${m.matter_ref || m.id}: ${m.client_name || m.client} | ${m.type} | ${m.stage} | Settlement: ${m.settlement_date || m.settlement || "TBD"} | ${m.address || ""}`
+            )
+            .join("\n")}
+
+Due tasks:
+${dueTasks
+            .slice(0, 10)
+            .map((t) => `${t.task} — ${t.client_name || t.client} (${t.urgency}) due ${t.due_date || t.due || "TBD"}`)
+            .join("\n")}
+
+RESPONSE RULES:
+- Plain English only, no markdown symbols
+- Be conversational and practical
+- End every response with "Next step:" followed by one clear recommended action
+- If asked about a specific matter, give specific details
+- Keep responses under 150 words unless more detail is asked`
+        })
+      });
+      const data = await res.json();
+      setDashAIChat((prev) => [
+        ...prev,
+        { role: "ai", text: data.content || "Sorry, I could not get a response." }
+      ]);
+    } catch (err) {
+      console.log("Dash AI error:", err);
+      setDashAIChat((prev) => [...prev, { role: "ai", text: "Sorry, I could not get a response." }]);
+    }
+    setDashAITyping(false);
+  };
+
+  useEffect(() => {
+    if (page === "dashboard" && !dashMorningBrief && !dashBriefLoading) generateMorningBrief();
+  }, [page]);
+
   const sendAI = async (q) => {
     const msg = q || aiInput.trim();
     if (!msg) return;
@@ -1487,11 +2674,15 @@ export default function App() {
   const activeM = MATTERS.filter(m => m.status === "active");
   const closedM = MATTERS.filter(m => m.status === "closed");
   const selMatterObj = MATTERS.find(m => m.id === selectedMatter);
-  const selComm = COMMS.find(c => c.id === selectedCommId);
-  const selRef = REFERRERS.find(r => r.id === selectedRef);
+  const selComm = comms.find(c => c.id === selectedCommId);
+  const selRef = referrers.find(r => r.id === selectedRef);
 
   useEffect(() => {
-    const id = viewingContact ? selectedContactEmailId : (mattersCommsModal && selMatterObj ? mattersCommsEmailId : (matterTab === "Communications" && selMatterObj ? selectedEmailId : null));
+    if (page === "communications") fetchAllEmails();
+  }, [page]);
+
+  useEffect(() => {
+    const id = viewingContact ? selectedContactEmailId : (mattersCommsModal && selMatterObj ? mattersCommsEmailId : (matterTab === "Communications" && selMatterObj ? selectedEmailId : (page === "communications" ? commsPageSelectedEmailId : null)));
     if (!id || emailBodies[id] !== undefined) return;
     let cancelled = false;
     setLoadingEmailBodyId(id);
@@ -1508,7 +2699,7 @@ export default function App() {
         if (!cancelled) setLoadingEmailBodyId(null);
       });
     return () => { cancelled = true; };
-  }, [viewingContact, selectedContactEmailId, matterTab, selMatterObj, selectedEmailId, mattersCommsModal, mattersCommsEmailId, emailBodies]);
+  }, [viewingContact, selectedContactEmailId, matterTab, selMatterObj, selectedEmailId, mattersCommsModal, mattersCommsEmailId, page, commsPageSelectedEmailId, emailBodies]);
 
   const fetchMatterEmails = async () => {
     if (!selMatterObj) return;
@@ -1667,6 +2858,29 @@ RESPONSE RULES - ALWAYS follow these:
     if (diffDays < 7) return date.toLocaleDateString("en-AU", { weekday: "short" }) + " " + date.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
     if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
     return date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const groupEmailsByDate = (emails) => {
+    const groups = {};
+    emails.forEach((e) => {
+      const date = new Date(e.receivedDateTime);
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      let label;
+      if (date.toDateString() === today.toDateString()) {
+        label = "Today";
+      } else if (date.toDateString() === yesterday.toDateString()) {
+        label = "Yesterday";
+      } else if (date.getFullYear() === today.getFullYear()) {
+        label = date.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" });
+      } else {
+        label = date.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" });
+      }
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(e);
+    });
+    return groups;
   };
 
   function parseEmailSummary(raw) {
@@ -1950,7 +3164,7 @@ Return only the email body text, no subject line.`;
 
   const pageTitle = {
     dashboard:"Dashboard", matters:"Matters", referrals:"Referrals",
-    contacts:"Contacts", communications:"Communications", accounting:"Accounting",
+    contacts:"Contacts", calendar:"Calendar", communications:"Communications", accounting:"Accounting",
     insights:"Insights", settings:"Settings", matter_workspace:"Matter"
   };
 
@@ -1959,12 +3173,24 @@ Return only the email body text, no subject line.`;
     { id:"matters", icon:"⚖️", label:"Matters", badge:activeM.length },
     { id:"referrals", icon:"🤝", label:"Referrals" },
     { id:"contacts", icon:"👥", label:"Contacts" },
-    { id:"communications", icon:"✉️", label:"Communications", badge:COMMS.filter(c=>c.unread).length },
+    { id:"calendar", icon:"📅", label:"Calendar" },
+    { id:"communications", icon:"✉️", label:"Communications", badge:(comms||[]).filter(c=>c.unread).length },
     { id:"accounting", icon:"💰", label:"Accounting" },
     { id:"insights", icon:"✦", label:"Insights" },
   ];
 
   const AVATAR_COLORS = ["#0f766e","#1d4ed8","#7c3aed","#ca8a04","#dc2626","#ea580c"];
+
+  const EVENT_COLORS = {
+    settlement: { bg: "#dcfce7", text: "#16a34a", border: "#86efac", dot: "#16a34a" },
+    finance: { bg: "#eff6ff", text: "#1d4ed8", border: "#93c5fd", dot: "#1d4ed8" },
+    meeting: { bg: "#f5f3ff", text: "#7c3aed", border: "#c4b5fd", dot: "#7c3aed" },
+    task: { bg: "#fefce8", text: "#ca8a04", border: "#fde047", dot: "#ca8a04" },
+    search: { bg: "#fdf4ff", text: "#9333ea", border: "#e9d5ff", dot: "#9333ea" },
+    contract: { bg: "#fff7ed", text: "#ea580c", border: "#fdba74", dot: "#ea580c" },
+    deadline: { bg: "#fef2f2", text: "#dc2626", border: "#fca5a5", dot: "#dc2626" },
+    auto: { bg: "#f0faf9", text: "#0f766e", border: "#99f6e4", dot: "#0f766e" },
+  };
 
   if (authLoading) {
     return (
@@ -2074,250 +3300,831 @@ Return only the email body text, no subject line.`;
         <div className="main">
 
           {/* ── TOPBAR ── */}
-          <div className="topbar">
+          <div className="topbar" style={isMobile ? { height: 52, padding: "0 14px" } : undefined}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               {page==="matter_workspace" && (
                 <button className="btn-ghost" style={{padding:"5px 10px",fontSize:11}}
                   onClick={() => { setPage("matters"); setSelectedMatter(null); }}>← Matters</button>
               )}
               <div>
-                <div className="tb-page">
+                <div className="tb-page" style={isMobile ? { fontSize: 16 } : undefined}>
                   {page==="matter_workspace" && selMatterObj ? selMatterObj.client : pageTitle[page] || "Conveyancing Crew"}
                 </div>
+                {!isMobile && (
                 <div className="tb-page-sub">
                   {page==="matter_workspace" && selMatterObj ? selMatterObj.id + " · " + selMatterObj.type : "Conveyancing Crew · NSW & VIC"}
                 </div>
+                )}
               </div>
             </div>
-            <div className="tb-right">
-              <div className="tb-search">
-                <span style={{color:"var(--text-3)",fontSize:12}}>🔍</span>
-                <input placeholder="Search matters, clients..." />
+            <div className="tb-right" style={{display:"flex",alignItems:"center",gap:10}}>
+              {isMobile ? (
+                <>
+                  <div style={{position:"relative"}} ref={searchRef}>
+                    <button type="button" className="icon-btn" style={{width:36,height:36}} onClick={() => setSearchOpen(true)} title="Search">🔍</button>
+                  </div>
+                  <div className="icon-btn" style={{ position: "relative", cursor: "pointer" }} onClick={openNotifications}>
+                    🔔
+                    {(() => { const notifCount = buildNotifications().length; return notifCount > 0 ? <div className="dot" style={{ background: "var(--red)" }}>{notifCount > 9 ? "9+" : notifCount}</div> : null; })()}
+                  </div>
+                  <button type="button" className="btn-gold" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setModal("intake")}>＋</button>
+                </>
+              ) : (
+              <>
+              <div style={{position:"relative"}} ref={searchRef}>
+                <div className="tb-search">
+                  <span style={{color:"var(--text-3)",fontSize:12}}>🔍</span>
+                  <input
+                    placeholder="Search matters, clients, calendar..."
+                    value={globalSearch}
+                    onChange={(e) => handleGlobalSearch(e.target.value)}
+                    onFocus={() => globalSearch.length >= 2 && setSearchOpen(true)}
+                  />
+                  {globalSearch && (
+                    <span
+                      style={{cursor:"pointer",color:"var(--text-3)",fontSize:11}}
+                      onClick={() => {
+                        setGlobalSearch("");
+                        setSearchResults([]);
+                        setSearchOpen(false);
+                      }}
+                    >
+                      ✕
+                    </span>
+                  )}
+                </div>
+                {searchOpen && searchResults.length > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      background: "var(--white)",
+                      borderRadius: "var(--radius-lg)",
+                      border: "1px solid var(--border)",
+                      boxShadow: "var(--shadow-xl)",
+                      zIndex: 500,
+                      maxHeight: 400,
+                      overflowY: "auto",
+                      marginTop: 4
+                    }}
+                  >
+                    {["matter", "contact", "calendar"].map((type) => {
+                      const group = searchResults.filter((r) => r.type === type);
+                      if (!group.length) return null;
+                      const icons = { matter: "⚖️", contact: "👤", calendar: "📅" };
+                      const labels = { matter: "Matters", contact: "Contacts", calendar: "Calendar" };
+                      return (
+                        <div key={type}>
+                          <div
+                            style={{
+                              padding: "6px 14px",
+                              fontSize: 9,
+                              fontFamily: "var(--font-mono)",
+                              color: "var(--text-3)",
+                              textTransform: "uppercase",
+                              letterSpacing: "1.5px",
+                              background: "var(--surface)",
+                              borderBottom: "1px solid var(--border-2)"
+                            }}
+                          >
+                            {icons[type]} {labels[type]}
+                          </div>
+                          {group.map((r) => (
+                            <div
+                              key={r.id}
+                              style={{
+                                padding: "10px 14px",
+                                cursor: "pointer",
+                                display: "flex",
+                                gap: 10,
+                                alignItems: "center",
+                                borderBottom: "1px solid var(--border-2)",
+                                transition: "background 0.1s"
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
+                              onClick={r.action}
+                            >
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: "var(--text)",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                >
+                                  {r.title}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: "var(--text-3)",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                >
+                                  {r.subtitle}
+                                </div>
+                              </div>
+                              <span
+                                className={`tag ${type === "matter" ? "tag-teal" : type === "contact" ? "tag-blue" : "tag-amber"}`}
+                                style={{ fontSize: 9, flexShrink: 0 }}
+                              >
+                                {r.meta}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    <div
+                      style={{
+                        padding: "8px 14px",
+                        fontSize: 10,
+                        color: "var(--text-3)",
+                        fontFamily: "var(--font-mono)",
+                        textAlign: "center",
+                        background: "var(--surface)"
+                      }}
+                    >
+                      Press ESC to close
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="icon-btn">🔔<div className="dot"/></div>
-              <button className="btn-gold" onClick={() => setModal("intake")}>＋ New Matter</button>
+              <div
+                className="icon-btn"
+                onClick={openNotifications}
+                style={{ position: "relative", cursor: "pointer" }}
+              >
+                🔔
+                {(() => {
+                  const notifCount = buildNotifications().length;
+                  return notifCount > 0 ? (
+                    <div className="dot" style={{ background: "var(--red)" }}>
+                      {notifCount > 9 ? "9+" : notifCount}
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+              <button type="button" className="btn-gold" onClick={() => setModal("intake")}>＋ New Matter</button>
+              </>
+              )}
             </div>
           </div>
+
+          {notifOpen && (
+            <div
+              ref={notifRef}
+              style={{
+                position: "fixed",
+                top: 64,
+                right: 16,
+                width: 380,
+                maxHeight: "80vh",
+                background: "var(--white)",
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--border)",
+                boxShadow: "var(--shadow-xl)",
+                zIndex: 1000,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                animation: "fadeUp 0.2s ease"
+              }}
+            >
+              <div
+                style={{
+                  padding: "14px 18px",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexShrink: 0
+                }}
+              >
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500, color: "var(--text)" }}>
+                  Notifications
+                  {notifications.length > 0 && (
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        background: "var(--red)",
+                        color: "white",
+                        borderRadius: 20,
+                        padding: "1px 8px",
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)"
+                      }}
+                    >
+                      {notifications.length}
+                    </span>
+                  )}
+                </div>
+                <button className="modal-close" onClick={() => setNotifOpen(false)}>✕</button>
+              </div>
+              <div
+                style={{
+                  padding: "12px 16px",
+                  background: "var(--gold-light)",
+                  borderBottom: "1px solid var(--gold-dim)",
+                  flexShrink: 0,
+                  maxHeight: "200px",
+                  overflowY: "auto"
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9,
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--text-3)",
+                    textTransform: "uppercase",
+                    letterSpacing: "1.5px",
+                    marginBottom: 8
+                  }}
+                >
+                  ✦ Suggested Next Actions
+                </div>
+                {notifLoading ? (
+                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>AI is analysing your notifications...</div>
+                ) : notifAI ? (
+                  <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>
+                    {notifAI}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>No urgent items right now</div>
+                )}
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+                {notifications.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>🎉</div>
+                    All caught up — no urgent notifications
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      style={{
+                        padding: "12px 16px",
+                        borderBottom: "1px solid var(--border-2)",
+                        cursor: "pointer",
+                        transition: "background 0.12s",
+                        borderLeft:
+                          "3px solid " +
+                          (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)")
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
+                      onClick={() => {
+                        if (n.matter_ref) {
+                          setSelectedMatter(n.matter_ref);
+                          setPage("matter_workspace");
+                          setMatterTab("Overview");
+                          setNotifOpen(false);
+                        }
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>{n.icon}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                            <span
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color:
+                                  n.urgency === "critical"
+                                    ? "var(--red)"
+                                    : n.urgency === "high"
+                                      ? "var(--amber)"
+                                      : "var(--text)"
+                              }}
+                            >
+                              {n.title}
+                            </span>
+                            <span
+                              className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
+                              style={{ fontSize: 9 }}
+                            >
+                              {n.urgency}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>{n.body}</div>
+                          {n.matter_ref && (
+                            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 3 }}>
+                              {n.matter_ref}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div
+                style={{
+                  padding: "10px 16px",
+                  borderTop: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  flexShrink: 0,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center"
+                }}
+              >
+                <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
+                  Updates automatically
+                </span>
+                <button
+                  className="btn-ghost"
+                  style={{ fontSize: 11 }}
+                  onClick={() => {
+                    setNotifAI(null);
+                    openNotifications();
+                  }}
+                >
+                  ↺ Refresh
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ══════════════════════════════════════════════
               DASHBOARD
           ══════════════════════════════════════════════ */}
-          {page === "dashboard" && (
-            <div className="content">
-              {/* Quick actions */}
-              <div className="quick-actions fade-up">
-                {[
-                  {icon:"＋",label:"New Matter",primary:true,action:()=>setModal("intake")},
-                  {icon:"⚖️",label:"View Matters",action:()=>setPage("matters")},
-                  {icon:"✉️",label:"Inbox",action:()=>setPage("communications")},
-                  {icon:"🤝",label:"Referrals",action:()=>setPage("referrals")},
-                  {icon:"💰",label:"Accounting",action:()=>setPage("accounting")},
-                ].map(a => (
-                  <button key={a.label} className={`qa-btn ${a.primary?"qa-primary":""}`} onClick={a.action}>
-                    <span className="qa-icon">{a.icon}</span>{a.label}
-                  </button>
-                ))}
-              </div>
+          {page === "dashboard" && (() => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayYMD = today.toISOString().split("T")[0];
+            const hour = today.getHours();
+            const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+            const dateStr = today.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+            const activeMatters = MATTERS.filter((m) => m.status === "active");
+            const settlementsThisWeek = (calendarEvents || []).filter((e) => {
+              if (e.event_type !== "settlement") return false;
+              const d = new Date(e.date + "T00:00:00");
+              const weekEnd = new Date(today);
+              weekEnd.setDate(today.getDate() + 7);
+              return d >= today && d <= weekEnd;
+            }).length;
+            const overdueCount = (tasks || []).filter((t) => !t.done && t.due_date && new Date(t.due_date + "T00:00:00") < today).length;
+            const tasksDueTodayCount = (tasks || []).filter((t) => {
+              if (t.done) return false;
+              if (t.due_date && t.due_date === todayYMD) return true;
+              if (t.due === "Today") return true;
+              return false;
+            }).length;
+            const summaryLine = settlementsThisWeek > 0 || overdueCount > 0
+              ? `You have ${settlementsThisWeek} settlement${settlementsThisWeek !== 1 ? "s" : ""} this week and ${overdueCount} overdue task${overdueCount !== 1 ? "s" : ""}.`
+              : "No critical deadlines today. Use the pipeline to prioritise.";
 
-              {/* Stat row */}
-              <div className="stat-row fade-up-1">
-                {[
-                  {label:"Active Matters",value:activeM.length,sub:"in pipeline",cls:""},
-                  {label:"This Month",value:"$5,200",sub:"fees recognised",cls:"stat-gold"},
-                  {label:"Settlements",value:"3",sub:"due this month",cls:"stat-accent"},
-                  {label:"Outstanding",value:"$4,450",sub:"invoices",cls:"stat-red"},
-                  {label:"Avg Days",value:"31",sub:"per matter",cls:""},
-                ].map(s => (
-                  <div key={s.label} className={`stat ${s.cls}`}>
-                    <div className="stat-label">{s.label}</div>
-                    <div className="stat-value">{s.value}</div>
-                    <div className="stat-sub">{s.sub}</div>
+            const criticalAlerts = [];
+            (calendarEvents || []).filter((e) => e.event_type === "settlement").forEach((e) => {
+              const d = new Date(e.date + "T00:00:00");
+              const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+              if (days >= 0 && days <= 3) criticalAlerts.push({ icon: "🏠", text: `${e.title} in ${days} day${days !== 1 ? "s" : ""}`, type: "settlement" });
+            });
+            (tasks || []).filter((t) => !t.done && t.urgency === "critical").slice(0, 2).forEach((t) => {
+              criticalAlerts.push({ icon: "⚠️", text: (t.client_name || t.client) + " — " + (t.task || "").slice(0, 40), type: "task" });
+            });
+            const hasCriticalAlerts = criticalAlerts.length > 0;
+
+            const STAGES = [
+              { key: "Intake", color: "#94a3b8" },
+              { key: "Contract Review", color: "var(--amber)" },
+              { key: "Contract Sent", color: "var(--blue)" },
+              { key: "Searches Ordered", color: "#9333ea" },
+              { key: "PEXA Ready", color: "var(--teal)" },
+              { key: "Settled", color: "var(--green)" }
+            ];
+            const maxStageCount = Math.max(1, ...STAGES.map((s) => (MATTERS.filter((m) => (m.stage || "").trim() === s.key).length)));
+
+            const upcomingSettlements = (calendarEvents || [])
+              .filter((e) => e.event_type === "settlement")
+              .map((e) => ({ ...e, d: new Date(e.date + "T00:00:00") }))
+              .filter((e) => e.d >= today)
+              .sort((a, b) => a.d - b.d)
+              .slice(0, 15)
+              .map((e) => ({ ...e, daysUntil: Math.ceil((e.d - today) / (1000 * 60 * 60 * 24)) }));
+
+            const todayTasks = (tasks || []).filter((t) => {
+              if (t.done) return false;
+              if (t.due_date && t.due_date === todayYMD) return true;
+              if (t.due === "Today") return true;
+              if (t.urgency === "critical") return true;
+              return false;
+            });
+            const todayTasksCritical = todayTasks.filter((t) => t.urgency === "critical");
+            const todayTasksHigh = todayTasks.filter((t) => t.urgency === "high" && t.urgency !== "critical");
+            const todayTasksRest = todayTasks.filter((t) => t.urgency !== "critical" && t.urgency !== "high");
+            const todayTasksOrdered = [...todayTasksCritical, ...todayTasksHigh, ...todayTasksRest];
+
+            const recentMatters = [...MATTERS].sort((a, b) => new Date(b.opened || b.opened_date || 0) - new Date(a.opened || a.opened_date || 0)).slice(0, 5);
+
+            const weekStart = new Date(today);
+            const dayNum = weekStart.getDay();
+            const diff = (dayNum + 6) % 7;
+            weekStart.setDate(weekStart.getDate() - diff);
+            const weekDays = [];
+            for (let i = 0; i < 7; i++) {
+              const d = new Date(weekStart);
+              d.setDate(weekStart.getDate() + i);
+              weekDays.push(d);
+            }
+
+            const outstandingTotal = (invoices || []).filter((i) => i.status === "pending").reduce((s, i) => s + (i.amount || 0), 0);
+            const paidThisMonth = (invoices || []).filter((i) => i.status === "paid").reduce((s, i) => s + (i.amount || 0), 0);
+            const ytdRevenue = (invoices || []).filter((i) => i.status === "paid").reduce((s, i) => s + (i.amount || 0), 0);
+            const pipelineValue = activeMatters.reduce((s, m) => s + (parseFloat(String(m.price || m.value || 0).replace(/[^0-9.]/g, "")) || 0), 0);
+
+            const typeOrder = ["Purchase", "Sale", "Lease", "Contract Review", "General Enquiry", "Other"];
+            const typeCounts = {};
+            (MATTERS || []).forEach((m) => {
+              const t = (m.type || "Other").trim();
+              const key = typeOrder.includes(t) ? t : "Other";
+              typeCounts[key] = (typeCounts[key] || 0) + 1;
+            });
+            typeOrder.forEach((t) => { if (!typeCounts[t]) typeCounts[t] = 0; });
+            const typeTotal = Object.values(typeCounts).reduce((a, b) => a + b, 0) || 1;
+            const typeColors = { Purchase: "var(--teal)", Sale: "var(--amber)", Lease: "var(--purple)", "Contract Review": "var(--blue)", "General Enquiry": "var(--text-3)", Other: "var(--text-3)" };
+
+            const topReferrers = (contacts || []).filter((c) => c.is_referrer).slice(0, 3);
+            const referrersToShow = topReferrers.length > 0 ? topReferrers : (referrers || []).slice(0, 3);
+
+            return (
+              <div className="content">
+                <div className="dash-hero fade-up" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    <div className="dash-greeting">{greeting}, Gitu.</div>
+                    <div className="dash-date">{dateStr}</div>
+                    <div className="dash-summary">{summaryLine}</div>
                   </div>
-                ))}
-              </div>
-
-              {/* Main grid */}
-              <div className="dash-grid fade-up-2">
-
-                {/* Today's Tasks */}
-                <div className="card">
-                  <div className="card-hdr">
-                    <div className="card-title">📋 Today's Tasks <span className="tag tag-red">{tasks.filter(t=>!t.done&&t.due==="Today").length} due</span></div>
-                    <div className="card-sub">8 Mar 2025</div>
-                  </div>
-                  <div style={{padding:"4px 20px 14px"}}>
-                    {tasks.filter(t=>t.due==="Today"||t.due==="Tomorrow").slice(0,5).map(t => (
-                      <div key={t.id} className="task-item">
-                        <div style={{width:5,height:5,borderRadius:"50%",background:URGENCY_COLOR[t.urgency]||"#94a3b8",flexShrink:0,marginTop:6}}/>
-                        <div className={`task-check ${t.done?"done":""}`}
-                          onClick={() => setTasks(prev=>prev.map(x=>x.id===t.id?{...x,done:!x.done}:x))}>
-                          {t.done && "✓"}
-                        </div>
-                        <div className="task-body">
-                          <div className={`task-text ${t.done?"done-text":""}`}>{t.task}</div>
-                          <div className="task-meta">{t.client} · {t.matter} · {t.due}</div>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="dash-hero-stats" style={{ position: "relative", zIndex: 1 }}>
+                    <div><div className="dash-hero-stat-val">{activeMatters.length}</div><div className="dash-hero-stat-label">Active Matters</div></div>
+                    <div><div className="dash-hero-stat-val">{settlementsThisWeek}</div><div className="dash-hero-stat-label">Settlements This Week</div></div>
+                    <div><div className="dash-hero-stat-val">{tasksDueTodayCount}</div><div className="dash-hero-stat-label">Tasks Due Today</div></div>
+                    <div><div className="dash-hero-stat-val">0</div><div className="dash-hero-stat-label">Unread Emails</div></div>
                   </div>
                 </div>
 
-                {/* Upcoming Settlements */}
-                <div className="card">
-                  <div className="card-hdr">
-                    <div className="card-title">🏠 Upcoming Settlements</div>
-                    <div className="card-sub">Next 60 days</div>
-                  </div>
-                  <div style={{padding:"4px 20px 14px"}}>
-                    {SETTLEMENTS.map(s => (
-                      <div key={s.matter} className="settlement-item">
-                        <div className="settle-date">{s.date}</div>
-                        <div style={{flex:1}}>
-                          <div className="settle-client">{s.client}</div>
-                          <div style={{fontSize:10,fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{s.matter}</div>
-                        </div>
-                        <div className="settle-value">{s.value}</div>
-                        <span className={`tag ${s.daysLeft<=30?"tag-red":s.daysLeft<=45?"tag-amber":"tag-green"}`}>{s.daysLeft}d</span>
+                {hasCriticalAlerts && (
+                  <div className="dash-alerts fade-up-1">
+                    {criticalAlerts.slice(0, 3).map((a, i) => (
+                      <div key={i} className="dash-alert-pill">
+                        <span>{a.icon}</span>
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{a.text}</span>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => { setPage("calendar"); if (a.type === "settlement") setPage("matters"); }}>Act Now →</button>
                       </div>
                     ))}
                   </div>
+                )}
+
+                {/* Three stat cards row - Financial, Matter Mix, Referral Partners */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
+                  <div className="card fade-up-1" style={{ background: "var(--white)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", padding: "16px 20px", boxShadow: "var(--shadow-sm)" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 12 }}>Financial Overview</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 24px" }}>
+                      <div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Active Pipeline</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${(pipelineValue / 1000).toFixed(0)}K</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Outstanding</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${outstandingTotal.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Paid This Month</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${paidThisMonth.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>YTD Revenue</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${ytdRevenue.toLocaleString()}</div>
+                      </div>
+                    </div>
+                    <button type="button" className="btn-ghost" style={{ fontSize: 10, marginTop: 8, padding: 0 }} onClick={() => setPage("accounting")}>View Accounting →</button>
+                  </div>
+
+                  <div className="card fade-up-1" style={{ background: "var(--white)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", padding: "16px 20px", boxShadow: "var(--shadow-sm)" }}>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 10 }}>Matter Mix</div>
+                    <div style={{ height: 10, borderRadius: 10, overflow: "hidden", display: "flex", background: "var(--surface)", marginBottom: 10 }}>
+                      {typeOrder.filter((t) => (typeCounts[t] || 0) > 0).map((t) => (
+                        <div key={t} style={{ width: `${((typeCounts[t] || 0) / typeTotal) * 100}%`, background: typeColors[t] || typeColors.Other, transition: "width 0.3s ease" }} title={`${t}: ${typeCounts[t]}`} />
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 16px" }}>
+                      {typeOrder.filter((t) => (typeCounts[t] || 0) > 0).map((t) => (
+                        <div key={t} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: typeColors[t] || typeColors.Other, flexShrink: 0 }} />
+                          <span style={{ fontSize: 10, color: "var(--text-2)" }}>{t}</span>
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" }}>{typeCounts[t]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="card fade-up-1" style={{ background: "var(--white)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border)", padding: "16px 20px", boxShadow: "var(--shadow-sm)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px" }}>Referral Partners</div>
+                      <button type="button" className="btn-ghost" style={{ fontSize: 10, padding: 0 }} onClick={() => setPage("referrals")}>View all →</button>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {referrersToShow.map((r) => {
+                        const name = r.name || "";
+                        const initials = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+                        const count = r.referrals != null ? r.referrals : 0;
+                        return (
+                          <div key={r.id || name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--blue-light)", color: "var(--blue)", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials}</div>
+                            <span style={{ flex: 1, fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                            <span className="tag tag-gray" style={{ fontSize: 9 }}>{count}</span>
+                          </div>
+                        );
+                      })}
+                      {referrersToShow.length === 0 && <div style={{ fontSize: 11, color: "var(--text-3)" }}>No referrers</div>}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Recent Communications */}
-                <div className="card">
-                  <div className="card-hdr">
-                    <div className="card-title">✉️ Communications <span className="tag tag-teal">{COMMS.filter(c=>c.unread).length} unread</span></div>
-                    <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setPage("communications")}>View all</button>
-                  </div>
-                  <div>
-                    {COMMS.slice(0,4).map(c => {
-                      const initials = c.from.split(" ").map(w=>w[0]).join("").slice(0,2);
-                      const ci = c.id % AVATAR_COLORS.length;
-                      return (
-                        <div key={c.id} className="comm-item"
-                          onClick={() => { setPage("communications"); setSelectedCommId(c.id); }}>
-                          <div className="comm-avatar" style={{background:`linear-gradient(135deg,${AVATAR_COLORS[ci]},${AVATAR_COLORS[(ci+1)%AVATAR_COLORS.length]})`}}>{initials}</div>
-                          <div className="comm-body">
-                            <div className="comm-name">
-                              <span className={c.unread?"unread-name":""}>{c.from}</span>
-                              <span className="tag" style={{fontSize:9,padding:"1px 6px",background:c.channel==="email"?"#eff6ff":c.channel==="whatsapp"?"#f0fdf4":"#fdf4ff",color:c.channel==="email"?"#1d4ed8":c.channel==="whatsapp"?"#16a34a":"#9333ea"}}>{CHANNEL_ICONS[c.channel]} {c.channel}</span>
-                              {c.urgent && <span style={{width:6,height:6,borderRadius:"50%",background:"var(--red)",display:"inline-block"}}/>}
+                <div className="dash-main-grid">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                    <div className="card fade-up-2">
+                      <div className="card-hdr">
+                        <div className="card-title">Matter Pipeline</div>
+                      </div>
+                      <div className="pipeline-stages">
+                        {STAGES.map((s) => {
+                          const count = MATTERS.filter((m) => (m.stage || "").trim() === s.key).length;
+                          return (
+                            <div key={s.key} className="pipeline-stage-row" onClick={() => setPage("matters")}>
+                              <span className="pipeline-stage-name">{s.key.replace(/\s+/g, " ")}</span>
+                              <span className="pipeline-stage-count">{count}</span>
+                              <div className="pipeline-stage-bar-wrap">
+                                <div className="pipeline-stage-bar" style={{ width: `${(count / maxStageCount) * 100}%`, background: s.color }} />
+                              </div>
                             </div>
-                            <div className="comm-preview">{c.preview}</div>
-                          </div>
-                          <div>
-                            <div className="comm-time">{c.time}</div>
-                            {c.unread && <div className="comm-unread-dot" style={{marginLeft:"auto",marginTop:4}}/>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                {/* AI CO-PILOT PANEL — spans full height */}
-                <div className="ai-panel">
-                  <div className="ai-panel-hdr">
-                    <div className="ai-panel-title">AI Co-pilot</div>
-                    <div className="ai-model-badge"><div className="ai-dot"/>Crew Intelligence · Active</div>
+                    <div className="card fade-up-3">
+                      <div className="card-hdr">
+                        <div className="card-title">Upcoming Settlements</div>
+                        <div className="card-sub">Next 30 days</div>
+                      </div>
+                      <div style={{ padding: "4px 20px 14px" }}>
+                        {upcomingSettlements.length === 0 ? (
+                          <div style={{ textAlign: "center", padding: 20, color: "var(--text-3)", fontSize: 12 }}>
+                            <div style={{ marginBottom: 10 }}>No settlements scheduled — scan emails to find dates</div>
+                            <button type="button" className="btn-gold" style={{ fontSize: 12 }} onClick={scanEmailsForEvents}>✦ Scan Emails</button>
+                          </div>
+                        ) : (
+                          upcomingSettlements.map((e) => (
+                            <div
+                              key={e.id}
+                              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border-2)", cursor: "pointer" }}
+                              onClick={() => { setSelectedMatter(e.matter_ref); setPage("matter_workspace"); setMatterTab("Overview"); }}
+                            >
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: e.daysUntil <= 7 ? 700 : 400, color: e.daysUntil <= 3 ? "var(--red)" : "var(--text-2)", minWidth: 72 }}>
+                                {e.date}
+                              </span>
+                              <span style={{ flex: 1, fontSize: 12, fontWeight: 500 }}>{e.client_name || e.title}</span>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" }}>{e.matter_ref}</span>
+                              <span className={`tag ${e.daysUntil <= 3 ? "tag-red" : e.daysUntil <= 7 ? "tag-amber" : "tag-green"}`} style={{ fontSize: 9 }}>{e.daysUntil}d</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="ai-messages">
-                    {aiMessages.map(m => (
-                      <div key={m.id} className={`ai-msg ${m.role}`}>
-                        <div className={`ai-msg-avatar ${m.role==="ai"?"ai-av":"user-av"}`}>
-                          {m.role==="ai" ? "✦" : "JC"}
-                        </div>
-                        <div className={`ai-bubble ${m.role==="ai"?"ai-b":"user-b"}`}>
-                          <div>{m.text}</div>
-                          {m.bullets && <ul className="ai-bullets">{m.bullets.map((b,i)=><li key={i}>{b}</li>)}</ul>}
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                    <div className="card fade-up-2">
+                      <div className="card-hdr">
+                        <div className="card-title">Today&apos;s Tasks</div>
+                        <span className="tag tag-red">{todayTasksOrdered.filter((t) => !t.done).length} due</span>
+                      </div>
+                      <div style={{ padding: "4px 20px 14px" }}>
+                        {todayTasksOrdered.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "var(--text-3)", padding: 12 }}>No tasks due today</div>
+                        ) : (
+                          todayTasksOrdered.map((t) => (
+                            <div key={t.id} className="task-item" style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-2)" }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: URGENCY_COLOR[t.urgency] || "#94a3b8", flexShrink: 0, marginTop: 6 }} />
+                              <div className={`task-check ${t.done ? "done" : ""}`} style={{ width: 18, height: 18, borderRadius: 4, border: "2px solid var(--border)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }} onClick={() => setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x)))}>{t.done && "✓"}</div>
+                              <div className="task-body" style={{ flex: 1, minWidth: 0 }}>
+                                <div className={`task-text ${t.done ? "done-text" : ""}`} style={{ textDecoration: t.done ? "line-through" : "none", fontSize: 12 }}>{t.task}</div>
+                                <div className="task-meta" style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)" }}>{(t.client_name || t.client)} · {(t.matter_ref || t.matter)}</div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        <div style={{ marginTop: 10 }}>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11 }} onClick={() => setPage("matters")}>View all tasks →</button>
                         </div>
                       </div>
-                    ))}
-                    {isTyping && (
-                      <div className="ai-msg">
-                        <div className="ai-msg-avatar ai-av">✦</div>
-                        <div className="ai-bubble ai-b"><div className="ai-typing"><div className="typing-dot"/><div className="typing-dot"/><div className="typing-dot"/></div></div>
-                      </div>
-                    )}
-                    <div ref={aiEndRef}/>
-                  </div>
-                  <div className="ai-input-area">
-                    <div className="ai-quick-prompts">
-                      {["Summarise today's tasks","Draft reply to Sarah Mitchell","What matters are most urgent?","Show revenue summary"].map(q => (
-                        <button key={q} className="ai-qp" onClick={()=>sendAI(q)}>💬 {q}</button>
-                      ))}
                     </div>
-                    <div className="ai-input-row">
-                      <input className="ai-input" placeholder="Ask me anything..."
-                        value={aiInput} onChange={e=>setAiInput(e.target.value)}
-                        onKeyDown={e=>e.key==="Enter"&&sendAI()} />
-                      <button className="ai-send" onClick={()=>sendAI()}>›</button>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Financial Overview */}
-                <div className="card col-span-2" style={{gridColumn:"span 2"}}>
-                  <div className="card-hdr">
-                    <div className="card-title">💰 Financial Overview</div>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div className="xero-badge">✓ Xero Synced</div>
-                      <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setPage("accounting")}>Full Accounting →</button>
+                    <div className="card fade-up-3">
+                      <div className="card-hdr">
+                        <div className="card-title">Recent Matters</div>
+                      </div>
+                      <div style={{ padding: "4px 20px 14px" }}>
+                        {recentMatters.map((m) => {
+                          const opened = m.opened || m.opened_date;
+                          const daysOpen = opened ? Math.floor((today - new Date(opened)) / (1000 * 60 * 60 * 24)) : null;
+                          return (
+                            <div key={m.matter_ref || m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border-2)", cursor: "pointer" }} onClick={() => { setSelectedMatter(m.matter_ref || m.id); setPage("matter_workspace"); setMatterTab("Overview"); }}>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)", width: 90 }}>{m.matter_ref || m.id}</span>
+                              <span style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{m.client_name || m.client}</span>
+                              <span className={`tag ${m.type === "Purchase" ? "tag-teal" : m.type === "Sale" ? "tag-amber" : "tag-gray"}`} style={{ fontSize: 9 }}>{m.type}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <div style={{ width: 6, height: 6, borderRadius: "50%", background: STAGES.find((s) => s.key === m.stage)?.color || "#94a3b8" }} />
+                                <span style={{ fontSize: 10, color: "var(--text-3)" }}>{m.stage}</span>
+                              </div>
+                              {daysOpen != null && <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)" }}>{daysOpen}d</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                  <div style={{padding:"8px 20px 16px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
-                    <div style={{paddingRight:20,borderRight:"1px solid var(--border-2)"}}>
-                      {[{l:"YTD Revenue",v:"$23,930",badge:"",bc:""},{l:"This Month",v:"$5,200",badge:"+23%",bc:"tag-green"},{l:"Active Pipeline",v:"$5,220,000",badge:"",bc:""},{l:"Avg Fee / Matter",v:"$1,640",badge:"",bc:""}].map(r=>(
-                        <div key={r.l} className="fin-row">
-                          <span className="fin-label">{r.l}</span>
-                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            {r.badge&&<span className={`tag ${r.bc}`}>{r.badge}</span>}
-                            <span className="fin-val">{r.v}</span>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0 }}>
+                    {/* Compact mini calendar - above unified panel */}
+                    <div className="card fade-up-2" style={{ flexShrink: 0 }}>
+                      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border-2)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1.5px" }}>This Week</div>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => setPage("calendar")}>Calendar →</button>
+                      </div>
+                      <div className="mini-cal-grid" style={{ padding: 8 }}>
+                        {weekDays.map((d) => {
+                          const ymd = d.toISOString().split("T")[0];
+                          const isToday = ymd === todayYMD;
+                          const dayEvents = (calendarEvents || []).filter((e) => (e.date || "").slice(0, 10) === ymd);
+                          const eventColors = dayEvents.slice(0, 3).map((ev) => EVENT_COLORS[ev.event_type]?.dot || "#94a3b8");
+                          const extra = dayEvents.length > 3 ? dayEvents.length - 3 : 0;
+                          return (
+                            <div key={ymd} className={`mini-cal-day ${isToday ? "today" : ""}`} style={{ padding: "4px 2px" }} onClick={() => { setCalendarDate(d); setPage("calendar"); }}>
+                              <div className="mini-cal-day-name" style={{ marginBottom: 2 }}>{d.toLocaleDateString("en-AU", { weekday: "short" }).slice(0, 3)}</div>
+                              <div className="mini-cal-day-num" style={{ fontSize: 12, width: 22, height: 22, marginBottom: 2 }}>{d.getDate()}</div>
+                              <div className="mini-cal-dots" style={{ minHeight: 6 }}>
+                                {eventColors.map((c, i) => <div key={i} className="mini-cal-dot" style={{ background: c, width: 4, height: 4 }} />)}
+                                {extra > 0 && <span style={{ fontSize: 7, color: "var(--text-3)" }}>+{extra}</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* AI Co-pilot — fixed layout: scroll area has explicit height so it always scrolls */}
+                    <div className="card fade-up-2" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                      <div
+                        style={{
+                          height: "580px",
+                          display: "flex",
+                          flexDirection: "column",
+                          background: "var(--ink)",
+                          borderRadius: "var(--radius-lg)",
+                          position: "relative",
+                          overflow: "hidden",
+                          ...(isMobile ? { minHeight: 400 } : {})
+                        }}
+                      >
+                        <div style={{ position: "absolute", top: 0, right: 0, width: 200, height: 200, background: "radial-gradient(circle,rgba(36,94,176,0.15) 0%,transparent 70%)", pointerEvents: "none" }} />
+                        {/* Header — fixed */}
+                        <div style={{ padding: isMobile ? "12px 14px" : "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0, position: "relative", zIndex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: 2 }}>✦ Crew Intelligence</div>
+                              <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 500, color: "white" }}>AI Co-pilot</div>
+                            </div>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 6px rgba(34,197,94,0.5)" }} />
+                              <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.35)" }}>ACTIVE</span>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {[
+                              { icon: "📅", label: "Scan Emails", action: () => scanEmailsForEvents() },
+                              { icon: "⚖️", label: "Matters", action: () => setPage("matters") },
+                              { icon: "✉️", label: "Emails", action: () => setPage("communications") },
+                              { icon: "📋", label: "Calendar", action: () => setPage("calendar") }
+                            ].map((btn) => (
+                              <button
+                                key={btn.label}
+                                type="button"
+                                style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "5px 10px", fontSize: 10, color: "rgba(255,255,255,0.7)", cursor: "pointer", fontFamily: "var(--font-body)" }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "white"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
+                                onClick={btn.action}
+                              >
+                                <span>{btn.icon}</span>{btn.label}
+                              </button>
+                            ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                    <div style={{paddingLeft:20}}>
-                      {[{l:"Outstanding Invoices",v:"$4,450",badge:"2 pending",bc:"tag-amber"},{l:"Received This Month",v:"$3,150",badge:"",bc:""},{l:"Referral Fees Paid",v:"$1,500",badge:"",bc:""},{l:"Referral Fees Owed",v:"$300",badge:"Due today",bc:"tag-red"}].map(r=>(
-                        <div key={r.l} className="fin-row">
-                          <span className="fin-label">{r.l}</span>
-                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            {r.badge&&<span className={`tag ${r.bc}`}>{r.badge}</span>}
-                            <span className="fin-val">{r.v}</span>
+                        {/* Morning brief / loading — fixed */}
+                        {dashMorningBrief && (
+                          <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, maxHeight: "120px", overflowY: "auto" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                              <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Morning Brief</span>
+                              <button type="button" style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer" }} onClick={() => generateMorningBrief()}>↺</button>
+                            </div>
+                            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{dashMorningBrief}</div>
+                          </div>
+                        )}
+                        {dashBriefLoading && (
+                          <div style={{ padding: "10px 18px", flexShrink: 0, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Generating morning brief…</span>
+                          </div>
+                        )}
+                        {/* Messages — FIXED HEIGHT scroll box (this is what makes scrolling work) */}
+                        <div
+                          className="dash-ai-messages"
+                          style={{
+                            height: "300px",
+                            overflowY: "scroll",
+                            overflowX: "hidden",
+                            padding: "12px 16px",
+                            scrollbarWidth: "thin",
+                            scrollbarColor: "rgba(255,255,255,0.45) rgba(0,0,0,0.2)"
+                          }}
+                        >
+                          {dashAIChat.length === 0 && !dashMorningBrief && !dashBriefLoading && (
+                            <div style={{ textAlign: "center", padding: "24px 12px", color: "rgba(255,255,255,0.25)", fontSize: 12, lineHeight: 1.6 }}>
+                              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>✦</div>
+                              Ask me anything about your practice, matters, tasks or upcoming events.
+                            </div>
+                          )}
+                          {dashAIChat.map((m, i) => (
+                            <div key={i} style={{ display: "flex", flexDirection: m.role === "user" ? "row-reverse" : "row", gap: 8, alignItems: "flex-start", marginBottom: 10 }}>
+                              <div style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, background: m.role === "user" ? "linear-gradient(135deg,var(--blue),#1a4a9e)" : "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.9)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                                {m.role === "user" ? "You" : "✦"}
+                              </div>
+                              <div style={{ maxWidth: "85%", padding: "8px 12px", borderRadius: m.role === "user" ? "10px 4px 10px 10px" : "4px 10px 10px 10px", fontSize: 11, lineHeight: 1.7, background: m.role === "user" ? "rgba(36,94,176,0.35)" : "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.9)", border: "1px solid rgba(255,255,255,0.1)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                                {m.text}
+                              </div>
+                            </div>
+                          ))}
+                          {dashAITyping && (
+                            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}>
+                              <div style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "rgba(255,255,255,0.5)", flexShrink: 0 }}>✦</div>
+                              <div style={{ padding: "8px 12px", borderRadius: "4px 10px 10px 10px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                                <div className="ai-typing"><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div>
+                              </div>
+                            </div>
+                          )}
+                          <div ref={aiEndRef} />
+                        </div>
+                        {/* Prompt bar — fixed at bottom */}
+                        <div style={{ flexShrink: 0, padding: "10px 16px", borderTop: "1px solid rgba(255,255,255,0.1)", background: "rgba(0,0,0,0.2)" }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                            {["What needs attention today?", "Any settlements this week?", "Overdue tasks?", "Summarise my pipeline"].map((q) => (
+                              <button
+                                key={q}
+                                type="button"
+                                style={{ fontSize: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "4px 10px", color: "rgba(255,255,255,0.75)", cursor: "pointer", fontFamily: "var(--font-body)" }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.14)"; e.currentTarget.style.color = "white"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
+                                onClick={() => sendDashAI(q)}
+                              >
+                                {q}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <input
+                              style={{ flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "9px 12px", fontSize: 11, color: "rgba(255,255,255,0.9)", outline: "none", fontFamily: "var(--font-body)" }}
+                              placeholder="Ask about your practice..."
+                              value={dashAIChatInput}
+                              onChange={(e) => setDashAIChatInput(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && sendDashAI()}
+                            />
+                            <button
+                              type="button"
+                              style={{ background: "linear-gradient(135deg,var(--blue),#1a4a9e)", color: "white", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+                              onClick={() => sendDashAI()}
+                            >
+                              Send
+                            </button>
                           </div>
                         </div>
-                      ))}
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                {/* AI Flagged */}
-                <div className="card">
-                  <div className="card-hdr">
-                    <div className="card-title">✦ AI Flagged</div>
-                    <span className="tag tag-gold">3 critical</span>
-                  </div>
-                  <div style={{padding:"6px 16px 14px"}}>
-                    {[
-                      {from:"Sarah Mitchell",subject:"Pool certificate?",action:"Needs reply today",urgency:"critical"},
-                      {from:"James Nguyen",subject:"Settlement confirmation",action:"PEXA workspace needed",urgency:"critical"},
-                      {from:"Mark Delaney",subject:"Referral fee follow-up",action:"Pay $300 outstanding",urgency:"high"},
-                    ].map((e,i)=>(
-                      <div key={i} style={{padding:"9px 0",borderBottom:"1px solid var(--border-2)",display:"flex",gap:10,alignItems:"flex-start"}}>
-                        <div style={{width:6,height:6,borderRadius:"50%",background:e.urgency==="critical"?"var(--red)":"var(--amber)",flexShrink:0,marginTop:5}}/>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:12,fontWeight:600,color:"var(--text)",marginBottom:2}}>{e.from} <span style={{fontWeight:400,color:"var(--text-3)"}}>— {e.subject}</span></div>
-                          <div style={{fontSize:10,color:"var(--text-3)",fontFamily:"var(--font-mono)"}}>{e.action}</div>
-                        </div>
-                        <button className="btn-ghost" style={{fontSize:10,padding:"3px 9px",flexShrink:0}} onClick={()=>setPage("communications")}>Reply</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ══════════════════════════════════════════════
               MATTERS LIST
@@ -2357,6 +4164,21 @@ Return only the email body text, no subject line.`;
                     <button className="btn-ghost" style={{fontSize:12,padding:"6px 14px"}}>↓ Export</button>
                     <button className="btn-gold" onClick={()=>setModal("intake")}>＋ New Matter</button>
                   </div>
+                  {isMobile ? (
+                    <div className="fade-up-2" style={{ display: "flex", flexDirection: "column", gap: 12, padding: "0 0 20px" }}>
+                      {(mFilter==="all"?MATTERS:mFilter==="active"?activeM:closedM).map(m=>(
+                        <div key={m.id} className="card" style={{ cursor: "pointer", padding: 14 }} onClick={()=>{ setSelectedMatter(m.id); setPage("matter_workspace"); setMatterTab("Overview"); }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{m.client_name || m.client}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8 }}>{m.address}</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                            <span className={`tag ${m.type==="Purchase"?"tag-teal":m.type==="Sale"?"tag-amber":m.type==="Lease"?"tag-purple":m.type==="Contract Review"?"tag-blue":"tag-gray"}`} style={{ fontSize: 10 }}>{m.type}</span>
+                            <span className={`tag ${m.state==="NSW"?"tag-blue":"tag-purple"}`} style={{ fontSize: 10 }}>{m.stage}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>Settlement: {fmt(m.settlement_date || m.settlement)} · {m.price}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
                   <div className="matter-table fade-up-2">
                     <div className="mt-thead">
                       {["Matter ID","Client / Address","Type","Stage","Value","Staff"].map(h=><div key={h} className="mt-th">{h}</div>)}
@@ -2382,6 +4204,7 @@ Return only the email body text, no subject line.`;
                       </div>
                     ))}
                   </div>
+                  )}
                 </>
               )}
             </div>
@@ -2497,7 +4320,7 @@ Return only the email body text, no subject line.`;
 
                 {/* OVERVIEW */}
                 {matterTab==="Overview" && (
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                  <div style={{display:"grid",gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",gap: isMobile ? 12 : 16}}>
                     <div className="card">
                       <div className="card-hdr"><div className="card-title">Key Details</div></div>
                       <div style={{padding:"8px 18px 14px"}}>
@@ -2845,7 +4668,7 @@ Return only the email body text, no subject line.`;
                         </div>
                       ))}
                     </div>
-                    {INVOICES.filter(inv=>inv.matter===selMatterObj.id).map(inv=>(
+                    {(invoices || []).filter(inv=>inv.matter===selMatterObj.id).map(inv=>(
                       <div key={inv.id} className="billing-row">
                         <div>
                           <div className="billing-id">{inv.id}</div>
@@ -2856,7 +4679,7 @@ Return only the email body text, no subject line.`;
                         <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}}>View Invoice</button>
                       </div>
                     ))}
-                    {INVOICES.filter(inv=>inv.matter===selMatterObj.id).length===0&&(
+                    {(invoices || []).filter(inv=>inv.matter===selMatterObj.id).length===0&&(
                       <div className="billing-row">
                         <div style={{fontSize:12,color:"var(--text-3)"}}>No invoices yet for this matter.</div>
                         <button className="btn-gold" style={{fontSize:12}}>＋ Create Invoice</button>
@@ -2925,8 +4748,8 @@ Return only the email body text, no subject line.`;
                 <div style={{flex:1}}>
                   <div className="stat-row" style={{gridTemplateColumns:"repeat(4,1fr)",marginBottom:0}}>
                     {[
-                      {label:"Total Referrers",value:REFERRERS.length,sub:"partners",cls:""},
-                      {label:"Total Referrals",value:REFERRERS.reduce((s,r)=>s+r.referrals,0),sub:"all time",cls:"stat-accent"},
+                      {label:"Total Referrers",value:(referrers||[]).length,sub:"partners",cls:""},
+                      {label:"Total Referrals",value:(referrers||[]).reduce((s,r)=>s+(r.referrals||0),0),sub:"all time",cls:"stat-accent"},
                       {label:"Fees Paid",value:"$1,500",sub:"YTD",cls:"stat-gold"},
                       {label:"Fees Owed",value:"$300",sub:"outstanding",cls:"stat-red"},
                     ].map(s=>(
@@ -2941,7 +4764,7 @@ Return only the email body text, no subject line.`;
               </div>
               <div className="ref-layout">
                 <div className="ref-list">
-                  {REFERRERS.map(r=>(
+                  {(referrers||[]).map(r=>(
                     <div key={r.id} className={`ref-list-item ${selectedRef===r.id?"active":""}`}
                       onClick={()=>setSelectedRef(r.id)}>
                       <div className="rli-name">{r.name}</div>
@@ -3085,6 +4908,172 @@ Return only the email body text, no subject line.`;
                   })()}
                 </div>
               )}
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════
+              CALENDAR
+          ══════════════════════════════════════════════ */}
+          {page === "calendar" && (
+            <div className="content" style={{height:"calc(100vh - 58px)",overflowY:"auto",padding:"20px 24px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:16,flexShrink:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <h1 style={{fontFamily:"var(--font-display)",fontSize:24,fontWeight:600,color:"var(--text)",margin:0}}>
+                    Calendar {calendarView==="month" ? calendarDate.toLocaleDateString("en-AU",{month:"long",year:"numeric"}) : "Week of "+calendarDate.toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short"})}
+                  </h1>
+                  <button type="button" className="btn-ghost" style={{width:36,height:36,padding:0,fontSize:16}} onClick={()=>{ const d=new Date(calendarDate); d.setMonth(d.getMonth()-1); if(calendarView==="week") d.setDate(d.getDate()-7); setCalendarDate(d); }}>‹</button>
+                  <button type="button" className="btn-ghost" style={{width:36,height:36,padding:0,fontSize:16}} onClick={()=>{ const d=new Date(calendarDate); d.setMonth(d.getMonth()+1); if(calendarView==="week") d.setDate(d.getDate()+7); setCalendarDate(d); }}>›</button>
+                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>setCalendarDate(new Date())}>Today</button>
+                  <div style={{display:"flex",gap:0}}>
+                    <button type="button" className={`filter-btn ${calendarView==="month"?"active":""}`} style={{fontSize:11,padding:"5px 12px",borderRadius:"6px 0 0 6px"}} onClick={()=>setCalendarView("month")}>Month</button>
+                    <button type="button" className={`filter-btn ${calendarView==="week"?"active":""}`} style={{fontSize:11,padding:"5px 12px",borderRadius:"0 6px 6px 0"}} onClick={()=>setCalendarView("week")}>Week</button>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <button type="button" className="btn-ghost" style={{fontSize:12,borderColor:"var(--blue)",color:"var(--blue)"}} onClick={scanEmailsForEvents} disabled={aiCalendarLoading}>{aiCalendarLoading?"Scanning…":"✦ Scan Emails for Events"}</button>
+                  <button type="button" className="btn-gold" style={{fontSize:12}} onClick={()=>{ setNewEvent({title:"",event_type:"meeting",matter_ref:"",client_name:"",date:"",time:"",notes:""}); setAddEventModal(true); }}>＋ Add Event</button>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12,fontSize:10}}>
+                {Object.entries(EVENT_COLORS).map(([key,val])=>(<span key={key} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:4,background:val.bg,color:val.text,borderLeft:"2px solid "+val.border}}>{key}</span>))}
+              </div>
+              {calendarLoading ? (
+                <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-3)",fontSize:14}}>Loading calendar…</div>
+              ) : calendarView==="month" ? (
+                (()=>{
+                  const generateMonthGrid = () => {
+                    const year = calendarDate.getFullYear();
+                    const month = calendarDate.getMonth();
+                    const firstDay = new Date(year, month, 1);
+                    const lastDay = new Date(year, month + 1, 0);
+                    let startDate = new Date(firstDay);
+                    const dayOfWeek = firstDay.getDay();
+                    const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                    startDate.setDate(startDate.getDate() - daysToSubtract);
+                    const days = [];
+                    for (let i = 0; i < 42; i++) {
+                      const date = new Date(startDate);
+                      date.setDate(startDate.getDate() + i);
+                      days.push(date);
+                    }
+                    return days;
+                  };
+                  const toYMD=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                  const todayYMD=toYMD(new Date());
+                  const cells = generateMonthGrid();
+                  const dayHeaders=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+                  return (
+                    <div className="calendar-grid">
+                      {dayHeaders.map(h=>(<div key={h} className="calendar-day-header">{h}</div>))}
+                      {cells.map((d,i)=>{
+                        const ymd=toYMD(d);
+                        const isOtherMonth=d.getMonth()!==calendarDate.getMonth();
+                        const isToday=ymd===todayYMD;
+                        const dayEvents=(calendarEvents||[]).filter((e)=>{
+                          const eventDate = new Date((e.date||"").slice(0,10)+"T00:00:00");
+                          return eventDate.getFullYear()===d.getFullYear() && eventDate.getMonth()===d.getMonth() && eventDate.getDate()===d.getDate();
+                        });
+                        return (
+                          <div key={i} className={`calendar-day ${isOtherMonth?"other-month":""} ${isToday?"today":""}`} onClick={(ev)=>{ if(ev.target.closest(".cal-event-pill")) return; setNewEvent(prev=>({...prev,date:ymd})); setAddEventModal(true); }}>
+                            <div className="cal-day-num">{d.getDate()}</div>
+                            {dayEvents.slice(0,3).map(ev=>{
+                              const c=EVENT_COLORS[ev.event_type]||EVENT_COLORS.auto;
+                              return (<div key={ev.id} className="cal-event-pill" style={{background:c.bg,color:c.text,borderColor:c.border}} onClick={e=>{ e.stopPropagation(); setSelectedEvent(ev); setEventModal(true); }} title={ev.title} onMouseEnter={(e)=>{ const rect=e.currentTarget.getBoundingClientRect(); setTooltip({event:ev,x:rect.left,y:rect.top}); }} onMouseLeave={()=>setTooltip(null)} onMouseMove={(e)=>{ setTooltip(prev=>prev?{...prev,x:e.clientX,y:e.clientY}:null); }}>{ev.title?.slice(0,20)}{(ev.title||"").length>20?"…":""}</div>);
+                            })}
+                            {dayEvents.length>3&&<div style={{fontSize:9,color:"var(--text-3)",marginTop:2}}>+{dayEvents.length-3} more</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              ) : (
+                (()=>{
+                  const toYMD=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                  const todayYMD=toYMD(new Date());
+                  const weekStart=new Date(calendarDate); const dayNum=weekStart.getDay(); const diff=(dayNum+6)%7; weekStart.setDate(weekStart.getDate()-diff);
+                  const weekDays=[]; for(let i=0;i<7;i++){ const d=new Date(weekStart); d.setDate(d.getDate()+i); weekDays.push(d); }
+                  const hours=[]; for(let h=7;h<=19;h++) hours.push(h);
+                  return (
+                    <div className="week-grid" style={{flex:1,minHeight:0}}>
+                      <div className="week-time-col" style={{borderBottom:"1px solid var(--border)"}}/>
+                      {weekDays.map(d=>(
+                        <div key={d.getTime()} className={`week-day-header ${toYMD(d)===todayYMD?"today":""}`}>
+                          {d.toLocaleDateString("en-AU",{weekday:"short"})} {d.getDate()}
+                        </div>
+                      ))}
+                      {hours.map(h=>(
+                        <div key={h} style={{display:"contents"}}>
+                          <div className="week-time-col" style={{padding:"4px 6px",fontSize:10,color:"var(--text-3)",borderBottom:"1px solid var(--border-2)"}}>{h}:00</div>
+                          {weekDays.map(d=>{
+                            const ymd=toYMD(d);
+                            const dayEvents=(calendarEvents||[]).filter((e)=>{
+                              const eventDate = new Date((e.date||"").slice(0,10)+"T00:00:00");
+                              return eventDate.getFullYear()===d.getFullYear() && eventDate.getMonth()===d.getMonth() && eventDate.getDate()===d.getDate();
+                            });
+                            const slotEvents=dayEvents.filter(e=>e.time&&e.time.includes(":")).map(e=>{ const [hh,mm]=e.time.split(":").map(Number); return { ...e, hour: hh + (mm||0)/60 }; }).filter(e=>e.hour>=7&&e.hour<20);
+                            const fullDayEvents=dayEvents.filter(e=>!e.time||!e.time.includes(":"));
+                            return (
+                              <div key={d.getTime()} className="week-day-col" style={{borderBottom:"1px solid var(--border-2)"}}>
+                                {fullDayEvents.map(ev=>{ const c=EVENT_COLORS[ev.event_type]||EVENT_COLORS.auto; return <div key={ev.id} className="cal-event-pill" style={{background:c.bg,color:c.text,borderColor:c.border,margin:2}} onClick={()=>{ setSelectedEvent(ev); setEventModal(true); }} onMouseEnter={(e)=>{ const rect=e.currentTarget.getBoundingClientRect(); setTooltip({event:ev,x:rect.left,y:rect.top}); }} onMouseLeave={()=>setTooltip(null)} onMouseMove={(e)=>{ setTooltip(prev=>prev?{...prev,x:e.clientX,y:e.clientY}:null); }}>{ev.title}</div>; })}
+                                {slotEvents.map(ev=>{ const c=EVENT_COLORS[ev.event_type]||EVENT_COLORS.auto; const top=((ev.hour-7)/12)*100; return <div key={ev.id} className="cal-event-pill" style={{position:"absolute",left:4,right:4,top:top+"%",background:c.bg,color:c.text,borderColor:c.border}} onClick={()=>{ setSelectedEvent(ev); setEventModal(true); }} onMouseEnter={(e)=>{ const rect=e.currentTarget.getBoundingClientRect(); setTooltip({event:ev,x:rect.left,y:rect.top}); }} onMouseLeave={()=>setTooltip(null)} onMouseMove={(e)=>{ setTooltip(prev=>prev?{...prev,x:e.clientX,y:e.clientY}:null); }}>{ev.title} {ev.time}</div>; })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          )}
+
+          {/* Event detail modal */}
+          {eventModal && selectedEvent && (
+            <div className="contact-modal-overlay" onClick={()=>{ setEventModal(false); setSelectedEvent(null); }}>
+              <div className="contact-modal" style={{width:"90%",maxWidth:420}} onClick={e=>e.stopPropagation()}>
+                <div className="contact-modal-hdr">
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:600,color:"var(--text)"}}>{selectedEvent.title}</div>
+                    <div style={{fontSize:12,color:"var(--text-3)",marginTop:4}}>
+                      {(EVENT_COLORS[selectedEvent.event_type]||EVENT_COLORS.auto) && <span style={{display:"inline-block",padding:"2px 8px",borderRadius:4,background:(EVENT_COLORS[selectedEvent.event_type]||EVENT_COLORS.auto).bg,color:(EVENT_COLORS[selectedEvent.event_type]||EVENT_COLORS.auto).text,marginRight:8}}>{selectedEvent.event_type}</span>}
+                      {selectedEvent.date} {selectedEvent.time||""}
+                    </div>
+                  </div>
+                  <button type="button" className="modal-close" onClick={()=>{ setEventModal(false); setSelectedEvent(null); }}>✕</button>
+                </div>
+                <div style={{padding:20}}>
+                  {selectedEvent.matter_ref&&<div style={{marginBottom:8}}><span style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase"}}>Matter</span><br/><button type="button" className="btn-ghost" style={{fontSize:12,padding:0}} onClick={()=>{ setSelectedMatter(selectedEvent.matter_ref); setPage("matter_workspace"); setMatterTab("Overview"); setEventModal(false); setSelectedEvent(null); }}>{selectedEvent.matter_ref}</button></div>}
+                  {selectedEvent.client_name&&<div style={{marginBottom:8}}><span style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase"}}>Client</span><br/><span style={{fontSize:13}}>{selectedEvent.client_name}</span></div>}
+                  {selectedEvent.notes&&<div style={{marginBottom:12}}><span style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase"}}>Notes</span><br/><span style={{fontSize:12,color:"var(--text-2)",whiteSpace:"pre-wrap"}}>{selectedEvent.notes}</span></div>}
+                  <div style={{display:"flex",gap:8,marginTop:16}}>
+                    <button type="button" className="btn-ghost" style={{fontSize:12}}>Edit</button>
+                    <button type="button" className="btn-ghost" style={{fontSize:12,color:"var(--red)"}} onClick={async ()=>{ if(!confirm("Delete this event?")) return; await supabase.from("calendar_events").delete().eq("id",selectedEvent.id); setCalendarEvents(prev=>prev.filter(e=>e.id!==selectedEvent.id)); setEventModal(false); setSelectedEvent(null); }}>Delete</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add/Edit event modal */}
+          {addEventModal && (
+            <div className="contact-modal-overlay" onClick={()=>setAddEventModal(false)}>
+              <div className="contact-modal" style={{width:"90%",maxWidth:440}} onClick={e=>e.stopPropagation()}>
+                <div className="contact-modal-hdr">
+                  <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:600}}>Add Event</div>
+                  <button type="button" className="modal-close" onClick={()=>setAddEventModal(false)}>✕</button>
+                </div>
+                <div style={{padding:20,display:"flex",flexDirection:"column",gap:12}}>
+                  <div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Title</label><input style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}} value={newEvent.title} onChange={e=>setNewEvent(prev=>({...prev,title:e.target.value}))} placeholder="Event title"/></div>
+                  <div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Type</label><select style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}} value={newEvent.event_type} onChange={e=>setNewEvent(prev=>({...prev,event_type:e.target.value}))}><option value="settlement">Settlement</option><option value="finance">Finance Due</option><option value="meeting">Meeting</option><option value="task">Task</option><option value="search">Search Expiry</option><option value="deadline">Contract Deadline</option><option value="contract">Contract</option><option value="auto">Other</option></select></div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Date</label><input type="date" style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}} value={newEvent.date} onChange={e=>setNewEvent(prev=>({...prev,date:e.target.value}))}/></div><div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Time</label><input type="time" style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}} value={newEvent.time} onChange={e=>setNewEvent(prev=>({...prev,time:e.target.value}))}/></div></div>
+                  <div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Matter</label><select style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}} value={newEvent.matter_ref} onChange={e=>{ const m=MATTERS.find(x=>x.id===e.target.value); setNewEvent(prev=>({...prev,matter_ref:e.target.value,client_name:m?.client||""}));}}><option value="">—</option>{MATTERS.map(m=>(<option key={m.id} value={m.id}>{m.id} · {m.client}</option>))}</select></div>
+                  <div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Client</label><input style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}} value={newEvent.client_name} onChange={e=>setNewEvent(prev=>({...prev,client_name:e.target.value}))} placeholder="Client name"/></div>
+                  <div><label style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",display:"block",marginBottom:4}}>Notes</label><textarea style={{width:"100%",padding:"8px 10px",border:"1px solid var(--border)",borderRadius:6,fontSize:13,minHeight:60}} value={newEvent.notes} onChange={e=>setNewEvent(prev=>({...prev,notes:e.target.value}))} placeholder="Notes"/></div>
+                  <button type="button" className="btn-gold" style={{fontSize:13}} onClick={async ()=>{ if(!newEvent.title||!newEvent.date) return; await supabase.from("calendar_events").insert({...newEvent}); const {data}=await supabase.from("calendar_events").select("*").order("date"); setCalendarEvents(data||[]); setAddEventModal(false); setNewEvent({title:"",event_type:"meeting",matter_ref:"",client_name:"",date:"",time:"",notes:""}); }}>Save</button>
+                </div>
               </div>
             </div>
           )}
@@ -3398,83 +5387,305 @@ Return only the email body text, no subject line.`;
               COMMUNICATIONS
           ══════════════════════════════════════════════ */}
           {page === "communications" && (
-            <div style={{display:"flex",flex:1,overflow:"hidden",height:"calc(100vh - 58px)"}}>
-              <div className="comms-left" style={{width:280,flexShrink:0}}>
-                <div style={{padding:"14px 16px",borderBottom:"1px solid var(--border)"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:8}}>Inbox</div>
-                  <div style={{display:"flex",gap:6}}>
-                    {["all","email","whatsapp"].map(f=>(
-                      <button key={f} className={`filter-btn ${commTab===f?"active":""}`} style={{fontSize:10,padding:"3px 8px"}} onClick={()=>setCommTab(f)}>{f}</button>
-                    ))}
+            <div className="comms-page" style={isMobile ? { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 } : undefined}>
+              {isMobile && mobileCommsView === "detail" && commsPageSelectedEmailId ? (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--white)" }}>
+                  <div style={{ flexShrink: 0, padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                    <button type="button" className="btn-ghost" style={{ padding: "6px 10px", fontSize: 12 }} onClick={() => setMobileCommsView("list")}>← Back</button>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(allEmails.find((e) => e.id === commsPageSelectedEmailId))?.subject || "Email"}</span>
+                  </div>
+                  <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+                    {(() => {
+                      const email = allEmails.find((e) => e.id === commsPageSelectedEmailId);
+                      if (!email) return <div style={{ padding: 20, color: "var(--text-3)" }}>Select an email</div>;
+                      const bodyCache = emailBodies[email.id];
+                      const loadingBody = loadingEmailBodyId === email.id;
+                      const fullBody = bodyCache?.content;
+                      const isHtml = (bodyCache?.contentType || "").toLowerCase() === "html";
+                      return (
+                        <>
+                          <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{email.subject}</div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 2 }}>From: {email.from?.name || email.from?.emailAddress?.name} &lt;{email.from?.address || email.from?.emailAddress?.address}&gt;</div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)" }}>To: {email.toRecipients?.[0]?.address || email.toRecipients?.[0]?.emailAddress?.address || "—"}</div>
+                            <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 4 }}>{new Date(email.receivedDateTime).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" })} {new Date(email.receivedDateTime).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}</div>
+                          </div>
+                          {loadingBody ? <div style={{ fontSize: 13, color: "var(--text-3)", padding: 12 }}>Loading email…</div> : fullBody != null && fullBody !== "" ? (isHtml ? <div dangerouslySetInnerHTML={{ __html: cleanEmailBody(fullBody) }} style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-2)" }} /> : <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{fullBody}</div>) : <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{email.bodyPreview || ""}</div>}
+                          <div style={{ display: "flex", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border-2)" }}>
+                            <button type="button" className="btn-ghost" style={{ fontSize: 11 }} onClick={() => { const sender = email.from?.address || email.from?.emailAddress?.address; const myEmail = (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL) ? process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL : ""; const to = sender && myEmail && sender.toLowerCase() === myEmail.toLowerCase() ? (email.toRecipients?.[0]?.address || email.toRecipients?.[0]?.emailAddress?.address) : sender; setComposeTo(to || ""); setComposeSubject((email.subject || "").startsWith("Re:") ? email.subject : "Re: " + (email.subject || "")); setComposeBody(""); setComposeModal(true); }}>↩ Reply</button>
+                            <button type="button" className="btn-ghost" style={{ fontSize: 11 }} onClick={() => { setComposeTo(""); setComposeSubject((email.subject || "").startsWith("Fwd:") ? email.subject : "Fwd: " + (email.subject || "")); setComposeBody("\n\n-------- Forwarded Message --------\nFrom: " + (email.from?.name || email.from?.emailAddress?.name) + "\nDate: " + new Date(email.receivedDateTime).toLocaleDateString("en-AU") + "\nSubject: " + (email.subject || "") + "\n\n" + (email.bodyPreview || "")); setComposeModal(true); }}>→ Forward</button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
-                {COMMS.filter(c=>commTab==="all"||c.channel===commTab).map(c=>{
-                  const initials = c.from.split(" ").map(w=>w[0]).join("").slice(0,2);
-                  return (
-                    <div key={c.id} className="comm-item"
-                      style={{background:selectedCommId===c.id?"var(--gold-light)":"",borderLeft:selectedCommId===c.id?"3px solid var(--gold)":""}}
-                      onClick={()=>setSelectedCommId(c.id)}>
-                      <div className="comm-avatar" style={{background:`linear-gradient(135deg,${AVATAR_COLORS[c.id%AVATAR_COLORS.length]},${AVATAR_COLORS[(c.id+1)%AVATAR_COLORS.length]})`}}>{initials}</div>
-                      <div className="comm-body">
-                        <div className="comm-name"><span className={c.unread?"unread-name":""}>{c.from}</span></div>
-                        <div className="comm-preview">{c.preview}</div>
+              ) : (
+              <>
+              <div className="comms-page-left" style={{ width: isMobile ? "100%" : commsPanelWidths[0], flexShrink: 0 }}>
+                <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", flex: 1 }}>Communications</span>
+                    {(allEmails.filter((e) => !e.isRead).length) > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 600, background: "var(--blue)", color: "white", padding: "2px 6px", borderRadius: 10 }}>{allEmails.filter((e) => !e.isRead).length}</span>
+                    )}
+                    <button type="button" style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", cursor: "pointer", fontSize: 11 }} onClick={() => setCommsSortAsc(!commsSortAsc)} title={commsSortAsc ? "Newest first" : "Oldest first"}>{commsSortAsc ? "↑" : "↓"}</button>
+                    <button type="button" style={{ width: 28, height: 28, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", cursor: "pointer", fontSize: 14 }} onClick={fetchAllEmails}>↺</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    {(() => {
+                      const MAILBOX = process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL || "gitu@conveyancingcrew.com.au";
+                      const inboxCount = allEmails.filter((e) => (e.from?.emailAddress?.address || e.from?.address || "").toLowerCase() !== MAILBOX.toLowerCase()).length;
+                      const sentCount = allEmails.filter((e) => (e.from?.emailAddress?.address || e.from?.address || "").toLowerCase() === MAILBOX.toLowerCase()).length;
+                      return [
+                        { t: "all", label: "All", count: allEmails.length },
+                        { t: "inbox", label: "Inbox", count: inboxCount },
+                        { t: "sent", label: "Sent", count: sentCount }
+                      ].map(({ t, label, count }) => (
+                        <button key={t} type="button" className={`filter-btn ${commsTab === t ? "active" : ""}`} style={{ fontSize: 10, padding: "3px 10px" }} onClick={() => setCommsTab(t)}>{label} ({count})</button>
+                      ));
+                    })()}
+                  </div>
+                  <input style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", fontSize: 11, outline: "none", fontFamily: "var(--font-body)" }} placeholder="Search emails…" value={commsSearch} onChange={(e) => setCommsSearch(e.target.value)} />
+                </div>
+                <div style={{ flex: 1, overflowY: "scroll", minHeight: 0 }}>
+                  {allEmailsLoading ? (
+                    <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>Loading emails…</div>
+                  ) : (() => {
+                    const MAILBOX = process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL || "gitu@conveyancingcrew.com.au";
+                    const filteredCommsEmails = allEmails
+                      .filter((e) => {
+                        const fromAddress = (e.from?.emailAddress?.address || e.from?.address || "").toLowerCase();
+                        const isFromMe = fromAddress === MAILBOX.toLowerCase();
+                        if (commsTab === "inbox") return !isFromMe;
+                        if (commsTab === "sent") return isFromMe;
+                        return true;
+                      })
+                      .filter((e) => {
+                        if (!commsSearch) return true;
+                        const searchLower = commsSearch.toLowerCase();
+                        return (
+                          e.subject?.toLowerCase().includes(searchLower) ||
+                          (e.from?.emailAddress?.name || e.from?.name)?.toLowerCase().includes(searchLower) ||
+                          (e.from?.emailAddress?.address || e.from?.address)?.toLowerCase().includes(searchLower) ||
+                          e.bodyPreview?.toLowerCase().includes(searchLower)
+                        );
+                      })
+                      .sort((a, b) => {
+                        const diff = new Date(a.receivedDateTime) - new Date(b.receivedDateTime);
+                        return commsSortAsc ? diff : -diff;
+                      });
+                    if (!filteredCommsEmails.length) return <div style={{ padding: 20, textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>No emails found</div>;
+                    const MAILBOX_EMAIL = process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL || "gitu@conveyancingcrew.com.au";
+                    return Object.entries(groupEmailsByDate(filteredCommsEmails)).map(([dateLabel, emails]) => (
+                      <div key={dateLabel}>
+                        <div style={{
+                          padding: "6px 14px",
+                          fontSize: 9,
+                          fontFamily: "var(--font-mono)",
+                          color: "var(--text-3)",
+                          textTransform: "uppercase",
+                          letterSpacing: "1.5px",
+                          background: "var(--surface)",
+                          borderBottom: "1px solid var(--border-2)",
+                          borderTop: "1px solid var(--border-2)",
+                          position: "sticky",
+                          top: 0,
+                          zIndex: 1
+                        }}>
+                          {dateLabel}
+                        </div>
+                        {emails.map((e) => {
+                          const initials = (e.from?.emailAddress?.name || e.from?.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+                          const ci = (initials.charCodeAt(0) || 0) % (AVATAR_COLORS.length || 1);
+                          const isSelected = commsPageSelectedEmailId === e.id;
+                          const isFromMe = (e.from?.emailAddress?.address || e.from?.address || "").toLowerCase() === MAILBOX_EMAIL.toLowerCase();
+                          return (
+                            <div
+                              key={e.id}
+                              style={{
+                                padding: "11px 14px",
+                                borderBottom: "1px solid var(--border-2)",
+                                cursor: "pointer",
+                                background: isSelected ? "var(--ink)" : "var(--white)",
+                                borderLeft: !e.isRead && !isSelected ? "3px solid var(--blue)" : "3px solid transparent",
+                                transition: "all 0.12s",
+                                display: "flex",
+                                gap: 10,
+                                alignItems: "flex-start"
+                              }}
+                              onMouseEnter={(ev) => { if (!isSelected) ev.currentTarget.style.background = "var(--surface)"; }}
+                              onMouseLeave={(ev) => { if (!isSelected) ev.currentTarget.style.background = "var(--white)"; }}
+                              onClick={() => { setCommsPageSelectedEmailId(e.id); if (isMobile) setMobileCommsView("detail"); }}
+                            >
+                              <div style={{
+                                width: 34, height: 34, borderRadius: "50%",
+                                background: isFromMe ? "linear-gradient(135deg,var(--blue),#1a4a9e)" : `linear-gradient(135deg,${AVATAR_COLORS[ci]},${AVATAR_COLORS[(ci + 1) % AVATAR_COLORS.length]})`,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 11, fontWeight: 700, color: "white", flexShrink: 0
+                              }}>
+                                {isFromMe ? "G" : initials}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: isSelected ? "rgba(255,255,255,0.9)" : "var(--text)",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  marginBottom: 2,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4
+                                }}>
+                                  <span style={{
+                                    fontSize: 9,
+                                    fontFamily: "var(--font-mono)",
+                                    color: isSelected ? "rgba(255,255,255,0.4)" : "var(--text-3)",
+                                    flexShrink: 0
+                                  }}>
+                                    {isFromMe ? "TO" : "FROM"}
+                                  </span>
+                                  <span style={{
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap"
+                                  }}>
+                                    {isFromMe
+                                      ? (e.toRecipients?.[0]?.name || e.toRecipients?.[0]?.emailAddress?.name || e.toRecipients?.[0]?.address || e.toRecipients?.[0]?.emailAddress?.address || "Unknown")
+                                      : (e.from?.name || e.from?.emailAddress?.name || e.from?.address || e.from?.emailAddress?.address || "Unknown")}
+                                  </span>
+                                  <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: isSelected ? "rgba(255,255,255,0.4)" : "var(--text-3)", flexShrink: 0, marginLeft: "auto" }}>
+                                    {new Date(e.receivedDateTime).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                </div>
+                                <div style={{
+                                  fontSize: 11,
+                                  fontWeight: !e.isRead && !isSelected ? 600 : 400,
+                                  color: isSelected ? "rgba(255,255,255,0.85)" : "var(--text)",
+                                  overflow: "hidden", textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap", marginBottom: 2
+                                }}>
+                                  {e.subject || "(No subject)"}
+                                </div>
+                                <div style={{
+                                  fontSize: 10,
+                                  color: isSelected ? "rgba(255,255,255,0.5)" : "var(--text-3)",
+                                  overflow: "hidden", textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap"
+                                }}>
+                                  {e.bodyPreview?.slice(0, 60)}
+                                </div>
+                              </div>
+                              {!e.isRead && !isSelected && (
+                                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--blue)", flexShrink: 0, marginTop: 4 }} />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                      <div>{c.unread&&<div className="comm-unread-dot"/>}</div>
+                    ));
+                  })()}
+                </div>
+              </div>
+              {!isMobile && (
+              <>
+              <div className="comms-page-divider" onMouseDown={(e) => handleCommsPanelResize(e, 0)} />
+              <div className="comms-page-mid">
+                {(() => {
+                  const email = allEmails.find((e) => e.id === commsPageSelectedEmailId);
+                  if (!email) return (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "var(--text-3)" }}>
+                      <div style={{ fontSize: 48, opacity: 0.2 }}>✉️</div>
+                      <div style={{ fontSize: 12 }}>Select an email</div>
                     </div>
                   );
-                })}
+                  const bodyCache = emailBodies[email.id];
+                  const loadingBody = loadingEmailBodyId === email.id;
+                  const fullBody = bodyCache?.content;
+                  const isHtml = (bodyCache?.contentType || "").toLowerCase() === "html";
+                  return (
+                    <>
+                      <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 20, background: "var(--white)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "0 0 14px", borderBottom: "1px solid var(--border-2)", marginBottom: 16 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{email.subject}</div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 2 }}>From: {email.from?.name || email.from?.emailAddress?.name} &lt;{email.from?.address || email.from?.emailAddress?.address}&gt;</div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)" }}>To: {email.toRecipients?.[0]?.address || email.toRecipients?.[0]?.emailAddress?.address || "—"}</div>
+                          </div>
+                          <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-3)", textAlign: "right", flexShrink: 0, marginLeft: 16 }}>
+                            {new Date(email.receivedDateTime).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}<br />{new Date(email.receivedDateTime).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        </div>
+                        {loadingBody ? <div style={{ fontSize: 13, color: "var(--text-3)", padding: 12 }}>Loading email…</div> : fullBody != null && fullBody !== "" ? (isHtml ? <div dangerouslySetInnerHTML={{ __html: cleanEmailBody(fullBody) }} style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-2)" }} /> : <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{fullBody}</div>) : <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{email.bodyPreview || ""}</div>}
+                        <div style={{ display: "flex", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border-2)" }}>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11 }} onClick={() => { const sender = email.from?.address || email.from?.emailAddress?.address; const myEmail = (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL) ? process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL : ""; const to = sender && myEmail && sender.toLowerCase() === myEmail.toLowerCase() ? (email.toRecipients?.[0]?.address || email.toRecipients?.[0]?.emailAddress?.address) : sender; setComposeTo(to || ""); setComposeSubject((email.subject || "").startsWith("Re:") ? email.subject : "Re: " + (email.subject || "")); setComposeBody(""); setComposeModal(true); }}>↩ Reply</button>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11 }} onClick={() => { setComposeTo(""); setComposeSubject((email.subject || "").startsWith("Fwd:") ? email.subject : "Fwd: " + (email.subject || "")); setComposeBody("\n\n-------- Forwarded Message --------\nFrom: " + (email.from?.name || email.from?.emailAddress?.name) + "\nDate: " + new Date(email.receivedDateTime).toLocaleDateString("en-AU") + "\nSubject: " + (email.subject || "") + "\n\n" + (email.bodyPreview || "")); setComposeModal(true); }}>→ Forward</button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              <div className="comms-main" style={{flex:1,borderRight:"1px solid var(--border)"}}>
-                {selComm && (
-                  <>
-                    <div style={{padding:"14px 20px",borderBottom:"1px solid var(--border)",background:"var(--white)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-                      <div>
-                        <div style={{fontSize:14,fontWeight:700,color:"var(--text)"}}>{selComm.from}</div>
-                        <div style={{fontSize:10,fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{selComm.matter} · {selComm.channel} · {selComm.time}</div>
-                      </div>
-                      <button className="btn-ghost" style={{fontSize:12}} onClick={()=>{setSelectedMatter(selComm.matter);setPage("matter_workspace");}}>View Matter →</button>
-                    </div>
-                    <div className="comms-thread">
-                      <div className="thread-msg incoming">
-                        <div className="thread-meta">{selComm.from} · {selComm.time}</div>
-                        <div className="thread-bubble incoming">{selComm.preview}</div>
-                      </div>
-                      <div className="thread-msg outgoing">
-                        <div className="thread-meta" style={{textAlign:"right"}}>You (drafted)</div>
-                        <div className="thread-bubble outgoing">Thank you for your message. We are following up with the vendor's agent and will update you shortly.</div>
+              <div className="comms-page-divider" onMouseDown={(e) => handleCommsPanelResize(e, 1)} />
+              <div style={{ width: commsPanelWidths[2], flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--ink)", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "2px" }}>✦ AI Insights</div>
+                  <button type="button" style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer" }} onClick={() => generateCommsPageSummary(allEmails)}>↺ Refresh</button>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 16px" }}>
+                  {commsPageAISummaryLoading ? (
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", lineHeight: 1.8 }}>
+                      <div style={{ marginBottom: 8 }}>Analysing your inbox…</div>
+                      <div className="ai-typing">
+                        <div className="typing-dot" />
+                        <div className="typing-dot" />
+                        <div className="typing-dot" />
                       </div>
                     </div>
-                    <div className="comms-compose">
-                      <textarea className="compose-textarea" placeholder="Type a reply..."/>
-                      <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center"}}>
-                        <button className="btn-ghost" style={{fontSize:11}} onClick={()=>sendAI("draft email")}>✦ AI Draft</button>
-                        <div style={{flex:1}}/>
-                        <button className="btn-primary">Send</button>
-                      </div>
+                  ) : commsPageAISummary ? (
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.85, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{commsPageAISummary}</div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "30px 10px" }}>
+                      <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.3 }}>✦</div>
+                      Load emails to generate AI insights
                     </div>
-                  </>
-                )}
-              </div>
-              <div style={{width:280,flexShrink:0,padding:16,background:"var(--surface)",overflowY:"auto",borderLeft:"1px solid var(--border)"}}>
-                <div style={{fontSize:12,fontWeight:700,color:"var(--text)",marginBottom:12}}>✦ AI Analysis</div>
-                {selComm && (
-                  <>
-                    <div className="ai-summary-card">
-                      <div className="ai-sum-label">Key Points</div>
-                      {["Client seeking update on their matter","Tone is concerned — respond promptly","Check status before replying"].map((s,i)=>(
-                        <div key={i} className="ai-sum-item"><div className="ai-sum-dot"/><span>{s}</span></div>
+                  )}
+                </div>
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, padding: "10px 14px" }}>
+                  <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 8 }}>Ask AI</div>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                    {["What needs a reply?", "Any urgent emails?", "Draft a response", "Match to matters"].map((q) => (
+                      <button key={q} type="button" style={{ fontSize: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "3px 8px", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontFamily: "var(--font-body)" }} onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(255,255,255,0.8)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }} onClick={() => sendCommsPageAI(q)}>{q}</button>
+                    ))}
+                  </div>
+                  {commsPageAIChat.length > 0 && (
+                    <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                      {commsPageAIChat.map((m, i) => (
+                        <div key={i} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", background: m.role === "user" ? "rgba(36,94,176,0.3)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.08)", padding: "7px 11px", borderRadius: 8, fontSize: 11, lineHeight: 1.65, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>
                       ))}
+                      {commsPageAITyping && (
+                        <div style={{ alignSelf: "flex-start", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", padding: "7px 11px", borderRadius: 8 }}>
+                          <div className="ai-typing">
+                            <div className="typing-dot" />
+                            <div className="typing-dot" />
+                            <div className="typing-dot" />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="ai-summary-card">
-                      <div className="ai-sum-label">Suggested Actions</div>
-                      {["Reply within 1 hour","Follow up with agent","Update client status"].map((s,i)=>(
-                        <div key={i} className="ai-sum-item"><div className="ai-sum-dot" style={{background:"var(--amber)"}}/><span>{s}</span></div>
-                      ))}
-                    </div>
-                    <button className="btn-gold" style={{width:"100%",marginTop:8}} onClick={()=>sendAI("draft email")}>✦ Draft AI Reply</button>
-                  </>
-                )}
+                  )}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 7, padding: "7px 10px", fontSize: 11, color: "rgba(255,255,255,0.8)", outline: "none", fontFamily: "var(--font-body)" }} placeholder="Ask about your emails…" value={commsPageAIChatInput} onChange={(e) => setCommsPageAIChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendCommsPageAI()} />
+                    <button type="button" style={{ background: "linear-gradient(135deg,var(--blue),#1a4a9e)", color: "white", border: "none", borderRadius: 7, padding: "7px 14px", fontSize: 13, cursor: "pointer", flexShrink: 0 }} onClick={() => sendCommsPageAI()}>›</button>
+                  </div>
+                </div>
               </div>
+              </>
+              )}
+              </>
+              )}
             </div>
           )}
 
@@ -3511,7 +5722,7 @@ Return only the email body text, no subject line.`;
                     <div key={h} style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px"}}>{h}</div>
                   ))}
                 </div>
-                {INVOICES.map(inv=>(
+                {(invoices || []).map(inv=>(
                   <div key={inv.id} className="inv-row" style={{background:"var(--white)"}}>
                     <div className="inv-id">{inv.id}</div>
                     <div>
@@ -3534,114 +5745,321 @@ Return only the email body text, no subject line.`;
           {/* ══════════════════════════════════════════════
               INSIGHTS
           ══════════════════════════════════════════════ */}
-          {page === "insights" && (
-            <div className="content">
-              <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:16,height:"calc(100vh - 110px)"}}>
-                <div style={{overflowY:"auto"}}>
-                  <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-                    {["Which matters are most profitable?","Which clients generate most revenue?","What tasks are overdue?","Show settlement forecast"].map(q=>(
-                      <button key={q} className="filter-btn" onClick={()=>sendAI(q)}>✦ {q}</button>
+          {page === "insights" && (() => {
+            const totalMatters = MATTERS.length;
+            const settledMatters = MATTERS.filter((m) => m.stage === "Settled");
+            const activeMatters = MATTERS.filter((m) => m.status === "active");
+            const settlementRate = totalMatters ? Math.round((settledMatters.length / totalMatters) * 100) : 0;
+            const daysToSettleArr = MATTERS.filter((m) => (m.settlement_date || m.settlement) && (m.opened_date || m.opened)).map((m) => {
+              const open = new Date(m.opened_date || m.opened || 0).getTime();
+              const settle = new Date(m.settlement_date || m.settlement || 0).getTime();
+              return Math.round((settle - open) / (1000 * 60 * 60 * 24));
+            }).filter((d) => d > 0);
+            const avgDaysToSettle = daysToSettleArr.length ? Math.round(daysToSettleArr.reduce((a, b) => a + b, 0) / daysToSettleArr.length) : "—";
+            const pipelineValue = activeMatters.reduce((sum, m) => sum + (parseFloat(String(m.price || 0).replace(/[^0-9.]/g, "")) || 0), 0);
+            const pipelineStr = pipelineValue >= 1e6 ? "$" + (pipelineValue / 1e6).toFixed(1) + "M" : pipelineValue >= 1e3 ? "$" + (pipelineValue / 1e3).toFixed(0) + "K" : "$" + pipelineValue;
+
+            const INSIGHTS_STAGES = ["Intake", "Contract Review", "Contract Sent", "Searches Ordered", "PEXA Ready", "Settled"];
+            const stageCounts = INSIGHTS_STAGES.map((s) => ({ key: s, count: MATTERS.filter((m) => (m.stage || "").trim() === s).length }));
+            const stageTotal = stageCounts.reduce((a, b) => a + b.count, 0) || 1;
+
+            const monthCounts = (() => {
+              const now = new Date();
+              const out = [];
+              for (let i = 8; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const y = d.getFullYear(), m = d.getMonth();
+                const count = MATTERS.filter((mat) => {
+                  const o = mat.opened_date || mat.opened;
+                  if (!o) return false;
+                  const od = new Date(o);
+                  return od.getFullYear() === y && od.getMonth() === m;
+                }).length;
+                out.push({ label: d.toLocaleDateString("en-AU", { month: "short", year: "2-digit" }), count });
+              }
+              return out;
+            })();
+            const monthMax = Math.max(1, ...monthCounts.map((x) => x.count));
+
+            const typeOrder = ["Purchase", "Sale", "Lease", "Contract Review", "General Enquiry"];
+            const typeCounts = typeOrder.map((t) => ({ name: t, count: MATTERS.filter((m) => (m.type || "").trim() === t).length }));
+            const otherCount = MATTERS.filter((m) => !typeOrder.includes((m.type || "").trim())).length;
+            if (otherCount > 0) typeCounts.push({ name: "Other", count: otherCount });
+            const typeTotal = typeCounts.reduce((a, b) => a + b.count, 0) || 1;
+
+            const nswCount = MATTERS.filter((m) => m.state === "NSW").length;
+            const vicCount = MATTERS.filter((m) => m.state === "VIC").length;
+            const stateTotal = nswCount + vicCount || 1;
+
+            const sourceOrder = ["Website", "Referral", "Email", "Walk-in", "Other"];
+            const sourceCountsMap = sourceOrder.map((s) => ({ name: s, count: MATTERS.filter((m) => (m.source || "Other") === s).length }));
+            const sourceTotal = sourceCountsMap.reduce((a, b) => a + b.count, 0) || 1;
+
+            return (
+              <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+                  {/* Section 1 - Firm Performance Stats */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+                    {[
+                      { label: "Total Matters YTD", value: totalMatters, sub: "matters" },
+                      { label: "Settlement Rate", value: settlementRate + "%", sub: "closed" },
+                      { label: "Avg Days to Settle", value: avgDaysToSettle, sub: "days" },
+                      { label: "Pipeline Value", value: pipelineStr, sub: "active" },
+                      { label: "Active Matters", value: activeMatters.length, sub: "in progress" }
+                    ].map((s) => (
+                      <div key={s.label} className="card" style={{ padding: 16 }}>
+                        <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginBottom: 4 }}>{s.label}</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 600, color: "var(--text)" }}>{s.value}</div>
+                        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{s.sub}</div>
+                      </div>
                     ))}
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+
+                  {/* Section 2 - Two column */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
                     <div className="card">
-                      <div className="card-hdr"><div className="card-title">📊 Monthly Revenue — FY 2024–25</div></div>
-                      <div style={{padding:"8px 16px 14px"}}>
-                        <div className="chart-wrap">
-                          {firmYTD_data.map((d,i)=>(
-                            <div key={d.m} className="chart-bar"
-                              style={{height:`${(d.v/5200)*100}%`,background:i===firmYTD_data.length-1?"linear-gradient(to top,#245eb0,rgba(36,94,176,0.3))":"linear-gradient(to top,var(--teal),rgba(26,74,158,0.2))"}}>
-                              <div className="chart-bar-label">{d.m}</div>
+                      <div className="card-hdr"><div className="card-title">Matter Pipeline Analysis</div></div>
+                      <div style={{ padding: "12px 16px 16px" }}>
+                        {stageCounts.map(({ key, count }) => (
+                          <div key={key} style={{ marginBottom: 10 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, color: "var(--text-2)" }}>{key}</span>
+                              <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-3)" }}>{count} ({Math.round((count / stageTotal) * 100)}%)</span>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="card">
-                      <div className="card-hdr"><div className="card-title">🔗 Revenue by Referrer</div></div>
-                      <div style={{padding:"8px 16px 14px"}}>
-                        {[{name:"Mark Delaney",val:"$9,870",pct:42},{name:"Jellis Craig Box Hill",val:"$6,200",pct:26},{name:"Raine & Horne Redfern",val:"$4,100",pct:17},{name:"Direct / Website",val:"$3,760",pct:15}].map(r=>(
-                          <div key={r.name} style={{marginBottom:10}}>
-                            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}}>
-                              <span style={{color:"var(--text-2)",fontWeight:500}}>{r.name}</span>
-                              <span style={{color:"var(--text)",fontWeight:700,fontFamily:"var(--font-mono)"}}>{r.val}</span>
-                            </div>
-                            <div style={{height:6,background:"var(--surface)",borderRadius:10,overflow:"hidden"}}>
-                              <div style={{height:"100%",width:`${r.pct}%`,background:"linear-gradient(90deg,var(--teal),rgba(15,118,110,0.4))",borderRadius:10}}/>
+                            <div style={{ height: 8, background: "var(--surface)", borderRadius: 8, overflow: "hidden" }}>
+                              <div style={{ width: `${(count / stageTotal) * 100}%`, height: "100%", background: STAGE_COLORS[key] || "#94a3b8", borderRadius: 8 }} />
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
-                    {[
-                      {title:"Matter Type Mix",items:[{l:"Purchase",v:"67%",c:"var(--teal)"},{l:"Sale",v:"22%",c:"var(--amber)"},{l:"Other",v:"11%",c:"var(--text-3)"}]},
-                      {title:"State Split",items:[{l:"NSW",v:"83%",c:"var(--teal)"},{l:"VIC",v:"17%",c:"var(--gold)"}]},
-                      {title:"Client Source",items:[{l:"Website",v:"50%",c:"var(--teal)"},{l:"Referral",v:"33%",c:"var(--blue)"},{l:"Email",v:"17%",c:"var(--amber)"}]},
-                    ].map(s=>(
-                      <div key={s.title} className="card">
-                        <div className="card-hdr"><div className="card-title">{s.title}</div></div>
-                        <div style={{padding:"8px 16px 14px"}}>
-                          {s.items.map(item=>(
-                            <div key={item.l} style={{marginBottom:8}}>
-                              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                                <span style={{color:"var(--text-2)"}}>{item.l}</span>
-                                <span style={{fontWeight:700,fontFamily:"var(--font-mono)",color:item.c}}>{item.v}</span>
-                              </div>
-                              <div style={{height:5,background:"var(--surface)",borderRadius:10,overflow:"hidden"}}>
-                                <div style={{height:"100%",width:item.v,background:item.c,borderRadius:10,opacity:0.7}}/>
-                              </div>
+                    <div className="card">
+                      <div className="card-hdr"><div className="card-title">Monthly Activity</div></div>
+                      <div style={{ padding: "8px 16px 14px" }}>
+                        <div className="chart-wrap">
+                          {monthCounts.map((d, i) => (
+                            <div key={d.label} className="chart-bar" style={{ height: `${(d.count / monthMax) * 100}%`, background: i === monthCounts.length - 1 ? "linear-gradient(to top,#245eb0,rgba(36,94,176,0.3))" : "linear-gradient(to top,var(--teal),rgba(26,74,158,0.2))" }}>
+                              <div className="chart-bar-label">{d.label}</div>
                             </div>
                           ))}
                         </div>
                       </div>
-                    ))}
+                    </div>
+                  </div>
+
+                  {/* Section 3 - Three column */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+                    <div className="card">
+                      <div className="card-hdr"><div className="card-title">Matter Type Mix</div></div>
+                      <div style={{ padding: "12px 16px 16px" }}>
+                        {typeCounts.filter((t) => t.count > 0).map((t) => (
+                          <div key={t.name} style={{ marginBottom: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.name === "Purchase" ? "var(--teal)" : t.name === "Sale" ? "var(--amber)" : t.name === "Lease" ? "var(--purple)" : "var(--text-3)" }} />
+                              <span style={{ fontSize: 11, color: "var(--text-2)", flex: 1 }}>{t.name}</span>
+                              <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-3)" }}>{t.count} ({Math.round((t.count / typeTotal) * 100)}%)</span>
+                            </div>
+                            <div style={{ height: 5, background: "var(--surface)", borderRadius: 10, overflow: "hidden" }}>
+                              <div style={{ width: `${(t.count / typeTotal) * 100}%`, height: "100%", background: t.name === "Purchase" ? "var(--teal)" : t.name === "Sale" ? "var(--amber)" : t.name === "Lease" ? "var(--purple)" : "var(--text-3)", borderRadius: 10, opacity: 0.8 }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="card">
+                      <div className="card-hdr"><div className="card-title">NSW vs VIC</div></div>
+                      <div style={{ padding: "12px 16px 16px" }}>
+                        <div style={{ display: "flex", gap: 24, marginBottom: 12 }}>
+                          <div>
+                            <div style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 600, color: "var(--blue)" }}>{nswCount}</div>
+                            <div style={{ fontSize: 10, color: "var(--text-3)" }}>NSW</div>
+                          </div>
+                          <div>
+                            <div style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 600, color: "var(--purple)" }}>{vicCount}</div>
+                            <div style={{ fontSize: 10, color: "var(--text-3)" }}>VIC</div>
+                          </div>
+                        </div>
+                        <div style={{ height: 8, background: "var(--surface)", borderRadius: 8, overflow: "hidden", display: "flex" }}>
+                          <div style={{ width: `${(nswCount / stateTotal) * 100}%`, background: "var(--blue)", borderRadius: 8 }} />
+                          <div style={{ width: `${(vicCount / stateTotal) * 100}%`, background: "var(--purple)", borderRadius: 8 }} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="card">
+                      <div className="card-hdr"><div className="card-title">How Clients Find Us</div></div>
+                      <div style={{ padding: "12px 16px 16px" }}>
+                        {sourceCountsMap.filter((s) => s.count > 0).map((s) => (
+                          <div key={s.name} style={{ marginBottom: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                              <span style={{ color: "var(--text-2)" }}>{s.name}</span>
+                              <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-3)" }}>{s.count}</span>
+                            </div>
+                            <div style={{ height: 5, background: "var(--surface)", borderRadius: 10, overflow: "hidden" }}>
+                              <div style={{ width: `${(s.count / sourceTotal) * 100}%`, height: "100%", background: "var(--teal)", borderRadius: 10, opacity: 0.7 }} />
+                            </div>
+                          </div>
+                        ))}
+                        {sourceCountsMap.every((s) => s.count === 0) && <div style={{ fontSize: 11, color: "var(--text-3)" }}>No source data</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 4 - Market Intelligence */}
+                  <div className="card" style={{ marginBottom: 24 }}>
+                    <div className="card-hdr">
+                      <div className="card-title">Market Intelligence — Your Practice Areas</div>
+                      <div className="card-sub">Insights from internet sources — property market & conveyancing fees</div>
+                    </div>
+                    <div style={{ padding: "16px 20px" }}>
+                      {marketLoading ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 20 }}>
+                          <div className="ai-typing"><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div>
+                          <span style={{ fontSize: 12, color: "var(--text-3)" }}>Fetching market data...</span>
+                        </div>
+                      ) : marketData?.suburbs?.length > 0 ? (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+                            {marketData.suburbs.map((sub, i) => (
+                              <div key={i} className="card" style={{ padding: 12, border: "1px solid var(--border-2)" }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>{sub.name}</div>
+                                <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-2)", marginBottom: 2 }}>{sub.medianPrice || "—"}</div>
+                                {sub.trend && <span style={{ fontSize: 9, color: "var(--green)", fontFamily: "var(--font-mono)" }}>{sub.trend}</span>}
+                                {sub.daysOnMarket != null && <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>{sub.daysOnMarket} days on market</div>}
+                                {sub.commentary && <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6, lineHeight: 1.4 }}>{sub.commentary}</div>}
+                              </div>
+                            ))}
+                          </div>
+                          {marketData.marketOverview && (
+                            <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 16 }}>
+                              <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>Market Overview</div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 11, lineHeight: 1.6, color: "var(--text-2)" }}>
+                                {marketData.marketOverview.sydney && <div><strong>Sydney:</strong> {(marketData.marketOverview.sydney || "").slice(0, 200)}</div>}
+                                {marketData.marketOverview.melbourne && <div><strong>Melbourne:</strong> {(marketData.marketOverview.melbourne || "").slice(0, 200)}</div>}
+                              </div>
+                              {(marketData.marketOverview.interestRates || marketData.marketOverview.outlook) && (
+                                <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-3)", lineHeight: 1.5 }}>{marketData.marketOverview.interestRates} {marketData.marketOverview.outlook}</div>
+                              )}
+                            </div>
+                          )}
+                          {marketData?.conveyancingFees && (
+                            <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 16, marginTop: 16 }}>
+                              <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>Average conveyancing fees (market)</div>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 11, lineHeight: 1.5, color: "var(--text-2)" }}>
+                                {marketData.conveyancingFees.nsw && (
+                                  <div>
+                                    <strong>NSW</strong>
+                                    <div style={{ marginTop: 4 }}>{(marketData.conveyancingFees.nsw.average || marketData.conveyancingFees.nsw.range || "—").toString()}</div>
+                                    {(marketData.conveyancingFees.nsw.purchase || marketData.conveyancingFees.nsw.sale) && (
+                                      <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>
+                                        {marketData.conveyancingFees.nsw.purchase && <div>Purchase: {String(marketData.conveyancingFees.nsw.purchase)}</div>}
+                                        {marketData.conveyancingFees.nsw.sale && <div>Sale: {String(marketData.conveyancingFees.nsw.sale)}</div>}
+                                      </div>
+                                    )}
+                                    {marketData.conveyancingFees.nsw.source && <div style={{ fontSize: 9, color: "var(--text-3)", marginTop: 4 }}>{String(marketData.conveyancingFees.nsw.source)}</div>}
+                                  </div>
+                                )}
+                                {marketData.conveyancingFees.vic && (
+                                  <div>
+                                    <strong>VIC</strong>
+                                    <div style={{ marginTop: 4 }}>{(marketData.conveyancingFees.vic.average || marketData.conveyancingFees.vic.range || "—").toString()}</div>
+                                    {(marketData.conveyancingFees.vic.purchase || marketData.conveyancingFees.vic.sale) && (
+                                      <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>
+                                        {marketData.conveyancingFees.vic.purchase && <div>Purchase: {String(marketData.conveyancingFees.vic.purchase)}</div>}
+                                        {marketData.conveyancingFees.vic.sale && <div>Sale: {String(marketData.conveyancingFees.vic.sale)}</div>}
+                                      </div>
+                                    )}
+                                    {marketData.conveyancingFees.vic.source && <div style={{ fontSize: 9, color: "var(--text-3)", marginTop: 4 }}>{String(marketData.conveyancingFees.vic.source)}</div>}
+                                  </div>
+                                )}
+                              </div>
+                              {marketData.conveyancingFees.commentary && (
+                                <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-3)", lineHeight: 1.5 }}>{String(marketData.conveyancingFees.commentary)}</div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : marketData?.raw ? (
+                        <div style={{ fontSize: 11, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{marketData.raw}</div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: "var(--text-3)", padding: 12 }}>No market data available. Add matters with addresses to fetch suburb intelligence.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Section 5 - AI Intelligence Report */}
+                  <div className="card">
+                    <div className="card-hdr"><div className="card-title">AI Intelligence Report</div></div>
+                    <div style={{ padding: "16px 20px" }}>
+                      {insightsAutoLoading ? (
+                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>Generating report... <div className="ai-typing" style={{ marginTop: 6 }}><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div></div>
+                      ) : insightsAutoSummary ? (
+                        <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{insightsAutoSummary}</div>
+                      ) : insightsAutoError ? (
+                        <>
+                          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 10 }}>{insightsAutoError}</div>
+                          <button type="button" className="btn-gold" style={{ fontSize: 12 }} onClick={() => generateInsightsSummary()}>Retry report</button>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 11, color: "var(--text-3)" }}>Report will generate when you open this page.</div>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => generateInsightsSummary()}>Generate report</button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div style={{display:"flex",flexDirection:"column",gap:12,overflow:"hidden"}}>
-                  <div style={{flex:1,background:"var(--ink)",borderRadius:14,padding:16,display:"flex",flexDirection:"column",overflow:"hidden",border:"1px solid var(--ink-2)"}}>
-                    <div style={{fontSize:10,fontFamily:"var(--font-mono)",color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:"2px",marginBottom:10}}>✦ Ask Crew Intelligence</div>
-                    <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
-                      {aiMessages.map(m=>(
-                        <div key={m.id} className={`ai-msg ${m.role}`}>
-                          <div className={`ai-msg-avatar ${m.role==="ai"?"ai-av":"user-av"}`}>{m.role==="ai"?"✦":"JC"}</div>
-                          <div className={`ai-bubble ${m.role==="ai"?"ai-b":"user-b"}`}>
-                            <div>{m.text}</div>
-                            {m.bullets&&<ul className="ai-bullets">{m.bullets.map((b,i)=><li key={i}>{b}</li>)}</ul>}
-                          </div>
-                        </div>
-                      ))}
-                      {isTyping&&<div className="ai-msg"><div className="ai-msg-avatar ai-av">✦</div><div className="ai-bubble ai-b"><div className="ai-typing"><div className="typing-dot"/><div className="typing-dot"/><div className="typing-dot"/></div></div></div>}
-                      <div ref={aiEndRef}/>
-                    </div>
-                    <div style={{display:"flex",gap:6}}>
-                      <input className="ai-input" style={{flex:1}} placeholder="Ask about firm data..."
-                        value={aiInput} onChange={e=>setAiInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendAI()}/>
-                      <button className="ai-send" onClick={()=>sendAI()}>›</button>
-                    </div>
+
+                {/* Right panel - Insights Intelligence */}
+                <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--ink)", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ padding: "16px 18px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+                    <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: 6 }}>✦ Insights Intelligence</div>
+                    <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500, color: "white" }}>Practice AI</div>
                   </div>
-                  <div className="card">
-                    <div className="card-hdr"><div className="card-title">📈 Market Context</div></div>
-                    <div style={{padding:"8px 16px 14px"}}>
-                      {[{l:"Sydney median",v:"$1.62M",c:"+6.4%"},{l:"Melbourne median",v:"$1.06M",c:"+3.1%"},{l:"Pymble NSW",v:"$2.17M",c:"+3.7%"},{l:"Balmain NSW",v:"$1.49M",c:"+3.1%"}].map(r=>(
-                        <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid var(--border-2)",fontSize:11}}>
-                          <span style={{color:"var(--text-2)"}}>{r.l}</span>
-                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            <span style={{fontWeight:700,fontFamily:"var(--font-mono)",color:"var(--text)"}}>{r.v}</span>
-                            <span style={{fontSize:9,color:"var(--green)",fontFamily:"var(--font-mono)"}}>{r.c}</span>
-                          </div>
+                  <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, maxHeight: 200, overflowY: "auto" }}>
+                    {insightsAutoLoading ? (
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>Analysing practice data...<div className="ai-typing" style={{ marginTop: 6 }}><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div></div>
+                    ) : insightsAutoSummary ? (
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{insightsAutoSummary}</div>
+                    ) : null}
+                  </div>
+                  <div style={{ padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {["How is my practice performing?", "Most profitable matter type?", "Market trends for my suburbs?", "Where are clients coming from?"].map((q) => (
+                      <button key={q} type="button" style={{ fontSize: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "4px 8px", color: "rgba(255,255,255,0.45)", cursor: "pointer", fontFamily: "var(--font-body)", transition: "all 0.12s" }} onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(255,255,255,0.85)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }} onClick={() => sendInsightsAI(q)}>{q}</button>
+                    ))}
+                  </div>
+                  <div style={{ flex: 1, overflowY: "scroll", minHeight: 0, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {insightsAIChat.length === 0 && (
+                      <div style={{ textAlign: "center", padding: "30px 10px", color: "rgba(255,255,255,0.2)", fontSize: 11, lineHeight: 1.7 }}>
+                        <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.3 }}>✦</div>
+                        Ask me anything about your practice performance, market trends or growth opportunities.
+                      </div>
+                    )}
+                    {insightsAIChat.map((m, i) => (
+                      <div key={i} style={{ display: "flex", flexDirection: m.role === "user" ? "row-reverse" : "row", gap: 7, alignItems: "flex-start" }}>
+                        <div style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, background: m.role === "user" ? "linear-gradient(135deg,var(--blue),#1a4a9e)" : "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.1)" }}>{m.role === "user" ? "G" : "✦"}</div>
+                        <div style={{ maxWidth: "84%", padding: "8px 12px", borderRadius: m.role === "user" ? "10px 3px 10px 10px" : "3px 10px 10px 10px", fontSize: 11, lineHeight: 1.75, background: m.role === "user" ? "rgba(36,94,176,0.3)" : "rgba(255,255,255,0.06)", color: m.role === "user" ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.7)", border: m.role === "user" ? "1px solid rgba(36,94,176,0.4)" : "1px solid rgba(255,255,255,0.08)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>
+                      </div>
+                    ))}
+                    {insightsAITyping && (
+                      <div style={{ display: "flex", gap: 7, alignItems: "flex-start" }}>
+                        <div style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "rgba(255,255,255,0.5)", flexShrink: 0 }}>✦</div>
+                        <div style={{ padding: "9px 12px", borderRadius: "3px 10px 10px 10px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                          <div className="ai-typing"><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ padding: "12px 14px", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, display: "flex", gap: 6 }}>
+                    <input style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "rgba(255,255,255,0.8)", outline: "none", fontFamily: "var(--font-body)" }} placeholder="Ask about your practice..." value={insightsAIChatInput} onChange={(e) => setInsightsAIChatInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendInsightsAI()} onFocus={(e) => { e.target.style.borderColor = "rgba(36,94,176,0.5)"; e.target.style.background = "rgba(255,255,255,0.09)"; }} onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.background = "rgba(255,255,255,0.06)"; }} />
+                    <button type="button" style={{ background: "linear-gradient(135deg,var(--blue),#1a4a9e)", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", flexShrink: 0 }} onClick={() => sendInsightsAI()}>›</button>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Catch-all */}
-          {!["dashboard","matters","matter_workspace","referrals","contacts","communications","accounting","insights"].includes(page) && (
+          {!["dashboard","matters","matter_workspace","referrals","contacts","calendar","communications","accounting","insights"].includes(page) && (
             <div className="under-construction">
               <div style={{textAlign:"center",color:"var(--text-3)"}}>
                 <div style={{fontFamily:"var(--font-display)",fontSize:48,opacity:0.15,marginBottom:12}}>⚖</div>
@@ -3652,6 +6070,28 @@ Return only the email body text, no subject line.`;
           )}
 
         </div>{/* /main */}
+
+        {isMobile && (
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 60, background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom)" }}>
+            {[
+              { id: "dashboard", icon: "⊞", label: "Home" },
+              { id: "matters", icon: "⚖️", label: "Matters" },
+              { id: "contacts", icon: "👥", label: "Contacts" },
+              { id: "calendar", icon: "📅", label: "Calendar" },
+              { id: "communications", icon: "✉️", label: "Emails" }
+            ].map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "8px 12px", opacity: page === n.id ? 1 : 0.45, transition: "opacity 0.15s" }}
+                onClick={() => { setPage(n.id); if (n.id !== "matters") setSelectedMatter(null); }}
+              >
+                <span style={{ fontSize: 20 }}>{n.icon}</span>
+                <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "white", textTransform: "uppercase", letterSpacing: "0.5px" }}>{n.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>{/* /app */}
 
       {/* Compose email modal */}
@@ -3854,6 +6294,91 @@ Return only the email body text, no subject line.`;
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {tooltip && (
+        <div style={{
+          position:"fixed",
+          left:Math.min(tooltip.x+12, typeof window!=="undefined"?window.innerWidth-280:tooltip.x+12),
+          top:Math.min(tooltip.y+12, typeof window!=="undefined"?window.innerHeight-200:tooltip.y+12),
+          zIndex:2000,
+          background:"var(--ink)",
+          color:"white",
+          borderRadius:10,
+          padding:"12px 16px",
+          width:260,
+          boxShadow:"var(--shadow-xl)",
+          pointerEvents:"none",
+          animation:"fadeUp 0.15s ease"
+        }}>
+          <div style={{
+            display:"inline-flex",alignItems:"center",gap:6,
+            background:"rgba(255,255,255,0.1)",
+            borderRadius:20,padding:"2px 10px",
+            fontSize:10,fontFamily:"var(--font-mono)",
+            textTransform:"uppercase",letterSpacing:"1px",
+            marginBottom:8,color:"rgba(255,255,255,0.7)"
+          }}>
+            <div style={{
+              width:6,height:6,borderRadius:"50%",
+              background:EVENT_COLORS[tooltip.event.event_type]?.dot||"#94a3b8"
+            }}/>
+            {tooltip.event.event_type}
+          </div>
+          <div style={{
+            fontFamily:"var(--font-display)",
+            fontSize:15,fontWeight:500,
+            color:"white",marginBottom:8,
+            lineHeight:1.3
+          }}>
+            {tooltip.event.title}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            {tooltip.event.date&&(
+              <div style={{display:"flex",gap:8,fontSize:11}}>
+                <span style={{color:"rgba(255,255,255,0.4)",fontFamily:"var(--font-mono)",minWidth:60}}>DATE</span>
+                <span style={{color:"rgba(255,255,255,0.85)"}}>
+                  {new Date(tooltip.event.date+"T00:00:00").toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"long",year:"numeric"})}
+                </span>
+              </div>
+            )}
+            {tooltip.event.time&&(
+              <div style={{display:"flex",gap:8,fontSize:11}}>
+                <span style={{color:"rgba(255,255,255,0.4)",fontFamily:"var(--font-mono)",minWidth:60}}>TIME</span>
+                <span style={{color:"rgba(255,255,255,0.85)"}}>{tooltip.event.time}</span>
+              </div>
+            )}
+            {tooltip.event.client_name&&(
+              <div style={{display:"flex",gap:8,fontSize:11}}>
+                <span style={{color:"rgba(255,255,255,0.4)",fontFamily:"var(--font-mono)",minWidth:60}}>CLIENT</span>
+                <span style={{color:"rgba(255,255,255,0.85)"}}>{tooltip.event.client_name}</span>
+              </div>
+            )}
+            {tooltip.event.matter_ref&&(
+              <div style={{display:"flex",gap:8,fontSize:11}}>
+                <span style={{color:"rgba(255,255,255,0.4)",fontFamily:"var(--font-mono)",minWidth:60}}>MATTER</span>
+                <span style={{color:"rgba(255,255,255,0.85)",fontFamily:"var(--font-mono)"}}>{tooltip.event.matter_ref}</span>
+              </div>
+            )}
+            {tooltip.event.notes&&(
+              <div style={{
+                marginTop:6,paddingTop:6,
+                borderTop:"1px solid rgba(255,255,255,0.1)",
+                fontSize:10,color:"rgba(255,255,255,0.5)",
+                lineHeight:1.6
+              }}>
+                {(tooltip.event.notes||"").slice(0,120)}{(tooltip.event.notes||"").length>120?"…":""}
+              </div>
+            )}
+          </div>
+          <div style={{
+            marginTop:8,paddingTop:6,
+            borderTop:"1px solid rgba(255,255,255,0.1)",
+            fontSize:9,color:"rgba(255,255,255,0.3)",
+            fontFamily:"var(--font-mono)",textTransform:"uppercase",
+            letterSpacing:"1px"
+          }}>Click to open event details</div>
         </div>
       )}
     </>

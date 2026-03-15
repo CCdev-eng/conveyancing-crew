@@ -77,6 +77,9 @@ export async function GET(request) {
     const emailId = searchParams.get("emailId");
     const query = searchParams.get("query");
     const address = searchParams.get("address");
+    const sentParam = searchParams.get("sent");
+    const isPexa = searchParams.get("pexa") === "true";
+    const allEmails = searchParams.get("allEmails") === "true";
 
     if (!tenantId || !clientId || !clientSecret) {
       return Response.json(
@@ -90,6 +93,26 @@ export async function GET(request) {
       ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`
       : "https://graph.microsoft.com/v1.0/me";
     const headers = { Authorization: `Bearer ${token}` };
+
+    if (allEmails && mailbox) {
+      const top = Math.min(parseInt(searchParams.get("top") || "50", 10) || 50, 100);
+      const select = "id,subject,from,receivedDateTime,bodyPreview,isRead,toRecipients";
+      const url = `${baseUrl}/messages?$top=${top}&$select=${encodeURIComponent(select)}&$orderby=receivedDateTime desc`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        console.error("[email] Graph allEmails status:", res.status);
+        return Response.json({ emails: [] });
+      }
+      const data = await res.json();
+      let emails = mapMessages(data || { value: [] });
+      const mailboxLower = (mailbox || "").toLowerCase();
+      emails.forEach((e) => {
+        e.isOutgoing = !!mailboxLower && (e.from?.address || "").toLowerCase() === mailboxLower;
+      });
+      emails.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+      console.log("[email] allEmails results:", emails.length);
+      return Response.json({ emails });
+    }
 
     if (emailId && emailId.trim()) {
       const select = "id,subject,from,receivedDateTime,body,isRead,toRecipients";
@@ -107,6 +130,25 @@ export async function GET(request) {
       return Response.json(email);
     }
 
+    if (isPexa && mailbox) {
+      const pexaUrl = `${baseUrl}/messages?$search=${encodeURIComponent('"PEXA"')}&$top=50&$select=id,subject,from,receivedDateTime,bodyPreview,isRead,toRecipients`;
+      const pexaRes = await fetch(pexaUrl, {
+        headers: {
+          ...headers,
+          ConsistencyLevel: "eventual"
+        }
+      });
+      if (!pexaRes.ok) {
+        console.error("[email] PEXA search status:", pexaRes.status);
+        return Response.json({ emails: [] });
+      }
+      const pexaData = await pexaRes.json();
+      const emails = mapMessages(pexaData || { value: [] });
+      emails.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+      console.log("[email] PEXA results:", emails.length);
+      return Response.json({ emails });
+    }
+
     const searchTerm = (query && query.trim()) || getAddressPhrase(address || "");
     if (!searchTerm) {
       return Response.json([]);
@@ -115,7 +157,7 @@ export async function GET(request) {
     const select = "id,subject,from,receivedDateTime,bodyPreview,isRead,toRecipients";
     const params = new URLSearchParams();
     params.set("$search", `"${searchTerm.replace(/"/g, '\\"')}"`);
-    params.set("$top", "20");
+    params.set("$top", "50");
     params.set("$select", select);
     const url = `${baseUrl}/messages?${params.toString()}`;
 
@@ -128,13 +170,18 @@ export async function GET(request) {
       return Response.json([]);
     }
 
-    const emails = mapMessages(data || { value: [] });
+    let emails = mapMessages(data || { value: [] });
     const mailboxLower = (mailbox || "").toLowerCase();
     emails.forEach((e) => {
       e.isOutgoing = !!mailboxLower && (e.from?.address || "").toLowerCase() === mailboxLower;
     });
+    if (sentParam === "true" && mailboxLower) {
+      emails = emails.filter((e) => (e.from?.address || "").toLowerCase() === mailboxLower);
+    } else if (sentParam === "false" && mailboxLower) {
+      emails = emails.filter((e) => (e.from?.address || "").toLowerCase() !== mailboxLower);
+    }
     emails.sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
-    console.log("[email] results:", emails.length);
+    console.log("[email] results:", emails.length, sentParam === "true" ? "(sent only)" : sentParam === "false" ? "(inbox only)" : "");
     return Response.json(emails);
   } catch (err) {
     console.error("GET /api/email error:", err);
