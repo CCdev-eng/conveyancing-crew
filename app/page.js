@@ -797,12 +797,16 @@ export default function App() {
   const [intakeSource, setIntakeSource] = useState(null);
   const [intakeText, setIntakeText] = useState("");
   const [intakeExtracting, setIntakeExtracting] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
   const [aiMessages, setAiMessages] = useState([
     { id:0, role:"ai", text:"Good morning, Jessica. Here's what needs your attention today.", bullets:["3 critical tasks — PEXA creation for Nguyen is most urgent","Sarah Mitchell has emailed about the pool cert — needs a reply now","Wu ($2.15M) searches are overdue — follow up immediately"] }
   ]);
   const [aiInput, setAiInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const aiEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -833,6 +837,7 @@ export default function App() {
         const rows = data || [];
         const mapped = rows.map((row) => ({
           id: row.matter_ref,
+          matter_ref: row.matter_ref,
           client: row.client_name,
           email: row.client_email,
           phone: row.client_phone,
@@ -909,6 +914,98 @@ export default function App() {
     setTimeout(() => { setIntakeExtracting(false); setIntakeStep(2); }, 1600);
   };
 
+  const handleDocumentUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleDocumentFileChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file || !selMatterObj) return;
+    const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+    if (!matterRef) return;
+    const sanitizedName = file.name.trim().replace(/\s+/g, '_');
+    const filePath = selMatterObj.matter_ref + '/' + sanitizedName;
+    setUploadingDocument(true);
+    try {
+      const { error } = await supabase.storage
+        .from("matter-documents")
+        .upload(filePath, file);
+      if (error) {
+        console.error("Error uploading document:", error);
+      } else {
+        const { data, error: listError } = await supabase.storage
+          .from("matter-documents")
+          .list(matterRef);
+        if (listError) {
+          console.error("Error refreshing documents after upload:", listError);
+        } else {
+          setDocuments(data || []);
+        }
+      }
+    } finally {
+      setUploadingDocument(false);
+      if (e.target) {
+        e.target.value = "";
+      }
+    }
+  };
+
+  const handleViewDocument = async (file) => {
+    if (!selMatterObj) return;
+    const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+    if (!matterRef) return;
+    console.log("Full file object:", JSON.stringify(file));
+    const cleanName = file.name.trim();
+    const path = `${matterRef}/${cleanName}`;
+    console.log("Attempting to view document at path:", path);
+
+    try {
+      const res = await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "matter-documents",
+          path,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Error from /api/storage:", data);
+        alert(`Error creating signed URL: ${data.error || "Unknown error"}`);
+        return;
+      }
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      }
+    } catch (err) {
+      console.error("Unexpected error calling /api/storage:", err);
+      alert(`Error creating signed URL: ${err.message || JSON.stringify(err)}`);
+    }
+  };
+
+  const handleDeleteDocument = async (docName) => {
+    if (!selMatterObj) return;
+    const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+    if (!matterRef) return;
+    const cleanName = docName.trim();
+    const path = `${matterRef}/${cleanName}`;
+    const { error } = await supabase.storage
+      .from("matter-documents")
+      .remove([path]);
+    if (error) {
+      console.error("Error deleting document:", error);
+      return;
+    }
+    const { data, error: listError } = await supabase.storage
+      .from("matter-documents")
+      .list(matterRef);
+    if (listError) {
+      console.error("Error refreshing documents after delete:", listError);
+    } else {
+      setDocuments(data || []);
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError("");
@@ -931,6 +1028,33 @@ export default function App() {
   const selMatterObj = MATTERS.find(m => m.id === selectedMatter);
   const selComm = COMMS.find(c => c.id === selectedCommId);
   const selRef = REFERRERS.find(r => r.id === selectedRef);
+
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      if (!selMatterObj) {
+        setDocuments([]);
+        return;
+      }
+      const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+      if (!matterRef) {
+        setDocuments([]);
+        return;
+      }
+      setDocumentsLoading(true);
+      const { data, error } = await supabase.storage
+        .from("matter-documents")
+        .list(matterRef);
+      if (error) {
+        console.error("Error fetching documents from storage:", error);
+        setDocuments([]);
+      } else {
+        console.log("Documents from storage for", matterRef, data);
+        setDocuments(data || []);
+      }
+      setDocumentsLoading(false);
+    };
+    fetchDocuments();
+  }, [selMatterObj]);
 
   const pageTitle = {
     dashboard:"Dashboard", matters:"Matters", referrals:"Referrals",
@@ -1441,12 +1565,20 @@ export default function App() {
                       <div className="card">
                         <div className="card-hdr"><div className="card-title">🔍 Searches</div></div>
                         <div style={{padding:"8px 16px 12px"}}>
-                          {Object.entries(selMatterObj.searches).map(([k,v])=>(
-                            <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid var(--border-2)",fontSize:11}}>
-                              <span style={{color:"var(--text-2)",textTransform:"capitalize"}}>{k} Search</span>
-                              <span className={`tag ${v==="done"?"tag-green":v==="pending"?"tag-amber":"tag-gray"}`}>{v==="n/a"?"N/A":v}</span>
-                            </div>
-                          ))}
+                          {selMatterObj.searches
+                            ? Object.entries(selMatterObj.searches).map(([k,v])=>(
+                                <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid var(--border-2)",fontSize:11}}>
+                                  <span style={{color:"var(--text-2)",textTransform:"capitalize"}}>{k} Search</span>
+                                  <span className={`tag ${v==="done"?"tag-green":v==="pending"?"tag-amber":"tag-gray"}`}>{v==="n/a"?"N/A":v}</span>
+                                </div>
+                              ))
+                            : (
+                              <div style={{fontSize:12,color:"var(--text-3)",padding:"6px 0",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                                <span>No searches recorded yet</span>
+                                <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}}>Order Searches</button>
+                              </div>
+                            )
+                          }
                         </div>
                       </div>
                       <div className="card">
@@ -1586,29 +1718,67 @@ export default function App() {
                 {matterTab==="Documents" && (
                   <div>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"center"}}>
-                      <div className="card-title">{selMatterObj.contracts?.length||0} documents</div>
-                      <div style={{display:"flex",gap:8}}>
-                        <button className="btn-ghost" style={{fontSize:12}}>📎 Upload</button>
-                        <button className="btn-primary" style={{fontSize:12}}>✦ Generate</button>
+                      <div className="card-title">
+                        Documents {documentsLoading ? "· Loading…" : documents.length ? `· ${documents.length}` : ""}
+                      </div>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <button
+                          className="btn-ghost"
+                          style={{fontSize:12}}
+                          type="button"
+                          onClick={handleDocumentUploadClick}
+                          disabled={uploadingDocument}
+                        >
+                          {uploadingDocument ? "Uploading…" : "📎 Upload Document"}
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                          style={{display:"none"}}
+                          onChange={handleDocumentFileChange}
+                        />
                       </div>
                     </div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                      {(selMatterObj.contracts||[]).map((d,i)=>(
-                        <div key={i} className="doc-item">
-                          <div className="doc-icon" style={{background:d.type==="executed"?"#f0fdf4":d.type==="draft"?"#fefce8":d.type==="s32"?"#f5f3ff":"#eff6ff"}}>
-                            {d.type==="executed"?"✅":d.type==="draft"?"📝":d.type==="s32"?"📋":"📤"}
+                    {documentsLoading ? (
+                      <div style={{fontSize:12,color:"var(--text-3)",padding:"12px 0"}}>Loading documents…</div>
+                    ) : documents.length === 0 ? (
+                      <div style={{fontSize:12,color:"var(--text-3)",padding:"12px 0"}}>
+                        No documents yet — upload your first document
+                      </div>
+                    ) : (
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                        {documents.map((d,i)=>(
+                          <div key={d.name || i} className="doc-item">
+                            <div className="doc-icon" style={{background:"#eff6ff"}}>
+                              📄
+                            </div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div className="doc-name">{d.name}</div>
+                              <div className="doc-meta">
+                                {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Uploaded"}
+                              </div>
+                            </div>
+                            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                              <button
+                                style={{fontSize:11,color:"var(--text-3)",background:"none",border:"none",cursor:"pointer"}}
+                                type="button"
+                                onClick={()=>handleViewDocument(d)}
+                              >
+                                View
+                              </button>
+                              <button
+                                style={{fontSize:11,color:"var(--red)",background:"none",border:"none",cursor:"pointer"}}
+                                type="button"
+                                onClick={()=>handleDeleteDocument(d.name)}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div className="doc-name">{d.name}</div>
-                            <div className="doc-meta">{d.date} · PDF</div>
-                          </div>
-                          <button style={{fontSize:11,color:"var(--text-3)",background:"none",border:"none",cursor:"pointer",flexShrink:0}}>↗</button>
-                        </div>
-                      ))}
-                      {(!selMatterObj.contracts||selMatterObj.contracts.length===0)&&(
-                        <div style={{fontSize:12,color:"var(--text-3)",padding:"12px 0"}}>No documents yet.</div>
-                      )}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
