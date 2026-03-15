@@ -66,6 +66,13 @@ const matchAI = q => {
 };
 
 const URGENCY_COLOR = { critical:"#dc2626", high:"#ea580c", medium:"#ca8a04", low:"#16a34a", none:"#94a3b8" };
+const AVATAR_COLORS = [
+  "linear-gradient(135deg, #0f766e 0%, #0e9488 100%)",
+  "linear-gradient(135deg, #c9a84c 0%, #a07830 100%)",
+  "linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)",
+  "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+  "linear-gradient(135deg, #ca8a04 0%, #b45309 100%)",
+];
 
 // ─── WORKFLOWS ────────────────────────────────────────────────────────────────
 const WORKFLOWS = {
@@ -517,6 +524,52 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .comm-unread-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);flex-shrink:0;margin-top:4px}
 .unread-name{font-weight:700;color:var(--ink)}
 
+/* Comms - three zones */
+.comms-container{display:flex;flex-direction:column;overflow:hidden;background:var(--surface)}
+.comms-two-col{display:flex;flex:1;min-height:0;overflow:hidden}
+.comms-left-col{width:300px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;height:100%;background:var(--white);border-right:1px solid var(--border)}
+.comms-right-col{flex:1;display:flex;flex-direction:column;overflow:hidden;height:100%;min-height:0;background:var(--white);border-left:1px solid var(--border)}
+.comms-detail-thread{flex:1;overflow-y:auto;min-height:0;padding:20px}
+.comms-compose-wrap{flex-shrink:0;max-height:350px;overflow-y:auto}
+.comms-inbox-tabs{display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--border-2);flex-shrink:0}
+.comms-inbox-tab{padding:5px 12px;font-size:11px;font-weight:500;border-radius:999px;border:none;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
+.comms-inbox-tab.inactive{background:var(--surface);color:var(--text-2)}
+.comms-inbox-tab.active{background:var(--ink);color:var(--white)}
+.comms-ai-bar{background:var(--gold-light);border-left:3px solid var(--gold);padding:10px 16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;gap:10px;transition:background 0.15s}
+.comms-ai-bar:hover{background:rgba(253,248,236,0.9)}
+.comms-ai-expanded{overflow:hidden;transition:max-height 0.3s ease;background:var(--gold-light);padding:0 20px}
+.comms-ai-expanded .comms-ai-expanded-inner{max-height:300px;overflow-y:auto}
+.comms-email-list{flex:1;overflow-y:auto;background:var(--white);min-height:0}
+.comms-email-row{padding:14px 20px;border-bottom:1px solid var(--border-2);cursor:pointer;display:flex;gap:12px;align-items:flex-start;transition:all 0.15s;position:relative}
+.comms-email-row:hover{background:var(--surface)}
+.comms-email-row.selected{background:var(--ink);color:var(--white);border-left:none}
+.comms-email-row.selected:hover{background:var(--ink-2)}
+.comms-email-row.selected .comms-row-muted{color:rgba(255,255,255,0.85)}
+.comms-email-row.unread{border-left:3px solid var(--gold)}
+.comms-email-row.unread.selected{border-left:3px solid var(--gold-dim)}
+.comms-email-expanded{background:var(--white);border-bottom:2px solid var(--gold-dim);padding:20px 24px;animation:fadeUp 0.2s ease}
+.comms-compose-bar{padding:10px 20px;background:var(--white);border-top:1px solid var(--border);flex-shrink:0}
+.comms-compose-form{overflow:hidden;transition:max-height 0.3s ease;background:var(--white);padding:0 20px}
+.comms-avatar-36{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.comms-summary-section{margin-bottom:12px}
+.comms-summary-section:last-child{margin-bottom:0}
+.comms-summary-label{font-size:9px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:1px;color:var(--text-2);display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.comms-summary-label::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--text-3)}
+.comms-summary-label.overview-dot::before{background:var(--teal)}
+.comms-summary-label.points-dot::before{background:var(--teal)}
+.comms-summary-label.steps-dot::before{background:var(--gold)}
+.comms-summary-label.urgency-dot::before{background:var(--amber)}
+.comms-summary-content{font-size:13px;font-family:var(--font-body);line-height:1.7;color:var(--text)}
+.comms-summary-list-teal{list-style:none;padding:0;margin:0}
+.comms-summary-list-teal li{padding-left:16px;position:relative;margin-bottom:4px}
+.comms-summary-list-teal li::before{content:'';position:absolute;left:0;top:0.65em;width:5px;height:5px;border-radius:50%;background:var(--teal)}
+.comms-summary-list-gold{list-style:none;padding:0;margin:0;counter-reset:step}
+.comms-summary-list-gold li{counter-increment:step;padding-left:22px;position:relative;margin-bottom:4px}
+.comms-summary-list-gold li::before{content:counter(step);position:absolute;left:0;top:0;font-family:var(--font-display);font-size:12px;font-weight:600;color:var(--gold)}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.comms-summary-shimmer{animation:shimmer 1.5s ease-in-out infinite;background:linear-gradient(90deg,var(--gold-light) 0%,rgba(232,213,160,0.4) 50%,var(--gold-light) 100%);background-size:200% 100%}
+.comms-row-shimmer{height:56px;border-bottom:1px solid var(--border-2);background:linear-gradient(90deg,var(--surface) 0%,var(--white) 50%,var(--surface) 100%);background-size:200% 100%;animation:shimmer 1.5s ease-in-out infinite}
+
 /* Settlements */
 .settlement-item{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border-2)}
 .settlement-item:last-child{border-bottom:none}
@@ -822,6 +875,20 @@ export default function App() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const [matterSearches, setMatterSearches] = useState({});
+  const [matterEmails, setMatterEmails] = useState([]);
+  const [matterEmailsLoading, setMatterEmailsLoading] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [selectedEmailId, setSelectedEmailId] = useState(null);
+  const [commSearchFilter, setCommSearchFilter] = useState("");
+  const [emailSummary, setEmailSummary] = useState(null);
+  const [emailSummaryLoading, setEmailSummaryLoading] = useState(false);
+  const [aiSummaryExpanded, setAiSummaryExpanded] = useState(false);
+  const [expandedEmailId, setExpandedEmailId] = useState(null);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [commInboxTab, setCommInboxTab] = useState("inbox");
   const [intakeAddress, setIntakeAddress] = useState("");
   const [intakeState, setIntakeState] = useState("NSW");
   const [intakeSuburb, setIntakeSuburb] = useState("");
@@ -1058,6 +1125,272 @@ export default function App() {
   const selMatterObj = MATTERS.find(m => m.id === selectedMatter);
   const selComm = COMMS.find(c => c.id === selectedCommId);
   const selRef = REFERRERS.find(r => r.id === selectedRef);
+
+  const fetchMatterEmails = async () => {
+    if (!selMatterObj) return;
+    setMatterEmailsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selMatterObj.address) params.set("address", selMatterObj.address);
+      const url = `/api/email?${params.toString()}`;
+      console.log("[Communications] fetch URL:", url);
+      const res = await fetch(url);
+      console.log("[Communications] response status:", res.status);
+      const data = res.ok ? await res.json() : [];
+      console.log("[Communications] parsed response data:", data, "isArray:", Array.isArray(data), "length:", Array.isArray(data) ? data.length : "n/a");
+      const emails = Array.isArray(data) ? data : [];
+      setMatterEmails(emails);
+      console.log("[Communications] set matterEmails to", emails.length, "items");
+    } catch (err) {
+      console.error("[Communications] fetch error:", err);
+      setMatterEmails([]);
+    } finally {
+      setMatterEmailsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (matterTab === "Communications" && selMatterObj) {
+      fetchMatterEmails();
+      if (selMatterObj.email) setComposeTo(selMatterObj.email);
+    }
+  }, [matterTab, selMatterObj?.id]);
+
+  useEffect(() => {
+    if (matterTab === "Communications" && selMatterObj?.id) {
+      setSelectedEmailId(null);
+      setExpandedEmailId(null);
+      setComposeOpen(false);
+      setAiSummaryExpanded(false);
+      setCommInboxTab("inbox");
+    }
+  }, [matterTab, selMatterObj?.id]);
+
+  useEffect(() => {
+    if (matterTab === "Communications") {
+      console.log("[Communications] emails state (after set):", matterEmails?.length ?? 0, "items", matterEmails);
+    }
+  }, [matterTab, matterEmails]);
+
+  const handleReplyToEmail = (email) => {
+    if (!email) return;
+    const toAddress = email.isOutgoing
+      ? (email.toRecipients?.[0]?.address || "")
+      : (email.from?.address || "");
+    setComposeTo(toAddress);
+    setComposeSubject((s) => (s && s.startsWith("Re:") ? s : `Re: ${email.subject || ""}`.trim()));
+    setComposeBody("");
+    setComposeOpen(true);
+  };
+
+  const handleForwardEmail = (email) => {
+    if (!email) return;
+    const sender = email.from?.name || email.from?.address || "";
+    const date = email.receivedDateTime ? new Date(email.receivedDateTime).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) : "";
+    const rawSubject = email.subject || "(No subject)";
+    const subject = rawSubject.startsWith("Fwd:") ? rawSubject : `Fwd: ${rawSubject}`;
+    const bodyPreview = email.bodyPreview || "";
+    setComposeTo("");
+    setComposeSubject(subject);
+    setComposeBody(`\n\n-------- Forwarded Message --------\nFrom: ${sender}\nDate: ${date}\nSubject: ${rawSubject}\n\n${bodyPreview}`);
+    setComposeOpen(true);
+  };
+
+  function formatCommsTime(dateStr) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    const now = new Date();
+    const today = now.toDateString() === d.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (today) return "Today " + d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true }).toLowerCase();
+    if (yesterday.toDateString() === d.toDateString()) return "Yesterday " + d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true }).toLowerCase();
+    const daysDiff = Math.floor((now - d) / (24 * 60 * 60 * 1000));
+    if (daysDiff < 7) return d.toLocaleDateString("en-AU", { weekday: "short" }) + " " + d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true }).toLowerCase();
+    return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+  }
+
+  function parseEmailSummary(raw) {
+    if (!raw || typeof raw !== "string") return { overview: "", keyPoints: [], nextSteps: [], urgency: "", urgencyLevel: "" };
+    const s = raw.replace(/\r\n/g, "\n").trim();
+    const sections = { overview: "", keyPoints: [], nextSteps: [], urgency: "", urgencyLevel: "" };
+    const re = /(?:^|\n)\s*(?:\d+\.\s*)?(OVERVIEW|KEY POINTS|NEXT STEPS|URGENCY)\s*:?\s*[\n]*/gi;
+    const parts = s.split(re).map((p) => p.trim());
+    for (let i = 1; i < parts.length; i += 2) {
+      const key = (parts[i] || "").toUpperCase();
+      const val = parts[i + 1] || "";
+      if (key === "OVERVIEW") sections.overview = val;
+      if (key === "KEY POINTS") sections.keyPoints = val.split(/\n/).map((l) => l.replace(/^[\s\-•*]+\s*/, "").trim()).filter(Boolean);
+      if (key === "NEXT STEPS") sections.nextSteps = val.split(/\n/).map((l) => l.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
+      if (key === "URGENCY") {
+        sections.urgency = val;
+        const lower = val.toLowerCase();
+        if (lower.startsWith("high")) sections.urgencyLevel = "high";
+        else if (lower.startsWith("medium")) sections.urgencyLevel = "medium";
+        else if (lower.startsWith("low")) sections.urgencyLevel = "low";
+      }
+    }
+    return sections;
+  }
+
+  function renderSummaryMarkdown(text) {
+    if (!text || typeof text !== "string") return null;
+    const lines = text.replace(/\r\n/g, "\n").split("\n");
+    const out = [];
+    let listItems = [];
+    const parseInlineMarkdown = (str) => {
+      const parts = [];
+      let rest = str;
+      while (rest.length) {
+        const bold = rest.match(/^\*\*([^*]+)\*\*/);
+        if (bold) {
+          parts.push(<span key={parts.length} style={{fontWeight:700,color:"var(--text)"}}>{bold[1]}</span>);
+          rest = rest.slice(bold[0].length);
+          continue;
+        }
+        const i = rest.indexOf("**");
+        if (i === -1) {
+          parts.push(rest);
+          break;
+        }
+        parts.push(rest.slice(0, i));
+        const end = rest.indexOf("**", i + 2);
+        if (end === -1) {
+          parts.push(rest.slice(i));
+          break;
+        }
+        parts.push(<span key={parts.length} style={{fontWeight:700,color:"var(--text)"}}>{rest.slice(i + 2, end)}</span>);
+        rest = rest.slice(end + 2);
+      }
+      return parts.length === 1 && typeof parts[0] === "string" ? parts[0] : <span>{parts}</span>;
+    };
+    const flushList = () => {
+      if (listItems.length === 0) return;
+      out.push(
+        <ul key={out.length} style={{listStyle:"none",padding:0,margin:"4px 0 8px 0"}}>
+          {listItems.map((item, i) => (
+            <li key={i} style={{paddingLeft:20,position:"relative",marginBottom:4,fontSize:13,lineHeight:1.7,color:"var(--text-2)"}}>
+              <span style={{position:"absolute",left:0,top:0,fontSize:12,fontWeight:700,color:item.numbered?"var(--gold)":"var(--teal)"}}>{item.numbered ? (i + 1) + "." : "•"}</span>
+              {parseInlineMarkdown(item.text)}
+            </li>
+          ))}
+        </ul>
+      );
+      listItems = [];
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (/^###?\s/.test(trimmed)) {
+        flushList();
+        const heading = trimmed.replace(/^###?\s*/, "");
+        out.push(<div key={out.length} style={{fontWeight:700,fontSize:11,fontFamily:"var(--font-mono)",textTransform:"uppercase",color:"var(--text-3)",marginTop:out.length ? 12 : 0,marginBottom:4}}>{parseInlineMarkdown(heading)}</div>);
+        continue;
+      }
+      if (/^[\-\•]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
+        const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+        listItems.push({ text: numMatch ? numMatch[2] : trimmed.replace(/^[\-\•]\s*/, ""), numbered: !!numMatch });
+        continue;
+      }
+      if (trimmed === "") {
+        flushList();
+        continue;
+      }
+      if (listItems.length > 0) flushList();
+      out.push(<div key={out.length} style={{fontSize:13,lineHeight:1.7,color:"var(--text-2)",marginBottom:6}}>{parseInlineMarkdown(trimmed)}</div>);
+    }
+    flushList();
+    return <>{out}</>;
+  }
+
+  useEffect(() => {
+    if (matterTab !== "Communications") return;
+    if (!matterEmails?.length) {
+      setEmailSummary(null);
+      setEmailSummaryLoading(false);
+      return;
+    }
+    if (matterEmailsLoading) return;
+    const clientName = selMatterObj?.client || "the client";
+    const address = selMatterObj?.address || "the property";
+    const emailsBlurb = matterEmails.map((e) => `From: ${e.from?.name || e.from?.address || ""}, Subject: ${e.subject || ""}, Preview: ${e.bodyPreview || ""}`).join("\n");
+    const systemContext = `You are reviewing all emails related to a conveyancing matter for ${clientName} regarding ${address}.\nHere are all the relevant emails found:\n${emailsBlurb}`;
+    const userPrompt = `Please provide:\n1. OVERVIEW: A 2-3 sentence plain English summary of all communications\n2. KEY POINTS: 3-5 bullet points of the most important things discussed\n3. NEXT STEPS: 2-3 specific recommended actions based on the emails\n4. URGENCY: Rate as Low/Medium/High with one sentence explanation`;
+    setEmailSummary(null);
+    setEmailSummaryLoading(true);
+    (async () => {
+      try {
+        const mattersContext = selMatterObj ? `Current matter: ${selMatterObj.id}, Client: ${selMatterObj.client}, Type: ${selMatterObj.type}, Stage: ${selMatterObj.stage}.` : "";
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [
+              { role: "user", content: `${systemContext}\n\n${userPrompt}` },
+            ],
+            mattersContext,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.content) setEmailSummary(data.content);
+        else setEmailSummary("Summary unavailable.");
+      } catch (_) {
+        setEmailSummary("Summary unavailable.");
+      } finally {
+        setEmailSummaryLoading(false);
+      }
+    })();
+  }, [matterTab, matterEmails, matterEmailsLoading, selMatterObj?.id, selMatterObj?.client, selMatterObj?.address]);
+
+  const sendMatterEmail = async () => {
+    if (!composeTo.trim() || !composeSubject.trim()) return;
+    setSendingEmail(true);
+    try {
+      const res = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: composeTo.trim(),
+          subject: composeSubject.trim(),
+          body: composeBody.trim(),
+          matterId: selMatterObj?.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setComposeTo("");
+        setComposeSubject("");
+        setComposeBody("");
+        setComposeOpen(false);
+        fetchMatterEmails();
+      } else {
+        alert(data.error || "Failed to send email");
+      }
+    } catch (e) {
+      alert(e.message || "Failed to send email");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const requestEmailDraft = async () => {
+    const threadSummary = matterEmails.slice(0, 5).map((e) => `From: ${e.from?.name || e.from?.address || ""}\nSubject: ${e.subject}\n${e.bodyPreview || ""}`).join("\n\n");
+    const prompt = `Draft a professional reply email for this matter. Recent thread:\n\n${threadSummary}\n\nDraft the reply in plain text (no HTML).`;
+    const apiMessages = [{ role: "user", content: prompt }];
+    const mattersContext = selMatterObj ? `Current matter: ${selMatterObj.id}, Client: ${selMatterObj.client}, Type: ${selMatterObj.type}, Stage: ${selMatterObj.stage}.` : "";
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages, mattersContext }),
+      });
+      const data = await res.json();
+      if (res.ok && data.content) setComposeBody((b) => b ? `${b}\n\n--- AI draft ---\n${data.content}` : data.content);
+      else alert("Could not generate draft");
+    } catch (_) {
+      alert("Could not generate draft");
+    }
+  };
 
   useEffect(() => {
     const fetchDocuments = async () => {
@@ -1948,36 +2281,143 @@ export default function App() {
                   </div>
                 )}
 
-                {/* COMMUNICATIONS */}
+                {/* COMMUNICATIONS - three zones */}
                 {matterTab==="Communications" && (
-                  <div style={{display:"flex",gap:16,height:"calc(100vh - 280px)"}}>
-                    <div style={{flex:1,display:"flex",flexDirection:"column",gap:10,overflow:"hidden"}}>
-                      <div style={{flex:1,overflow:"auto",background:"var(--surface)",borderRadius:12,border:"1px solid var(--border)",padding:16,display:"flex",flexDirection:"column",gap:12}}>
-                        {COMMS.filter(c=>c.matter===selMatterObj.id).map((c,i)=>(
-                          <div key={i} className="thread-msg incoming">
-                            <div className="thread-meta">{c.from} · {c.time}</div>
-                            <div className="thread-bubble incoming">{c.preview}</div>
+                  <div className="comms-container" style={{height:"calc(100vh - 200px)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                    {/* ZONE 1: AI Summary bar (collapsible) */}
+                    {(matterEmails||[]).length > 0 && (
+                      <>
+                        <div className="comms-ai-bar" onClick={()=>setAiSummaryExpanded(!aiSummaryExpanded)} role="button" tabIndex={0} onKeyDown={e=>e.key==="Enter"&&setAiSummaryExpanded(!aiSummaryExpanded)}>
+                          <span style={{fontFamily:"var(--font-display)",fontSize:13,fontWeight:600,color:"var(--text)",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            ✦ AI Summary
+                            {emailSummaryLoading ? " · Loading…" : emailSummary && emailSummary !== "Summary unavailable." ? (()=>{const sec=parseEmailSummary(emailSummary); const raw=(sec.overview||"").split("\n")[0]||emailSummary.split("\n")[0]||""; const first=raw.replace(/^#+\s*/,"").trim(); return first ? " · " + first.slice(0,60) + (first.length>60?"…":"") : "";})() : ""}
+                          </span>
+                          {emailSummary && emailSummary !== "Summary unavailable." && (()=>{const sec=parseEmailSummary(emailSummary); const l=sec.urgencyLevel||""; return l ? <span className={`tag ${l==="high"?"tag-red":l==="medium"?"tag-amber":"tag-green"}`} style={{fontSize:10,flexShrink:0}}>{l.charAt(0).toUpperCase()+l.slice(1)}</span> : null;})()}
+                          <span style={{fontSize:12,color:"var(--text-3)",flexShrink:0}}>{aiSummaryExpanded ? "▼" : "▶"}</span>
+                        </div>
+                        <div className="comms-ai-expanded" style={{maxHeight:aiSummaryExpanded ? 340 : 0}}>
+                          <div className="comms-ai-expanded-inner" style={{padding:"16px 0 40px",position:"relative"}}>
+                            {emailSummaryLoading ? (
+                              <div className="comms-summary-shimmer" style={{height:100,borderRadius:"var(--radius-sm)"}}/>
+                            ) : emailSummary && emailSummary !== "Summary unavailable." ? (()=>{
+                              const sec = parseEmailSummary(emailSummary);
+                              return (
+                                <>
+                                  <h3 style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:600,color:"var(--text)",marginBottom:12}}>✦ Communications Summary</h3>
+                                  {sec.overview && <div className="comms-summary-section"><div className="comms-summary-label overview-dot">Overview</div><div className="comms-summary-content" style={{fontSize:14}}>{renderSummaryMarkdown(sec.overview)}</div></div>}
+                                  {sec.keyPoints?.length > 0 && <div className="comms-summary-section"><div className="comms-summary-label points-dot">Key points</div><ul className="comms-summary-list-teal comms-summary-content">{sec.keyPoints.map((p,i)=><li key={i}>{renderSummaryMarkdown(p)}</li>)}</ul></div>}
+                                  {sec.nextSteps?.length > 0 && <div className="comms-summary-section"><div className="comms-summary-label steps-dot">Next steps</div><ul className="comms-summary-list-gold comms-summary-content">{sec.nextSteps.map((s,i)=><li key={i}>{renderSummaryMarkdown(s)}</li>)}</ul></div>}
+                                  {(sec.urgency||sec.urgencyLevel) && <div className="comms-summary-section"><div className="comms-summary-label urgency-dot">Urgency</div><div className="comms-summary-content"><span className={`tag ${sec.urgencyLevel==="high"?"tag-red":sec.urgencyLevel==="medium"?"tag-amber":"tag-green"}`} style={{marginRight:8}}>{sec.urgencyLevel?sec.urgencyLevel.charAt(0).toUpperCase()+sec.urgencyLevel.slice(1):"—"}</span>{renderSummaryMarkdown(sec.urgency)}</div></div>}
+                                  {!sec.overview && !sec.keyPoints?.length && !sec.nextSteps?.length && !sec.urgency && <div className="comms-summary-content">{renderSummaryMarkdown(emailSummary)}</div>}
+                                </>
+                              );
+                            })() : emailSummary==="Summary unavailable." ? <div className="comms-summary-content" style={{color:"var(--text-3)"}}>Summary unavailable.</div> : null}
+                            <button type="button" className="btn-ghost" style={{position:"absolute",bottom:12,right:0,fontSize:11}} onClick={e=>{e.stopPropagation(); setAiSummaryExpanded(false);}}>Collapse</button>
                           </div>
-                        ))}
-                        {COMMS.filter(c=>c.matter===selMatterObj.id).length===0&&(
-                          <div style={{fontSize:12,color:"var(--text-3)",padding:"12px 0"}}>No communications for this matter.</div>
-                        )}
-                      </div>
-                      <div>
-                        <textarea className="compose-textarea" placeholder="Type your reply... (or use AI to draft)"/>
-                        <div style={{display:"flex",gap:8,marginTop:8}}>
-                          <button className="btn-ghost" style={{fontSize:12}} onClick={()=>sendAI("draft email")}>✦ AI Draft</button>
-                          <div style={{flex:1}}/>
-                          <button className="btn-primary" style={{fontSize:12}}>Send ✉️</button>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Two-column: left = email list, right = detail + compose */}
+                    <div className="comms-two-col">
+                      {/* Left column: 300px email list */}
+                      <div className="comms-left-col">
+                        <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:600,color:"var(--text)"}}>Communications</span>
+                            {(()=>{const u=(matterEmails||[]).filter(e=>!e.isRead).length; return u>0 ? <span className="tag tag-gold" style={{fontSize:10}}>{u} unread</span> : null;})()}
+                          </div>
+                          <button type="button" className="icon-btn" onClick={fetchMatterEmails} disabled={matterEmailsLoading} title="Refresh">↻</button>
+                        </div>
+                        <div className="comms-inbox-tabs">
+                          {(()=>{const emails=matterEmails||[]; const inboxCount=emails.filter(e=>!e.isOutgoing).length; const sentCount=emails.filter(e=>e.isOutgoing).length; return (
+                            <>
+                              <button type="button" className={`comms-inbox-tab ${commInboxTab==="inbox"?"active":"inactive"}`} onClick={()=>setCommInboxTab("inbox")}>Inbox ({inboxCount})</button>
+                              <button type="button" className={`comms-inbox-tab ${commInboxTab==="sent"?"active":"inactive"}`} onClick={()=>setCommInboxTab("sent")}>Sent ({sentCount})</button>
+                              <button type="button" className={`comms-inbox-tab ${commInboxTab==="all"?"active":"inactive"}`} onClick={()=>setCommInboxTab("all")}>All ({emails.length})</button>
+                            </>
+                          );})()}
+                        </div>
+                        <div style={{flexShrink:0,padding:"8px 12px",borderBottom:"1px solid var(--border-2)"}}>
+                          <div className="tb-search" style={{width:"100%"}}><input type="text" placeholder="Search emails…" value={commSearchFilter} onChange={e=>setCommSearchFilter(e.target.value)} style={{flex:1}}/></div>
+                        </div>
+                        <div className="comms-email-list">
+                          {matterEmailsLoading && (!matterEmails||matterEmails.length===0) ? (
+                            <><div className="comms-row-shimmer"/><div className="comms-row-shimmer"/><div className="comms-row-shimmer"/></>
+                          ) : !matterEmails || matterEmails.length === 0 ? (
+                            <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:48,color:"var(--text-3)",fontSize:14}}>
+                              <div style={{fontSize:32,marginBottom:12,opacity:0.5}}>✉️</div>
+                              <div>No emails found for this matter.</div>
+                            </div>
+                          ) : (()=>{
+                            const tabFiltered=commInboxTab==="inbox" ? matterEmails.filter(e=>!e.isOutgoing) : commInboxTab==="sent" ? matterEmails.filter(e=>e.isOutgoing) : matterEmails;
+                            const kw=(commSearchFilter||"").toLowerCase().trim();
+                            const list=kw ? tabFiltered.filter(e=>[e.subject,e.bodyPreview,e.from?.name,e.from?.address].some(s=>String(s||"").toLowerCase().includes(kw))) : tabFiltered;
+                            if(list.length===0) return <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:48,color:"var(--text-3)",fontSize:14}}><div style={{fontSize:32,marginBottom:12,opacity:0.5}}>✉️</div><div>No matching emails.</div></div>;
+                            return list.map((e)=>{
+                              const name=e.from?.name||e.from?.address||"Unknown";
+                              const initials=name.split(/[\s@]/).filter(Boolean).slice(0,2).map(p=>p[0]).join("").toUpperCase().slice(0,2)||"?";
+                              const hue=name.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%AVATAR_COLORS.length;
+                              const isSelected=selectedEmailId===e.id;
+                              return (
+                                <div key={e.id} className={`comms-email-row ${isSelected?"selected":""} ${!e.isRead?"unread":""}`} onClick={()=>setSelectedEmailId(isSelected?null:e.id)}>
+                                  <div className="comms-avatar-36" style={{background:AVATAR_COLORS[hue]}}>{initials}</div>
+                                  {!e.isRead && <span style={{width:8,height:8,borderRadius:"50%",background:"var(--gold)",flexShrink:0,alignSelf:"center",marginLeft:-4}}/>}
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                                      <span style={{fontSize:13,fontWeight:!e.isRead?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{name}</span>
+                                      <span className="comms-row-muted" style={{fontSize:11,fontFamily:"var(--font-mono)",color:"var(--text-3)",flexShrink:0}}>{formatCommsTime(e.receivedDateTime)}</span>
+                                    </div>
+                                    <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{e.subject||"(No subject)"}</div>
+                                    <div className="comms-row-muted" style={{fontSize:12,color:"var(--text-3)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{(e.bodyPreview||"").split("\n")[0]}</div>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
-                    </div>
-                    <div style={{width:260,flexShrink:0}}>
-                      <div className="ai-summary-card">
-                        <div className="ai-sum-label">✦ AI Summary</div>
-                        {["Client needs update — respond promptly","Tone: polite but anxious","Check search/contract status before replying"].map((s,i)=>(
-                          <div key={i} className="ai-sum-item"><div className="ai-sum-dot"/><span>{s}</span></div>
-                        ))}
+                      {/* Right column: email detail + compose */}
+                      <div className="comms-right-col">
+                        <div className="comms-detail-thread" style={{background:"var(--white)",color:"var(--text)"}}>
+                          {!selectedEmailId ? (
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"var(--text-3)",fontSize:14}}>Select an email to view</div>
+                          ) : (()=>{
+                            const email=(matterEmails||[]).find(e=>e.id===selectedEmailId);
+                            if(!email) return <div style={{color:"var(--text-3)",fontSize:14}}>Email not found</div>;
+                            return (
+                              <div style={{background:"var(--white)",color:"var(--text)",borderRadius:12,padding:20,border:"1px solid var(--border)",boxShadow:"var(--shadow-sm)",marginBottom:16}}>
+                                <div style={{fontSize:11,marginBottom:8}}><span style={{color:"var(--text-3)"}}>From: </span><span style={{color:"var(--text)"}}>{email.from?.name||email.from?.address||"—"}</span><span style={{color:"var(--text-3)"}}> · To: </span><span style={{color:"var(--text)"}}>{(email.toRecipients||[]).map(r=>r?.name||r?.address).filter(Boolean).join(", ")||"—"}</span></div>
+                                <div style={{fontSize:11,marginBottom:6}}><span style={{color:"var(--text-3)"}}>Subject: </span><span style={{color:"var(--text)",fontWeight:600}}>{email.subject||"(No subject)"}</span></div>
+                                <div style={{fontSize:11,fontFamily:"var(--font-mono)",marginBottom:12}}><span style={{color:"var(--text-3)"}}>Date: </span><span style={{color:"var(--text)"}}>{formatCommsTime(email.receivedDateTime)}</span></div>
+                                <div style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)",whiteSpace:"pre-wrap"}}>{email.bodyPreview||""}</div>
+                                <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+                                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>handleReplyToEmail(email)}>Reply</button>
+                                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>handleForwardEmail(email)}>→ Forward</button>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        {composeOpen && (
+                        <div className="comms-compose-wrap" style={{borderTop:"1px solid var(--border)",background:"var(--white)"}}>
+                          <div className="comms-compose-form" style={{maxHeight:420}}>
+                            <div style={{padding:"16px 20px 20px"}}>
+                              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+                                <div><label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>To</label><input className="intake-input" placeholder="client@example.com" value={composeTo} onChange={e=>setComposeTo(e.target.value)} style={{width:"100%"}}/></div>
+                                <div><label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>Subject</label><input className="intake-input" placeholder="Subject" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} style={{width:"100%"}}/></div>
+                                <div><label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>Body <span style={{fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{composeBody.length} chars</span></label><textarea className="compose-textarea" placeholder="Type your message..." value={composeBody} onChange={e=>setComposeBody(e.target.value)} rows={4} style={{width:"100%",minHeight:80}}/></div>
+                              </div>
+                              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                                <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={requestEmailDraft}>✦ AI Draft</button>
+                                <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>setComposeOpen(false)}>Discard</button>
+                                <div style={{flex:1}}/>
+                                <button type="button" className="btn-primary" style={{fontSize:12}} disabled={sendingEmail||!composeTo.trim()||!composeSubject.trim()} onClick={sendMatterEmail}>{sendingEmail?"Sending…":"Send ✉️"}</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        )}
                       </div>
                     </div>
                   </div>
