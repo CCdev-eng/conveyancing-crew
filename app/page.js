@@ -341,6 +341,27 @@ const SOURCES = [
 ];
 const fmt = d => d ? new Date(d).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"}) : "—";
 
+const SEARCH_TYPES_BY_MATTER = {
+  NSW_Purchase: [
+    { id: "title", name: "Title Search", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Current title search for the property." },
+    { id: "council", name: "Council Rates", provider: "InfoTrack", turnaround: "1–3 business days", desc: "Rates and charges certificate." },
+    { id: "water", name: "Water/Sewer", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Water and sewer search." },
+    { id: "strata", name: "Strata Report", provider: "InfoTrack", turnaround: "2–5 business days", desc: "Strata search for units." },
+    { id: "stamp", name: "Stamp Duty Assessment", provider: "InfoTrack", turnaround: "Same day", desc: "Stamp duty estimate/assessment." },
+  ],
+  VIC_Purchase: [
+    { id: "title", name: "Title Search", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Current title search for the property." },
+    { id: "council", name: "Council Rates", provider: "InfoTrack", turnaround: "1–3 business days", desc: "Rates and charges certificate." },
+    { id: "water", name: "Water/Sewer", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Water and sewer search." },
+    { id: "landtax", name: "Land Tax Clearance", provider: "Landata", turnaround: "2–5 business days", desc: "Land tax clearance certificate." },
+    { id: "frgw", name: "FRGW Certificate", provider: "Landata", turnaround: "3–7 business days", desc: "Section 32 / FRGW certificate." },
+  ],
+  Sale: [
+    { id: "title", name: "Title Search", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Current title for contract." },
+    { id: "landtax", name: "Land Tax Clearance", provider: "InfoTrack", turnaround: "2–5 business days", desc: "Land tax clearance for settlement." },
+  ],
+};
+
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -800,6 +821,13 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [matterSearches, setMatterSearches] = useState({});
+  const [intakeAddress, setIntakeAddress] = useState("");
+  const [intakeState, setIntakeState] = useState("NSW");
+  const [intakeSuburb, setIntakeSuburb] = useState("");
+  const [intakePostcode, setIntakePostcode] = useState("");
+  const addressInputRef = useRef(null);
+  const autocompleteAttachedRef = useRef(false);
   const [aiMessages, setAiMessages] = useState([
     { id:0, role:"ai", text:"Good morning, Jessica. Here's what needs your attention today.", bullets:["3 critical tasks — PEXA creation for Nguyen is most urgent","Sarah Mitchell has emailed about the pool cert — needs a reply now","Wu ($2.15M) searches are overdue — follow up immediately"] }
   ]);
@@ -849,6 +877,8 @@ export default function App() {
           status: row.status,
           urgency: row.urgency,
           staff: row.staff,
+          notes: row.notes,
+          pexa: row.pexa ? { workspaceId: row.pexa.workspaceId } : undefined,
         }));
         console.log("Final MATTERS state after setting:", mapped);
         setMATTERS(mapped);
@@ -1055,6 +1085,54 @@ export default function App() {
     };
     fetchDocuments();
   }, [selMatterObj]);
+
+  useEffect(() => {
+    if (modal !== "intake" || intakeStep !== 2) {
+      autocompleteAttachedRef.current = false;
+      return;
+    }
+    const key = process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY;
+    if (!key) return;
+    const initAutocomplete = () => {
+      if (!window.google?.maps?.places || !addressInputRef.current || autocompleteAttachedRef.current) return;
+      autocompleteAttachedRef.current = true;
+      const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, { types: ["address"], componentRestrictions: { country: "au" } });
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (!place || !place.address_components) return;
+        const addr = place.formatted_address || place.name || "";
+        setIntakeAddress(addr);
+        let state = "";
+        let suburb = "";
+        let postcode = "";
+        for (const c of place.address_components) {
+          if (c.types.includes("administrative_area_level_1")) state = c.short_name || c.long_name || "";
+          if (c.types.includes("locality")) suburb = c.long_name || "";
+          if (c.types.includes("postal_code")) postcode = c.long_name || "";
+        }
+        if (state) {
+          const s = state.toUpperCase();
+          if (s === "NSW" || s === "VIC") setIntakeState(s);
+          else if (state.toLowerCase().includes("victoria")) setIntakeState("VIC");
+          else if (state.toLowerCase().includes("new south") || state.toLowerCase().includes("nsw")) setIntakeState("NSW");
+          else setIntakeState(state);
+        }
+        if (suburb) setIntakeSuburb(suburb);
+        if (postcode) setIntakePostcode(postcode);
+      });
+    };
+    if (window.google?.maps?.places) {
+      initAutocomplete();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setTimeout(initAutocomplete, 100);
+    document.head.appendChild(script);
+    return () => { script.remove(); };
+  }, [modal, intakeStep]);
 
   const pageTitle = {
     dashboard:"Dashboard", matters:"Matters", referrals:"Referrals",
@@ -1516,10 +1594,19 @@ export default function App() {
                     <span className="tag" style={{background:(STAGE_COLORS[selMatterObj.stage]||"#94a3b8")+"22",color:STAGE_COLORS[selMatterObj.stage]||"#94a3b8"}}>{selMatterObj.stage}</span>
                     <span className="tag tag-gray">{selMatterObj.price}</span>
                     {selMatterObj.urgency==="high"&&<span className="tag tag-red">⚡ High Priority</span>}
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{fontSize:12,display:"inline-flex",alignItems:"center",gap:6}}
+                      onClick={()=>window.open(selMatterObj.pexa?.workspaceId ? `https://www.pexa.com.au/workspaces/${selMatterObj.pexa.workspaceId}` : "https://www.pexa.com.au","_blank")}
+                    >
+                      🏦 Open in PEXA
+                      {selMatterObj.pexa?.workspaceId&&<span className="tag" style={{fontSize:9,padding:"2px 6px",background:"rgba(255,255,255,0.2)",marginLeft:2}}>Workspace: {selMatterObj.pexa.workspaceId}</span>}
+                    </button>
                   </div>
                 </div>
                 <div className="ws-tabs">
-                  {["Overview","Workflow","Timeline","Documents","Tasks","Communications","Billing","AI Assistant"].map(t=>(
+                  {["Overview","Workflow","Timeline","Documents","Searches","Tasks","Communications","Billing","AI Assistant"].map(t=>(
                     <button key={t} className={`ws-tab ${matterTab===t?"active":""}`} onClick={()=>setMatterTab(t)}>{t}</button>
                   ))}
                 </div>
@@ -1781,6 +1868,59 @@ export default function App() {
                     )}
                   </div>
                 )}
+
+                {/* SEARCHES */}
+                {matterTab==="Searches" && (() => {
+                  const isPurchase = (selMatterObj.type || "").toLowerCase().includes("purchase");
+                  const isSale = (selMatterObj.type || "").toLowerCase().includes("sale");
+                  const state = (selMatterObj.state || "NSW").toUpperCase();
+                  const key = isSale ? "Sale" : state === "VIC" && isPurchase ? "VIC_Purchase" : "NSW_Purchase";
+                  const searchTypes = SEARCH_TYPES_BY_MATTER[key] || SEARCH_TYPES_BY_MATTER.NSW_Purchase;
+                  const matterId = selMatterObj.id;
+                  let statusMap = matterSearches[matterId];
+                  if (!statusMap && selMatterObj.notes) {
+                    try {
+                      const parsed = JSON.parse(selMatterObj.notes);
+                      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) statusMap = parsed;
+                    } catch (_) {}
+                  }
+                  if (!statusMap) statusMap = {};
+                  const setSearchStatus = (searchId, status) => {
+                    const next = { ...(matterSearches[matterId] || {}), [searchId]: status };
+                    setMatterSearches(prev => ({ ...prev, [matterId]: next }));
+                    const notesPayload = JSON.stringify(next);
+                    supabase.from("matters").update({ notes: notesPayload }).eq("matter_ref", matterId).then(() => {});
+                  };
+                  const openInfoTrack = (searchId) => {
+                    window.open("https://www.infotrack.com.au", "_blank");
+                    setSearchStatus(searchId, "ordered");
+                    setTimeout(() => alert("API integration coming soon"), 300);
+                  };
+                  return (
+                    <div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+                        {searchTypes.map(s => (
+                          <div key={s.id} className="card" style={{padding:14}}>
+                            <div className="card-title" style={{marginBottom:6}}>{s.name}</div>
+                            <div style={{fontSize:11,color:"var(--text-3)",marginBottom:8}}>{s.desc}</div>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+                              <span className="tag tag-gray" style={{fontSize:10}}>{s.provider}</span>
+                              <span className="tag tag-gray" style={{fontSize:10}}>⏱ {s.turnaround}</span>
+                            </div>
+                            <div style={{marginBottom:10}}>
+                              <span className={`tag ${(statusMap[s.id] || "not_ordered") === "received" ? "tag-green" : (statusMap[s.id] || "not_ordered") === "ordered" ? "tag-amber" : "tag-gray"}`} style={{fontSize:10}}>
+                                {(statusMap[s.id] || "not_ordered") === "not_ordered" ? "Not Ordered" : statusMap[s.id] === "ordered" ? "Ordered" : "Received"}
+                              </span>
+                            </div>
+                            <button type="button" className="btn-primary" style={{fontSize:11,width:"100%"}} onClick={() => openInfoTrack(s.id)}>
+                              Order via InfoTrack
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* TASKS */}
                 {matterTab==="Tasks" && (
@@ -2355,11 +2495,32 @@ export default function App() {
                       <div key={f} className="missing-alert">⚠ {f} not detected</div>
                     ))}
                   </div>
+                  <div style={{marginBottom:14}}>
+                    <label className="intake-label">Address</label>
+                    <input
+                      ref={addressInputRef}
+                      type="text"
+                      className="intake-input"
+                      placeholder="Start typing address..."
+                      value={intakeAddress}
+                      onChange={e=>setIntakeAddress(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
                   <div className="intake-grid">
-                    {[["Phone",""],["Email",""],["Agent",""],["Source","Website"],["Type","Purchase"],["State","NSW"]].map(([l,d])=>(
+                    {[["Phone",""],["Email",""],["Agent",""],["Source","Website"],["Type","Purchase"],["State",intakeState],["Suburb",intakeSuburb],["Postcode",intakePostcode]].map(([l,d])=>(
                       <div key={l}>
                         <label className="intake-label">{l}</label>
-                        <input className="intake-input" defaultValue={d} placeholder={`Enter ${l.toLowerCase()}...`}/>
+                        {l === "State" || l === "Suburb" || l === "Postcode" ? (
+                          <input
+                            className="intake-input"
+                            placeholder={`Enter ${l.toLowerCase()}...`}
+                            value={d}
+                            onChange={e=>{ if(l==="State")setIntakeState(e.target.value); if(l==="Suburb")setIntakeSuburb(e.target.value); if(l==="Postcode")setIntakePostcode(e.target.value); }}
+                          />
+                        ) : (
+                          <input className="intake-input" defaultValue={d} placeholder={`Enter ${l.toLowerCase()}...`}/>
+                        )}
                       </div>
                     ))}
                   </div>
