@@ -52,9 +52,29 @@ function mapMessages(data) {
   }));
 }
 
+function mapSingleMessageWithBody(m) {
+  return {
+    id: m.id,
+    subject: m.subject,
+    bodyPreview: m.bodyPreview,
+    body: m.body?.content ?? null,
+    bodyContentType: m.body?.contentType ?? "text",
+    receivedDateTime: m.receivedDateTime,
+    isRead: m.isRead,
+    from: m.from?.emailAddress
+      ? { name: m.from.emailAddress.name, address: m.from.emailAddress.address }
+      : null,
+    toRecipients: (m.toRecipients || []).map((r) => ({
+      name: r.emailAddress?.name,
+      address: r.emailAddress?.address,
+    })),
+  };
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
+    const emailId = searchParams.get("emailId");
     const query = searchParams.get("query");
     const address = searchParams.get("address");
 
@@ -65,18 +85,34 @@ export async function GET(request) {
       );
     }
 
+    const token = await getAccessToken();
+    const baseUrl = mailbox
+      ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`
+      : "https://graph.microsoft.com/v1.0/me";
+    const headers = { Authorization: `Bearer ${token}` };
+
+    if (emailId && emailId.trim()) {
+      const select = "id,subject,from,receivedDateTime,body,isRead,toRecipients";
+      const url = `${baseUrl}/messages/${encodeURIComponent(emailId.trim())}?$select=${encodeURIComponent(select)}`;
+      console.log("[email] fetch single message:", emailId);
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        console.error("[email] Graph single message status:", res.status);
+        return Response.json({ error: "Email not found" }, { status: 404 });
+      }
+      const m = await res.json();
+      const email = mapSingleMessageWithBody(m);
+      const mailboxLower = (mailbox || "").toLowerCase();
+      email.isOutgoing = !!mailboxLower && (email.from?.address || "").toLowerCase() === mailboxLower;
+      return Response.json(email);
+    }
+
     const searchTerm = (query && query.trim()) || getAddressPhrase(address || "");
     if (!searchTerm) {
       return Response.json([]);
     }
 
-    const token = await getAccessToken();
-    const baseUrl = mailbox
-      ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`
-      : "https://graph.microsoft.com/v1.0/me";
     const select = "id,subject,from,receivedDateTime,bodyPreview,isRead,toRecipients";
-    const headers = { Authorization: `Bearer ${token}` };
-
     const params = new URLSearchParams();
     params.set("$search", `"${searchTerm.replace(/"/g, '\\"')}"`);
     params.set("$top", "20");

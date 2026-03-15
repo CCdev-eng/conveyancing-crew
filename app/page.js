@@ -74,6 +74,24 @@ const AVATAR_COLORS = [
   "linear-gradient(135deg, #ca8a04 0%, #b45309 100%)",
 ];
 
+const cleanEmailBody = (html) => {
+  if (!html) return '';
+  let cleaned = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+  cleaned = cleaned.replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '');
+  cleaned = cleaned.replace(/<html[^>]*>/gi, '').replace(/<\/html>/gi, '');
+  cleaned = cleaned.replace(/<body[^>]*>/gi, '').replace(/<\/body>/gi, '');
+  cleaned = cleaned.replace(/<img[^>]+src=["']cid:[^"']*["'][^>]*>/gi, '');
+  cleaned = cleaned.replace(/<img[^>]+src=["']["'][^>]*>/gi, '');
+  cleaned = cleaned.replace(/\[horizontal bar\]/gi, '');
+  cleaned = cleaned.replace(/font-family:[^;"]*/gi, '');
+  cleaned = cleaned.replace(/font-size:\s*(\d+)(px|pt)/gi, (match, size, unit) => {
+    const px = unit === 'pt' ? Math.round(parseInt(size, 10) * 1.33) : parseInt(size, 10);
+    return px > 14 ? 'font-size:13px' : match;
+  });
+  cleaned = `<div style="font-family:'DM Sans',Arial,sans-serif;font-size:13px;line-height:1.8;color:#3d4f7a;max-width:100%;overflow-x:hidden">${cleaned}</div>`;
+  return cleaned;
+};
+
 // ─── WORKFLOWS ────────────────────────────────────────────────────────────────
 const WORKFLOWS = {
   Purchase: [
@@ -648,9 +666,9 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 
 /* ── MATTERS TABLE ── */
 .matter-table{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-sm)}
-.mt-thead{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px 80px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px}
+.mt-thead{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px}
 .mt-th{font-size:9px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
-.mt-row{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px 80px;padding:13px 20px;border-bottom:1px solid var(--border-2);gap:12px;align-items:center;cursor:pointer;transition:all 0.1s}
+.mt-row{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px;padding:13px 20px;border-bottom:1px solid var(--border-2);gap:12px;align-items:center;cursor:pointer;transition:all 0.1s}
 .mt-row:last-child{border-bottom:none}
 .mt-row:hover{background:#fafaf9}
 .mt-id{font-size:10px;font-family:var(--font-mono);color:var(--text-3)}
@@ -735,6 +753,37 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .fee-paid{background:var(--green-light);color:var(--green)}
 .fee-owed{background:var(--amber-light);color:var(--amber);border:1px solid #fde68a}
 .fee-none{background:var(--surface);color:var(--text-3);border:1px solid var(--border)}
+
+/* ── CONTACTS ── */
+.contacts-layout{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 58px);overflow:hidden}
+.contacts-list{background:var(--white);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.contacts-list-scroll{flex:1;overflow-y:auto}
+.contact-card{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border-2);cursor:pointer;transition:all 0.15s;position:relative}
+.contact-card:hover{background:var(--surface);transform:translateY(-1px)}
+.contact-card.selected{background:var(--gold-light);border-left:3px solid var(--gold)}
+.contact-avatar-lg{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:white;flex-shrink:0}
+.contact-detail{flex:1;overflow-y:auto;padding:24px;background:var(--surface)}
+.contact-ai-card{background:var(--gold-light);border:1px solid var(--gold-dim);border-radius:var(--radius-lg);padding:20px;margin-bottom:20px}
+.contact-matters-list{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);overflow:hidden;margin-bottom:20px}
+.contact-matter-row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border-2);cursor:pointer;transition:all 0.12s}
+.contact-matter-row:hover{background:var(--surface)}
+.contact-fields-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);padding:16px;margin-bottom:20px;width:100%}
+.contact-fields-grid .contact-field{overflow:visible}
+.contact-field{display:flex;flex-direction:column;gap:4px;max-width:100%;overflow:visible}
+.contact-field-label{font-size:9px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:1px;max-width:100%}
+.contact-field-value{font-size:13px;color:var(--text);font-weight:500;max-width:100%}
+
+/* Contact list table (reuse matter-table) */
+.contacts-table .mt-thead,.contacts-table .mt-row{grid-template-columns:minmax(180px,1.2fr) 90px 120px minmax(140px,1fr) 72px 44px}
+.contacts-table .mt-row{cursor:default}
+
+.contact-modal-overlay{position:fixed;inset:0;background:rgba(26,39,68,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.contact-modal{width:95vw;max-width:1200px;height:90vh;background:var(--white);border-radius:20px;display:flex;flex-direction:column;box-shadow:var(--shadow-xl);overflow:hidden}
+.contact-modal-hdr{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-shrink:0}
+.contact-modal-body{flex:1;overflow:hidden;display:grid;grid-template-columns:280px 1fr 300px;min-height:0;height:100%}
+.contact-modal-left{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.contact-modal-mid{display:flex;flex-direction:column;overflow:hidden;height:100%;min-height:0;flex:1}
+.contact-modal-right{border-left:1px solid var(--border);overflow-y:auto;min-height:0;height:100%;padding:16px;background:var(--white)}
 
 /* ── ACCOUNTING ── */
 .acc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
@@ -925,6 +974,56 @@ export default function App() {
   const aiEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const composeBodyRef = useRef(null);
+  const modalRef = useRef(null);
+  const matterModalRef = useRef(null);
+  const [contacts, setContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [contactSearch, setContactSearch] = useState("");
+  const [contactFilter, setContactFilter] = useState("all");
+  const [contactModal, setContactModal] = useState(false);
+  const [editingContact, setEditingContact] = useState(null);
+  const [contactAI, setContactAI] = useState({});
+  const [contactAILoading, setContactAILoading] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: "", type: "Client", email: "", phone: "", address: "", company: "", is_referrer: false, referrer_fee: "", formal_agreement: false, notes: "" });
+  const [viewingContact, setViewingContact] = useState(null);
+  const [contactEmails, setContactEmails] = useState([]);
+  const [contactEmailsLoading, setContactEmailsLoading] = useState(false);
+  const [selectedContactEmailId, setSelectedContactEmailId] = useState(null);
+  const [emailBodies, setEmailBodies] = useState({});
+  const [loadingEmailBodyId, setLoadingEmailBodyId] = useState(null);
+  const [contactDetailInboxTab, setContactDetailInboxTab] = useState("all");
+  const [contactDetailSearch, setContactDetailSearch] = useState("");
+  const [contactEditingInline, setContactEditingInline] = useState(false);
+  const [contactEditForm, setContactEditForm] = useState({});
+  const [contactAIChat, setContactAIChat] = useState([]);
+  const [contactAIChatInput, setContactAIChatInput] = useState("");
+  const [contactAITyping, setContactAITyping] = useState(false);
+  const [modalSize, setModalSize] = useState({ width: "95vw", height: "90vh" });
+  const [contactPanelWidths, setContactPanelWidths] = useState([280, null, 300]);
+  const [viewingMatterInModal, setViewingMatterInModal] = useState(null);
+  const [matterModalSize, setMatterModalSize] = useState({ width: "90vw", height: "85vh" });
+  const [matterModalTab, setMatterModalTab] = useState("Overview");
+  const [emailSortAsc, setEmailSortAsc] = useState(false);
+  const [matterCommsAIChat, setMatterCommsAIChat] = useState([]);
+  const [matterCommsAIChatInput, setMatterCommsAIChatInput] = useState("");
+  const [matterCommsAITyping, setMatterCommsAITyping] = useState(false);
+  const [mattersCommsModal, setMattersCommsModal] = useState(false);
+  const [mattersCommsEmailId, setMattersCommsEmailId] = useState(null);
+  const [mattersCommsEmails, setMattersCommsEmails] = useState([]);
+  const [mattersCommsLoading, setMattersCommsLoading] = useState(false);
+  const [mattersCommsSortAsc, setMattersCommsSortAsc] = useState(false);
+  const [mattersCommsTab, setMattersCommsTab] = useState("all");
+  const [mattersCommsSearch, setMattersCommsSearch] = useState("");
+  const [mattersCommsPanelWidths, setMattersCommsPanelWidths] = useState([280, null, 300]);
+  const [mattersCommsModalSize, setMattersCommsModalSize] = useState({ width: "95vw", height: "90vh" });
+  const [mattersCommsAIChat, setMattersCommsAIChat] = useState([]);
+  const [mattersCommsAIChatInput, setMattersCommsAIChatInput] = useState("");
+  const [mattersCommsAITyping, setMattersCommsAITyping] = useState(false);
+  const [mattersCommsAISummary, setMattersCommsAISummary] = useState(null);
+  const [mattersCommsAISummaryLoading, setMattersCommsAISummaryLoading] = useState(false);
+  const [mattersCommsAISummaryExpanded, setMattersCommsAISummaryExpanded] = useState(false);
+  const mattersCommsModalRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -979,6 +1078,248 @@ export default function App() {
 
     fetchMatters();
   }, []);
+
+  useEffect(() => {
+    const fetchContacts = async () => {
+      setContactsLoading(true);
+      const { data, error } = await supabase.from("contacts").select("*").order("name");
+      if (error) {
+        console.error("Error fetching contacts:", error);
+        setContacts([]);
+      } else {
+        console.log("Total contacts fetched:", data?.length, data);
+        setContacts(data || []);
+      }
+      setContactsLoading(false);
+    };
+    fetchContacts();
+  }, []);
+
+  const contactForAI = viewingContact || selectedContact;
+  useEffect(() => {
+    if (!contactForAI?.id || contactAI[contactForAI.id]) return;
+    const loadContactAI = async () => {
+      setContactAILoading(true);
+      const linkedMatters = MATTERS.filter((m) => m.client && contactForAI.name && (String(m.client).toLowerCase().includes(String(contactForAI.name).toLowerCase()) || String(contactForAI.name).toLowerCase().includes(String(m.client).toLowerCase())));
+      const mattersList = linkedMatters.length ? linkedMatters.map((m) => `${m.id} (${m.type}, ${m.stage})`).join("; ") : "None";
+      const totalValue = linkedMatters.reduce((s, m) => s + (parseFloat(String(m.price||0).replace(/[^0-9.]/g, "")) || 0), 0);
+      const prompt = `You are reviewing contact ${contactForAI.name} (${contactForAI.type || "Contact"}). Their linked matters: ${mattersList}. Generate:\n1. RELATIONSHIP SUMMARY: Who are they, how long have you worked with them\n2. ACTIVE MATTERS: Current status of their matters\n3. NEXT STEPS: What needs to happen for this contact\n4. VALUE: Total matter value across all their matters`;
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: [{ role: "user", content: prompt }], mattersContext: "", systemOverride: "You are an assistant for a conveyancing practice. Respond in clear markdown with the requested sections." }),
+        });
+        const data = await res.json();
+        if (res.ok && data.content) setContactAI((prev) => ({ ...prev, [contactForAI.id]: data.content }));
+      } catch (_) {}
+      setContactAILoading(false);
+    };
+    loadContactAI();
+  }, [contactForAI?.id]);
+
+  const fetchContactEmails = async () => {
+    if (!viewingContact?.name) return;
+    setContactEmailsLoading(true);
+    try {
+      const res = await fetch(`/api/email?query=${encodeURIComponent(viewingContact.name)}`);
+      const data = res.ok ? await res.json() : [];
+      setContactEmails(Array.isArray(data) ? data : []);
+    } catch (_) {
+      setContactEmails([]);
+    } finally {
+      setContactEmailsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (viewingContact) {
+      fetchContactEmails();
+      setSelectedContactEmailId(null);
+      setContactDetailInboxTab("all");
+      setContactDetailSearch("");
+      setContactEditingInline(false);
+      setContactAIChat([]);
+      setContactAIChatInput("");
+    }
+  }, [viewingContact?.id]);
+
+  const sendContactAI = async (question) => {
+    const q = (question || contactAIChatInput || "").trim();
+    if (!q || !viewingContact) return;
+    setContactAIChat((prev) => [...prev, { role: "user", text: q }]);
+    setContactAIChatInput("");
+    setContactAITyping(true);
+    const linkedMatters = MATTERS.filter((m) => m.client && (viewingContact.name || "").split(",")[0] && (String(m.client).toLowerCase().includes((viewingContact.name || "").split(",")[0].toLowerCase().trim()) || (viewingContact.name || "").split(",")[0].toLowerCase().trim().includes(String(m.client).toLowerCase())));
+    const mattersContextStr = `Contact: ${viewingContact.name} (${viewingContact.type || "Contact"}). Email: ${viewingContact.email || ""}. Phone: ${viewingContact.phone || ""}. Linked matters: ${linkedMatters.length ? linkedMatters.map((m) => `${m.id} - ${m.type} - ${m.stage} - ${m.address || ""}`).join(", ") : "None"}`;
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: q }], mattersContext: mattersContextStr }) });
+      const data = await response.json();
+      setContactAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry, I couldn't get a response." }]);
+    } catch (_) {
+      setContactAIChat((prev) => [...prev, { role: "ai", text: "Sorry, I couldn't get a response." }]);
+    }
+    setContactAITyping(false);
+  };
+
+  const handleModalResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = modalRef.current?.offsetWidth ?? 1200;
+    const startH = modalRef.current?.offsetHeight ?? 800;
+    const onMove = (ev) => {
+      const newW = Math.max(800, startW + ev.clientX - startX);
+      const newH = Math.max(500, startH + ev.clientY - startY);
+      setModalSize({ width: newW + "px", height: newH + "px" });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const handlePanelResize = (e, panelIndex) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panelIndex === 0 ? contactPanelWidths[0] : contactPanelWidths[2];
+    const onMove = (ev) => {
+      const diff = ev.clientX - startX;
+      const newWidths = [...contactPanelWidths];
+      if (panelIndex === 0) {
+        newWidths[0] = Math.max(200, startWidth + diff);
+      } else {
+        newWidths[2] = Math.max(200, startWidth - diff);
+      }
+      setContactPanelWidths(newWidths);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const handleMatterModalResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = matterModalRef.current?.offsetWidth ?? 1200;
+    const startH = matterModalRef.current?.offsetHeight ?? 800;
+    const onMove = (ev) => {
+      const newW = Math.max(800, startW + ev.clientX - startX);
+      const newH = Math.max(500, startH + ev.clientY - startY);
+      setMatterModalSize({ width: newW + "px", height: newH + "px" });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const fetchMattersCommsEmails = async () => {
+    if (!selMatterObj) return;
+    setMattersCommsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selMatterObj.address) params.append("address", selMatterObj.address);
+      const res = await fetch(`/api/email?${params}`);
+      const data = await res.json();
+      const emails = Array.isArray(data) ? data : (data?.emails || []);
+      setMattersCommsEmails(emails);
+      if (emails.length) generateMattersCommsAISummary(emails);
+    } catch (e) {
+      setMattersCommsEmails([]);
+    }
+    setMattersCommsLoading(false);
+  };
+
+  const generateMattersCommsAISummary = async (emails) => {
+    if (!emails.length || !selMatterObj) return;
+    setMattersCommsAISummaryLoading(true);
+    const emailContext = emails.slice(0, 10).map((e) => `From: ${e.from?.emailAddress?.name || e.from?.name}, Subject: ${e.subject}, Preview: ${(e.bodyPreview || "").slice(0, 150)}`).join("\n");
+    const dueTasks = tasks.filter((t) => t.matter === (selMatterObj.matter_ref || selMatterObj.id) && !t.done);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Summarise communications for this matter" }],
+          mattersContext: `Matter ${selMatterObj.matter_ref || selMatterObj.id} - ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nDue Tasks: ${dueTasks.map((t) => `${t.task} due ${t.due}`).join(", ") || "None"}\nEmails:\n${emailContext}\n\nReply in plain English with:\n1. OVERVIEW: What are these emails about in 2 sentences\n2. KEY POINTS: 3 most important things from emails as simple numbered list\n3. NEXT STEPS: 2-3 specific actions needed\n4. URGENCY: Low, Medium or High with one sentence why\n\nNo markdown symbols. Plain English only.`,
+        }),
+      });
+      const data = await res.json();
+      setMattersCommsAISummary(data.content || null);
+    } catch (_) {}
+    setMattersCommsAISummaryLoading(false);
+  };
+
+  const sendMattersCommsAI = async (question) => {
+    const q = (question || mattersCommsAIChatInput || "").trim();
+    if (!q || !selMatterObj) return;
+    setMattersCommsAIChat((prev) => [...prev, { role: "user", text: q }]);
+    setMattersCommsAIChatInput("");
+    setMattersCommsAITyping(true);
+    const dueTasks = tasks.filter((t) => t.matter === (selMatterObj.matter_ref || selMatterObj.id) && !t.done);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: q }],
+          mattersContext: `Matter: ${selMatterObj.matter_ref || selMatterObj.id}\nClient: ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nValue: ${selMatterObj.price || ""}\nSettlement: ${selMatterObj.settlement || ""}\nDue Tasks: ${dueTasks.map((t, i) => `${i + 1}. ${t.task} due ${t.due} (${t.urgency})`).join("\n") || "None"}\nRecent emails: ${mattersCommsEmails.slice(0, 5).map((e) => `${e.from?.name || e.from?.address || ""}: ${e.subject || ""}`).join(", ")}\n\nPlain English only. No markdown. If tasks due list them numbered.`,
+        }),
+      });
+      const data = await res.json();
+      setMattersCommsAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry I could not get a response." }]);
+    } catch (_) {
+      setMattersCommsAIChat((prev) => [...prev, { role: "ai", text: "Sorry I could not get a response." }]);
+    }
+    setMattersCommsAITyping(false);
+  };
+
+  const handleMattersCommsModalResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = mattersCommsModalRef.current?.offsetWidth ?? 1200;
+    const startH = mattersCommsModalRef.current?.offsetHeight ?? 800;
+    const onMove = (ev) => {
+      const newW = Math.max(800, startW + ev.clientX - startX);
+      const newH = Math.max(500, startH + ev.clientY - startY);
+      setMattersCommsModalSize({ width: newW + "px", height: newH + "px" });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const handleMattersCommsPanelResize = (e, panelIndex) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panelIndex === 0 ? mattersCommsPanelWidths[0] : mattersCommsPanelWidths[2];
+    const onMove = (ev) => {
+      const diff = ev.clientX - startX;
+      const newWidths = [...mattersCommsPanelWidths];
+      if (panelIndex === 0) newWidths[0] = Math.max(200, startWidth + diff);
+      else newWidths[2] = Math.max(200, startWidth - diff);
+      setMattersCommsPanelWidths(newWidths);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const sendAI = async (q) => {
     const msg = q || aiInput.trim();
@@ -1149,6 +1490,26 @@ export default function App() {
   const selComm = COMMS.find(c => c.id === selectedCommId);
   const selRef = REFERRERS.find(r => r.id === selectedRef);
 
+  useEffect(() => {
+    const id = viewingContact ? selectedContactEmailId : (mattersCommsModal && selMatterObj ? mattersCommsEmailId : (matterTab === "Communications" && selMatterObj ? selectedEmailId : null));
+    if (!id || emailBodies[id] !== undefined) return;
+    let cancelled = false;
+    setLoadingEmailBodyId(id);
+    fetch(`/api/email?emailId=${encodeURIComponent(id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        setEmailBodies((prev) => ({ ...prev, [id]: { content: data?.body ?? null, contentType: data?.bodyContentType || "text" } }));
+      })
+      .catch(() => {
+        if (!cancelled) setEmailBodies((prev) => ({ ...prev, [id]: { content: null, contentType: "text" } }));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingEmailBodyId(null);
+      });
+    return () => { cancelled = true; };
+  }, [viewingContact, selectedContactEmailId, matterTab, selMatterObj, selectedEmailId, mattersCommsModal, mattersCommsEmailId, emailBodies]);
+
   const fetchMatterEmails = async () => {
     if (!selMatterObj) return;
     setMatterEmailsLoading(true);
@@ -1186,14 +1547,67 @@ export default function App() {
       setComposeModal(false);
       setAiSummaryExpanded(false);
       setCommInboxTab("inbox");
+      setMatterCommsAIChat([]);
+      setMatterCommsAIChatInput("");
     }
   }, [matterTab, selMatterObj?.id]);
+
+  useEffect(() => {
+    setMattersCommsEmails([]);
+    setMattersCommsEmailId(null);
+    setMattersCommsAIChat([]);
+    setMattersCommsAIChatInput("");
+    setMattersCommsAISummary(null);
+    setMattersCommsAISummaryExpanded(false);
+  }, [selectedMatter]);
 
   useEffect(() => {
     if (matterTab === "Communications") {
       console.log("[Communications] emails state (after set):", matterEmails?.length ?? 0, "items", matterEmails);
     }
   }, [matterTab, matterEmails]);
+
+  const sendMatterCommsAI = async (question) => {
+    const q = (question || matterCommsAIChatInput || "").trim();
+    if (!q || !selMatterObj) return;
+    setMatterCommsAIChat((prev) => [...prev, { role: "user", text: q }]);
+    setMatterCommsAIChatInput("");
+    setMatterCommsAITyping(true);
+    const dueTasks = tasks.filter((t) => t.matter === (selMatterObj.matter_ref || selMatterObj.id) && !t.done);
+    const emailContext = (matterEmails || []).slice(0, 5).map((e) => `From: ${e.from?.name || e.from?.address || ""}, Subject: ${e.subject || ""}, Preview: ${(e.bodyPreview || "").slice(0, 100)}`).join("\n") || "No emails found";
+    const mattersContextStr = `Matter: ${selMatterObj.matter_ref || selMatterObj.id}
+Client: ${selMatterObj.client_name || selMatterObj.client || ""}
+Type: ${selMatterObj.type || ""}
+Stage: ${selMatterObj.stage || ""}
+Property: ${selMatterObj.address || ""}
+Value: ${selMatterObj.price || ""}
+Settlement: ${selMatterObj.settlement || ""}
+State: ${selMatterObj.state || ""}
+Special Conditions: ${selMatterObj.specialConditions || selMatterObj.notes || ""}
+Notes: ${selMatterObj.notes || ""}
+
+Due Tasks:
+${dueTasks.length > 0 ? dueTasks.map((t, i) => `${i + 1}. ${t.task} — due ${t.due} (${t.urgency})`).join("\n") : "No outstanding tasks"}
+
+Recent Email Activity:
+${emailContext}
+
+RESPONSE RULES - ALWAYS follow these:
+- Respond in plain conversational English only
+- No markdown symbols like ** # ## --- 
+- If listing tasks use simple numbered list: 1. task name
+- Be concise and practical
+- Focus on what needs to happen next
+- Maximum 150 words unless asked for more detail`;
+    try {
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: q }], mattersContext: mattersContextStr }) });
+      const data = await response.json();
+      setMatterCommsAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry I could not get a response." }]);
+    } catch (_) {
+      setMatterCommsAIChat((prev) => [...prev, { role: "ai", text: "Sorry I could not get a response." }]);
+    }
+    setMatterCommsAITyping(false);
+  };
 
   const handleReplyToEmail = (email) => {
     if (!email) return;
@@ -1243,6 +1657,17 @@ export default function App() {
     if (daysDiff < 7) return d.toLocaleDateString("en-AU", { weekday: "short" }) + " " + d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true }).toLowerCase();
     return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
   }
+
+  const formatEmailDate = (dateStr) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return date.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
+    if (diffDays < 7) return date.toLocaleDateString("en-AU", { weekday: "short" }) + " " + date.toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
+    if (date.getFullYear() === now.getFullYear()) return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+    return date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  };
 
   function parseEmailSummary(raw) {
     if (!raw || typeof raw !== "string") return { overview: "", keyPoints: [], nextSteps: [], urgency: "", urgencyLevel: "" };
@@ -1525,7 +1950,7 @@ Return only the email body text, no subject line.`;
 
   const pageTitle = {
     dashboard:"Dashboard", matters:"Matters", referrals:"Referrals",
-    communications:"Communications", accounting:"Accounting",
+    contacts:"Contacts", communications:"Communications", accounting:"Accounting",
     insights:"Insights", settings:"Settings", matter_workspace:"Matter"
   };
 
@@ -1533,6 +1958,7 @@ Return only the email body text, no subject line.`;
     { id:"dashboard", icon:"⊞", label:"Dashboard" },
     { id:"matters", icon:"⚖️", label:"Matters", badge:activeM.length },
     { id:"referrals", icon:"🤝", label:"Referrals" },
+    { id:"contacts", icon:"👥", label:"Contacts" },
     { id:"communications", icon:"✉️", label:"Communications", badge:COMMS.filter(c=>c.unread).length },
     { id:"accounting", icon:"💰", label:"Accounting" },
     { id:"insights", icon:"✦", label:"Insights" },
@@ -1933,10 +2359,10 @@ Return only the email body text, no subject line.`;
                   </div>
                   <div className="matter-table fade-up-2">
                     <div className="mt-thead">
-                      {["Matter ID","Client / Address","Type","Stage","Value","Staff","Action"].map(h=><div key={h} className="mt-th">{h}</div>)}
+                      {["Matter ID","Client / Address","Type","Stage","Value","Staff"].map(h=><div key={h} className="mt-th">{h}</div>)}
                     </div>
                     {(mFilter==="all"?MATTERS:mFilter==="active"?activeM:closedM).map(m=>(
-                      <div key={m.id} className="mt-row"
+                      <div key={m.id} className="mt-row" style={{cursor:"pointer"}}
                         onClick={()=>{setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
                         <div className="mt-id">{m.id}</div>
                         <div>
@@ -1953,12 +2379,6 @@ Return only the email body text, no subject line.`;
                         </div>
                         <div style={{fontSize:12,fontWeight:700,color:"var(--text)",fontFamily:"var(--font-mono)"}}>{m.price}</div>
                         <div style={{fontSize:12,color:"var(--text-2)"}}>{m.staff}</div>
-                        <div>
-                          <button className="btn-ghost" style={{fontSize:11,padding:"4px 10px"}}
-                            onClick={e=>{e.stopPropagation();setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
-                            Open →
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>
@@ -1966,6 +2386,68 @@ Return only the email body text, no subject line.`;
               )}
             </div>
           )}
+
+          {/* Matter detail modal */}
+          {viewingMatterInModal && (()=>{
+            const modalMatter = MATTERS.find(m=>m.id===viewingMatterInModal);
+            if(!modalMatter) return null;
+            return (
+              <div className="contact-modal-overlay" style={{zIndex:1001}} onClick={()=>setViewingMatterInModal(null)}>
+                <div ref={matterModalRef} className="contact-modal" onClick={e=>e.stopPropagation()} style={{...matterModalSize,position:"relative"}}>
+                  <div className="contact-modal-hdr">
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:600,color:"var(--text)"}}>{modalMatter.id}</div>
+                      <div style={{fontSize:13,color:"var(--text-2)",marginTop:2}}>{modalMatter.client} · {modalMatter.type}</div>
+                    </div>
+                    <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>{ setSelectedMatter(modalMatter.id); setPage("matter_workspace"); setMatterTab("Overview"); setViewingMatterInModal(null); }}>Open full view →</button>
+                    <button type="button" className="modal-close" onClick={()=>setViewingMatterInModal(null)}>✕</button>
+                  </div>
+                  <div className="ws-tabs" style={{padding:"0 24px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
+                    {["Overview","Workflow","Timeline","Documents","Searches","Tasks","Communications","Billing","AI Assistant"].map(t=>(
+                      <button key={t} className={`ws-tab ${matterModalTab===t?"active":""}`} style={{fontSize:12,padding:"10px 14px"}} onClick={()=>setMatterModalTab(t)}>{t}</button>
+                    ))}
+                  </div>
+                  <div style={{flex:1,overflow:"auto",padding:24,minHeight:0}}>
+                    {matterModalTab==="Overview" && (
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                        <div className="card">
+                          <div className="card-hdr"><div className="card-title">Key Details</div></div>
+                          <div style={{padding:"8px 18px 14px"}}>
+                            {[["Matter Type",modalMatter.type],["Status",modalMatter.stage],["Settlement",fmt(modalMatter.settlement)],["Property Value",modalMatter.price],["Staff",modalMatter.staff],["State",modalMatter.state]].map(([k,v])=>(
+                              <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border-2)",fontSize:12,gap:8}}>
+                                <span style={{color:"var(--text-3)"}}>{k}</span>
+                                <span style={{fontWeight:600,color:"var(--text)",textAlign:"right"}}>{v}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="card">
+                          <div className="card-hdr"><div className="card-title">⚠ Outstanding Actions</div></div>
+                          <div style={{padding:"6px 16px 12px"}}>
+                            {tasks.filter(t=>!t.done&&t.matter===modalMatter.id).map(t=>(
+                              <div key={t.id} style={{display:"flex",gap:8,padding:"7px 0",borderBottom:"1px solid var(--border-2)",alignItems:"flex-start",fontSize:11}}>
+                                <div style={{width:6,height:6,borderRadius:"50%",background:URGENCY_COLOR[t.urgency],marginTop:3,flexShrink:0}}/>
+                                <div style={{flex:1,color:"var(--text)"}}>{t.task}</div>
+                                <span style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{t.due}</span>
+                              </div>
+                            ))}
+                            {tasks.filter(t=>!t.done&&t.matter===modalMatter.id).length===0&&<div style={{fontSize:12,color:"var(--text-3)",padding:"8px 0"}}>✓ All tasks complete</div>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {matterModalTab!=="Overview" && (
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:48,color:"var(--text-3)",fontSize:14}}>
+                        <div style={{marginBottom:16}}>Full {matterModalTab} tab available in full view.</div>
+                        <button type="button" className="btn-gold" style={{fontSize:12}} onClick={()=>{ setSelectedMatter(modalMatter.id); setPage("matter_workspace"); setMatterTab(matterModalTab); setViewingMatterInModal(null); }}>Open full view →</button>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{position:"absolute",bottom:4,right:4,width:12,height:12,cursor:"se-resize",borderRight:"2px solid var(--border)",borderBottom:"2px solid var(--border)",borderRadius:"0 0 4px 0"}} onMouseDown={handleMatterModalResize}/>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ══════════════════════════════════════════════
               MATTER WORKSPACE
@@ -1997,7 +2479,17 @@ Return only the email body text, no subject line.`;
                 </div>
                 <div className="ws-tabs">
                   {["Overview","Workflow","Timeline","Documents","Searches","Tasks","Communications","Billing","AI Assistant"].map(t=>(
-                    <button key={t} className={`ws-tab ${matterTab===t?"active":""}`} onClick={()=>setMatterTab(t)}>{t}</button>
+                    <button
+                      key={t}
+                      className={`ws-tab ${matterTab===t?"active":""}`}
+                      onClick={()=>{
+                        setMatterTab(t)
+                        if (t==="Communications") {
+                          setMattersCommsModal(true)
+                          fetchMattersCommsEmails()
+                        }
+                      }}
+                    >{t}</button>
                   ))}
                 </div>
               </div>
@@ -2338,134 +2830,8 @@ Return only the email body text, no subject line.`;
                   </div>
                 )}
 
-                {/* COMMUNICATIONS - three zones */}
-                {matterTab==="Communications" && (
-                  <div className="comms-container" style={{height:"calc(100vh - 200px)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
-                    {/* ZONE 1: AI Summary bar (collapsible) */}
-                    {(matterEmails||[]).length > 0 && (
-                      <>
-                        <div className="comms-ai-bar" onClick={()=>setAiSummaryExpanded(!aiSummaryExpanded)} role="button" tabIndex={0} onKeyDown={e=>e.key==="Enter"&&setAiSummaryExpanded(!aiSummaryExpanded)}>
-                          <span style={{fontFamily:"var(--font-display)",fontSize:13,fontWeight:600,color:"var(--text)",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                            ✦ AI Summary
-                            {emailSummaryLoading ? " · Loading…" : emailSummary && emailSummary !== "Summary unavailable." ? (()=>{const sec=parseEmailSummary(emailSummary); const raw=(sec.overview||"").split("\n")[0]||emailSummary.split("\n")[0]||""; const first=raw.replace(/^#+\s*/,"").trim(); return first ? " · " + first.slice(0,60) + (first.length>60?"…":"") : "";})() : ""}
-                          </span>
-                          {emailSummary && emailSummary !== "Summary unavailable." && (()=>{const sec=parseEmailSummary(emailSummary); const l=sec.urgencyLevel||""; return l ? <span className={`tag ${l==="high"?"tag-red":l==="medium"?"tag-amber":"tag-green"}`} style={{fontSize:10,flexShrink:0}}>{l.charAt(0).toUpperCase()+l.slice(1)}</span> : null;})()}
-                          <span style={{fontSize:12,color:"var(--text-3)",flexShrink:0}}>{aiSummaryExpanded ? "▼" : "▶"}</span>
-                        </div>
-                        <div className="comms-ai-expanded" style={{maxHeight:aiSummaryExpanded ? 340 : 0}}>
-                          <div className="comms-ai-expanded-inner" style={{padding:"16px 0 40px",position:"relative"}}>
-                            {emailSummaryLoading ? (
-                              <div className="comms-summary-shimmer" style={{height:100,borderRadius:"var(--radius-sm)"}}/>
-                            ) : emailSummary && emailSummary !== "Summary unavailable." ? (()=>{
-                              const sec = parseEmailSummary(emailSummary);
-                              return (
-                                <>
-                                  <h3 style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:600,color:"var(--text)",marginBottom:12}}>✦ Communications Summary</h3>
-                                  {sec.overview && <div className="comms-summary-section"><div className="comms-summary-label overview-dot">Overview</div><div className="comms-summary-content" style={{fontSize:14}}>{renderSummaryMarkdown(sec.overview)}</div></div>}
-                                  {sec.keyPoints?.length > 0 && <div className="comms-summary-section"><div className="comms-summary-label points-dot">Key points</div><ul className="comms-summary-list-teal comms-summary-content">{sec.keyPoints.map((p,i)=><li key={i}>{renderSummaryMarkdown(p)}</li>)}</ul></div>}
-                                  {sec.nextSteps?.length > 0 && <div className="comms-summary-section"><div className="comms-summary-label steps-dot">Next steps</div><ul className="comms-summary-list-gold comms-summary-content">{sec.nextSteps.map((s,i)=><li key={i}>{renderSummaryMarkdown(s)}</li>)}</ul></div>}
-                                  {(sec.urgency||sec.urgencyLevel) && <div className="comms-summary-section"><div className="comms-summary-label urgency-dot">Urgency</div><div className="comms-summary-content"><span className={`tag ${sec.urgencyLevel==="high"?"tag-red":sec.urgencyLevel==="medium"?"tag-amber":"tag-green"}`} style={{marginRight:8}}>{sec.urgencyLevel?sec.urgencyLevel.charAt(0).toUpperCase()+sec.urgencyLevel.slice(1):"—"}</span>{renderSummaryMarkdown(sec.urgency)}</div></div>}
-                                  {!sec.overview && !sec.keyPoints?.length && !sec.nextSteps?.length && !sec.urgency && <div className="comms-summary-content">{renderSummaryMarkdown(emailSummary)}</div>}
-                                </>
-                              );
-                            })() : emailSummary==="Summary unavailable." ? <div className="comms-summary-content" style={{color:"var(--text-3)"}}>Summary unavailable.</div> : null}
-                            <button type="button" className="btn-ghost" style={{position:"absolute",bottom:12,right:0,fontSize:11}} onClick={e=>{e.stopPropagation(); setAiSummaryExpanded(false);}}>Collapse</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Two-column: left = email list, right = detail + compose */}
-                    <div className="comms-two-col">
-                      {/* Left column: 300px email list */}
-                      <div className="comms-left-col">
-                        <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <span style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:600,color:"var(--text)"}}>Communications</span>
-                            {(()=>{const u=(matterEmails||[]).filter(e=>!e.isRead).length; return u>0 ? <span className="tag tag-gold" style={{fontSize:10}}>{u} unread</span> : null;})()}
-                          </div>
-                          <div style={{display:"flex",alignItems:"center",gap:6}}>
-                            <button type="button" className="btn-ghost" style={{fontSize:11}} onClick={()=>{setComposeTo(selMatterObj?.email||"");setComposeSubject("");setComposeBody("");setComposeModalMode("new");setComposeModal(true);}}>New email</button>
-                            <button type="button" className="icon-btn" onClick={fetchMatterEmails} disabled={matterEmailsLoading} title="Refresh">↻</button>
-                          </div>
-                        </div>
-                        <div className="comms-inbox-tabs">
-                          {(()=>{const emails=matterEmails||[]; const inboxCount=emails.filter(e=>!e.isOutgoing).length; const sentCount=emails.filter(e=>e.isOutgoing).length; return (
-                            <>
-                              <button type="button" className={`comms-inbox-tab ${commInboxTab==="inbox"?"active":"inactive"}`} onClick={()=>setCommInboxTab("inbox")}>Inbox ({inboxCount})</button>
-                              <button type="button" className={`comms-inbox-tab ${commInboxTab==="sent"?"active":"inactive"}`} onClick={()=>setCommInboxTab("sent")}>Sent ({sentCount})</button>
-                              <button type="button" className={`comms-inbox-tab ${commInboxTab==="all"?"active":"inactive"}`} onClick={()=>setCommInboxTab("all")}>All ({emails.length})</button>
-                            </>
-                          );})()}
-                        </div>
-                        <div style={{flexShrink:0,padding:"8px 12px",borderBottom:"1px solid var(--border-2)"}}>
-                          <div className="tb-search" style={{width:"100%"}}><input type="text" placeholder="Search emails…" value={commSearchFilter} onChange={e=>setCommSearchFilter(e.target.value)} style={{flex:1}}/></div>
-                        </div>
-                        <div className="comms-email-list">
-                          {matterEmailsLoading && (!matterEmails||matterEmails.length===0) ? (
-                            <><div className="comms-row-shimmer"/><div className="comms-row-shimmer"/><div className="comms-row-shimmer"/></>
-                          ) : !matterEmails || matterEmails.length === 0 ? (
-                            <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:48,color:"var(--text-3)",fontSize:14}}>
-                              <div style={{fontSize:32,marginBottom:12,opacity:0.5}}>✉️</div>
-                              <div>No emails found for this matter.</div>
-                            </div>
-                          ) : (()=>{
-                            const tabFiltered=commInboxTab==="inbox" ? matterEmails.filter(e=>!e.isOutgoing) : commInboxTab==="sent" ? matterEmails.filter(e=>e.isOutgoing) : matterEmails;
-                            const kw=(commSearchFilter||"").toLowerCase().trim();
-                            const list=kw ? tabFiltered.filter(e=>[e.subject,e.bodyPreview,e.from?.name,e.from?.address].some(s=>String(s||"").toLowerCase().includes(kw))) : tabFiltered;
-                            if(list.length===0) return <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:48,color:"var(--text-3)",fontSize:14}}><div style={{fontSize:32,marginBottom:12,opacity:0.5}}>✉️</div><div>No matching emails.</div></div>;
-                            return list.map((e)=>{
-                              const name=e.from?.name||e.from?.address||"Unknown";
-                              const initials=name.split(/[\s@]/).filter(Boolean).slice(0,2).map(p=>p[0]).join("").toUpperCase().slice(0,2)||"?";
-                              const hue=name.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%AVATAR_COLORS.length;
-                              const isSelected=selectedEmailId===e.id;
-                              return (
-                                <div key={e.id} className={`comms-email-row ${isSelected?"selected":""} ${!e.isRead?"unread":""}`} onClick={()=>setSelectedEmailId(isSelected?null:e.id)}>
-                                  <div className="comms-avatar-36" style={{background:AVATAR_COLORS[hue]}}>{initials}</div>
-                                  {!e.isRead && <span style={{width:8,height:8,borderRadius:"50%",background:"var(--gold)",flexShrink:0,alignSelf:"center",marginLeft:-4}}/>}
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                                      <span style={{fontSize:13,fontWeight:!e.isRead?700:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{name}</span>
-                                      <span className="comms-row-muted" style={{fontSize:11,fontFamily:"var(--font-mono)",color:"var(--text-3)",flexShrink:0}}>{formatCommsTime(e.receivedDateTime)}</span>
-                                    </div>
-                                    <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{e.subject||"(No subject)"}</div>
-                                    <div className="comms-row-muted" style={{fontSize:12,color:"var(--text-3)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{(e.bodyPreview||"").split("\n")[0]}</div>
-                                  </div>
-                                </div>
-                              );
-                            });
-                          })()}
-                        </div>
-                      </div>
-                      {/* Right column: email detail + compose */}
-                      <div className="comms-right-col">
-                        <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 280px)",overflow:"hidden",minHeight:0}}>
-                        <div className="comms-detail-thread" style={{background:"var(--white)",color:"var(--text)"}}>
-                          {!selectedEmailId ? (
-                            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"var(--text-3)",fontSize:14}}>Select an email to view</div>
-                          ) : (()=>{
-                            const email=(matterEmails||[]).find(e=>e.id===selectedEmailId);
-                            if(!email) return <div style={{color:"var(--text-3)",fontSize:14}}>Email not found</div>;
-                            return (
-                              <div style={{background:"var(--white)",color:"var(--text)",borderRadius:12,padding:20,border:"1px solid var(--border)",boxShadow:"var(--shadow-sm)",marginBottom:16}}>
-                                <div style={{fontSize:11,marginBottom:8}}><span style={{color:"var(--text-3)"}}>From: </span><span style={{color:"var(--text)"}}>{email.from?.name||email.from?.address||"—"}</span><span style={{color:"var(--text-3)"}}> · To: </span><span style={{color:"var(--text)"}}>{(email.toRecipients||[]).map(r=>r?.name||r?.address).filter(Boolean).join(", ")||"—"}</span></div>
-                                <div style={{fontSize:11,marginBottom:6}}><span style={{color:"var(--text-3)"}}>Subject: </span><span style={{color:"var(--text)",fontWeight:600}}>{email.subject||"(No subject)"}</span></div>
-                                <div style={{fontSize:11,fontFamily:"var(--font-mono)",marginBottom:12}}><span style={{color:"var(--text-3)"}}>Date: </span><span style={{color:"var(--text)"}}>{formatCommsTime(email.receivedDateTime)}</span></div>
-                                <div style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)",whiteSpace:"pre-wrap"}}>{email.bodyPreview||""}</div>
-                                <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
-                                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>handleReplyToEmail(email)}>Reply</button>
-                                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>handleForwardEmail(email)}>→ Forward</button>
-                                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={async ()=>{handleReplyToEmail(email);setTimeout(()=>requestEmailDraft(),100);}}>✦ AI Draft</button>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {/* COMMUNICATIONS - modal opens on tab click, no inline content */}
+                {matterTab==="Communications" && null}
 
                 {/* BILLING */}
                 {matterTab==="Billing" && (
@@ -2640,6 +3006,389 @@ Return only the email body text, no subject line.`;
                       </div>
                     </>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════
+              CONTACTS
+          ══════════════════════════════════════════════ */}
+          {page === "contacts" && (
+            <div className="content" style={{padding:0,height:"calc(100vh - 58px)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12,flexShrink:0,padding:"20px 24px 0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontFamily:"var(--font-display)",fontSize:20,fontWeight:600,color:"var(--text)"}}>Contacts</span>
+                  {contacts.length > 0 && <span className="tag tag-gold" style={{fontSize:10}}>{contacts.length}</span>}
+                  <div className="tb-search" style={{width:240}}>
+                    <input type="text" placeholder="Search name, email, phone…" value={contactSearch} onChange={(e)=>setContactSearch(e.target.value)} style={{flex:1}}/>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {["all","Clients","Real Estate Agents","Brokers","Accountants","Referrers"].map((f)=>(
+                      <button key={f} type="button" className={`filter-btn ${contactFilter===f?"active":""}`} style={{fontSize:10,padding:"4px 10px"}} onClick={()=>setContactFilter(f)}>{f==="all"?"All":f}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>{ const headers = ["Name","Type","Email","Phone","Address","Company","Is Referrer","Referrer Fee","Formal Agreement","Notes"]; const rows = contacts.map((c)=>[c.name,c.type,c.email,c.phone,c.address,c.company,c.is_referrer?"Yes":"No",c.referrer_fee??"",c.formal_agreement?"Yes":"No",(c.notes||"").replace(/"/g,'""')]); const csv = [headers.join(","), ...rows.map((r)=>r.map((v)=>`"${String(v??"")}"`).join(","))].join("\n"); const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "contacts.csv"; a.click(); URL.revokeObjectURL(url); }}>Export CSV</button>
+                  <button type="button" className="btn-gold" style={{fontSize:12}} onClick={()=>{ setContactForm({ name: "", type: "Client", email: "", phone: "", address: "", company: "", is_referrer: false, referrer_fee: "", formal_agreement: false, notes: "" }); setEditingContact(null); setContactModal(true); }}>+ Add Contact</button>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20,flexShrink:0,padding:"0 24px"}}>
+                <div className="stat"><div className="stat-label">Total Contacts</div><div className="stat-value">{contacts.length}</div></div>
+                <div className="stat"><div className="stat-label">Clients</div><div className="stat-value">{contacts.filter(c=>c.type==="Client").length}</div></div>
+                <div className="stat"><div className="stat-label">Agents / Brokers</div><div className="stat-value">{contacts.filter(c=>c.type==="Real Estate Agent"||c.type==="Broker").length}</div></div>
+                <div className="stat"><div className="stat-label">Referrers</div><div className="stat-value">{contacts.filter(c=>c.is_referrer).length}</div></div>
+              </div>
+              <div style={{flex:1,overflowY:"auto",minHeight:0,padding:"0 24px 24px"}}>
+              {contactsLoading ? (
+                <div style={{padding:40,textAlign:"center",color:"var(--text-3)",fontSize:13}}>Loading contacts...</div>
+              ) : (
+                <div className="matter-table contacts-table">
+                  <div className="mt-thead">
+                    <div className="mt-th">Name</div><div className="mt-th">Type</div><div className="mt-th">Phone</div><div className="mt-th">Email</div><div className="mt-th">Matters</div><div className="mt-th">Referrer</div>
+                  </div>
+                  {(()=>{
+                    const filteredContacts = contacts.filter((c) => {
+                      const matchesSearch = !contactSearch.trim() ||
+                        (c.name && c.name.toLowerCase().includes(contactSearch.toLowerCase())) ||
+                        (c.email && c.email.toLowerCase().includes(contactSearch.toLowerCase())) ||
+                        (c.phone && String(c.phone).includes(contactSearch));
+                      const matchesFilter = contactFilter === "all" ||
+                        (contactFilter === "Clients" && c.type === "Client") ||
+                        (contactFilter === "Real Estate Agents" && c.type === "Real Estate Agent") ||
+                        (contactFilter === "Brokers" && c.type === "Broker") ||
+                        (contactFilter === "Accountants" && c.type === "Accountant") ||
+                        (contactFilter === "Referrers" && c.is_referrer);
+                      return matchesSearch && matchesFilter;
+                    });
+                    console.log("Contacts after filter:", filteredContacts.length, "contactFilter:", contactFilter, "contactSearch:", contactSearch);
+                    return filteredContacts.map((c)=>{
+                      const initials = (c.name||"?").split(" ").map((w)=>w[0]).join("").slice(0,2).toUpperCase();
+                      const hue = (c.id||c.name||"").length % AVATAR_COLORS.length;
+                      const typeTag = { Client: "tag-teal", "Real Estate Agent": "tag-blue", Broker: "tag-amber", Accountant: "tag-purple", Other: "tag-gray" }[c.type] || "tag-gray";
+                      const matterCount = MATTERS.filter((m)=>m.client&&c.name&&(String(m.client).toLowerCase().includes(String(c.name).toLowerCase())||String(c.name).toLowerCase().includes(String(m.client).toLowerCase()))).length;
+                      return (
+                        <div key={c.id} className="mt-row" style={{cursor:"pointer"}} onClick={()=>setViewingContact(c)}>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:36,height:36,borderRadius:"50%",background:AVATAR_COLORS[hue],display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#fff",flexShrink:0}}>{initials}</div>
+                            <div><div style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{c.name}</div><div style={{fontSize:11,color:"var(--text-3)"}}>{c.company||"—"}</div></div>
+                          </div>
+                          <div><span className={`tag ${typeTag}`} style={{fontSize:10}}>{c.type||"Other"}</span></div>
+                          <div style={{fontSize:12,fontFamily:"var(--font-mono)",color:"var(--text-2)"}}>{c.phone||"—"}</div>
+                          <div style={{fontSize:12,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||"—"}</div>
+                          <div onClick={e=>e.stopPropagation()}>{matterCount>0 ? <span className="tag tag-gray" style={{fontSize:10,cursor:"pointer"}} onClick={()=>setViewingContact(c)}>{matterCount}</span> : <span style={{fontSize:11,color:"var(--text-3)"}}>0</span>}</div>
+                          <div style={{fontSize:14}}>{c.is_referrer?"★":""}</div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+              </div>
+            </div>
+          )}
+
+          {/* Contact detail modal */}
+          {viewingContact && (
+            <div className="contact-modal-overlay" onClick={()=>setViewingContact(null)}>
+              <div ref={modalRef} className="contact-modal" onClick={e=>e.stopPropagation()} style={{...modalSize,position:"relative"}}>
+                <div className="contact-modal-hdr">
+                  <div style={{width:56,height:56,borderRadius:"50%",background:AVATAR_COLORS[(viewingContact.id||viewingContact.name||"").length%AVATAR_COLORS.length],display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:"#fff",flexShrink:0}}>{(viewingContact.name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:500,color:"var(--text)",marginBottom:4}}>{viewingContact.name}</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      <span className={`tag ${{Client:"tag-teal","Real Estate Agent":"tag-blue",Broker:"tag-amber",Accountant:"tag-purple",Other:"tag-gray"}[viewingContact.type]||"tag-gray"}`} style={{fontSize:10}}>{viewingContact.type||"Other"}</span>
+                      {viewingContact.is_referrer && <span className="tag tag-gold" style={{fontSize:10}}>Referrer</span>}
+                    </div>
+                  </div>
+                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>{ setContactForm({ name: viewingContact.name||"", type: viewingContact.type||"Client", email: viewingContact.email||"", phone: viewingContact.phone||"", address: viewingContact.address||"", company: viewingContact.company||"", is_referrer: !!viewingContact.is_referrer, referrer_fee: viewingContact.referrer_fee!=null?String(viewingContact.referrer_fee):"", formal_agreement: !!viewingContact.formal_agreement, notes: viewingContact.notes||"" }); setEditingContact(viewingContact); setViewingContact(null); setContactModal(true); }}>Edit</button>
+                  <button type="button" className="btn-ghost" style={{fontSize:12,color:"var(--red)"}} onClick={async ()=>{ if(!confirm("Delete this contact?")) return; await supabase.from("contacts").delete().eq("id",viewingContact.id); setContacts(prev=>prev.filter(x=>x.id!==viewingContact.id)); setViewingContact(null); }}>Delete</button>
+                  <button type="button" className="modal-close" onClick={()=>setViewingContact(null)}>✕</button>
+                </div>
+                <div className="contact-modal-body" style={{display:"flex",flex:1,overflow:"hidden",minHeight:0,height:"100%"}}>
+                  <div className="contact-modal-left" style={{width:contactPanelWidths[0],flexShrink:0}}>
+                    <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>Emails</span>
+                      {contactEmails.filter(e=>!e.isRead).length>0 && <span className="tag tag-gold" style={{fontSize:9}}>{contactEmails.filter(e=>!e.isRead).length}</span>}
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <button type="button" style={{width:28,height:28,border:"1px solid var(--border)",borderRadius:6,background:"var(--surface)",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setEmailSortAsc(!emailSortAsc)} title={emailSortAsc?"Newest first":"Oldest first"}>{emailSortAsc?"↑":"↓"}</button>
+                        <button type="button" className="icon-btn" style={{width:28,height:28}} onClick={fetchContactEmails} disabled={contactEmailsLoading} title="Refresh">↻</button>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6,padding:"8px 12px",borderBottom:"1px solid var(--border-2)"}}>
+                      {["inbox","sent","all"].map(t=>(
+                        <button key={t} type="button" className={`filter-btn ${contactDetailInboxTab===t?"active":""}`} style={{fontSize:10,padding:"3px 8px"}} onClick={()=>setContactDetailInboxTab(t)}>{t==="inbox"?"Inbox":t==="sent"?"Sent":"All"}</button>
+                      ))}
+                    </div>
+                    <div style={{padding:"8px 12px",borderBottom:"1px solid var(--border-2)"}}>
+                      <div className="tb-search" style={{width:"100%"}}><input type="text" placeholder="Search emails…" value={contactDetailSearch} onChange={e=>setContactDetailSearch(e.target.value)} style={{flex:1}}/></div>
+                    </div>
+                    <div style={{flex:1,overflowY:"auto"}}>
+                      {(()=>{
+                        const filteredContactEmails = (contactDetailInboxTab==="inbox"?contactEmails.filter(e=>!e.isOutgoing):contactDetailInboxTab==="sent"?contactEmails.filter(e=>e.isOutgoing):contactEmails)
+                          .filter(e=>!contactDetailSearch.trim()||[e.subject,e.bodyPreview,e.from?.name,e.from?.address].some(s=>String(s||"").toLowerCase().includes(contactDetailSearch.toLowerCase())));
+                        const sortedContactEmails = [...filteredContactEmails].sort((a,b)=>{ const diff = new Date(a.receivedDateTime) - new Date(b.receivedDateTime); return emailSortAsc ? diff : -diff; });
+                        return sortedContactEmails.map((e)=>{
+                          const name = e.from?.name||e.from?.address||"Unknown";
+                          const initials = name.split(" ").map(w=>w[0]).join("").slice(0,2);
+                          const isSel = selectedContactEmailId===e.id;
+                          return (
+                            <div key={e.id} className={`comms-email-row ${isSel?"selected":""} ${!e.isRead?"unread":""}`} style={{padding:"10px 14px"}} onClick={()=>setSelectedContactEmailId(isSel?null:e.id)}>
+                              <div className="comms-avatar-36" style={{background:AVATAR_COLORS[(e.id||"").length%AVATAR_COLORS.length]}}>{initials}</div>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:6}}>
+                                  <div style={{fontSize:12,fontWeight:600,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+                                  <span style={{fontSize:10,fontFamily:"var(--font-mono)",color:"var(--text-3)",flexShrink:0}}>{formatEmailDate(e.receivedDateTime)}</span>
+                                </div>
+                                <div style={{fontSize:11,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.subject||"(No subject)"}</div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                      {contactEmailsLoading && <div style={{padding:12,textAlign:"center",fontSize:11,color:"var(--text-3)"}}>Loading…</div>}
+                    </div>
+                  </div>
+                  <div style={{width:4,background:"var(--border)",cursor:"col-resize",flexShrink:0,transition:"background 0.15s"}} onMouseEnter={e=>{e.target.style.background="var(--blue)"}} onMouseLeave={e=>{e.target.style.background="var(--border)"}} onMouseDown={e=>handlePanelResize(e,0)}/>
+                  <div className="contact-modal-mid" style={{flex:1,minWidth:300}}>
+                    {selectedContactEmailId ? (()=>{
+                      const email = contactEmails.find(e=>e.id===selectedContactEmailId);
+                      if(!email) return <div style={{padding:20,color:"var(--text-3)"}}>Select an email</div>;
+                      const bodyCache = emailBodies[email.id];
+                      const loadingBody = loadingEmailBodyId === email.id;
+                      const fullBody = bodyCache?.content;
+                      const isHtml = (bodyCache?.contentType || "").toLowerCase() === "html";
+                      return (
+                        <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden",minHeight:0}}>
+                          <div style={{flex:1,overflowY:"auto",minHeight:0,padding:20,background:"var(--white)",borderBottom:"1px solid var(--border)",scrollBehavior:"smooth",scrollbarWidth:"thin",scrollbarColor:"var(--border) transparent"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"12px 0",borderBottom:"1px solid var(--border-2)",marginBottom:"16px"}}>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:4}}>{email.subject||"(No subject)"}</div>
+                                <div style={{fontSize:11,color:"var(--text-3)"}}>From: {email.from?.emailAddress?.name || email.from?.name} {" < "}{email.from?.emailAddress?.address || email.from?.address}{" >"}</div>
+                                <div style={{fontSize:11,color:"var(--text-3)"}}>To: {email.toRecipients?.[0]?.emailAddress?.address || email.toRecipients?.[0]?.address || "—"}</div>
+                              </div>
+                              <div style={{fontSize:11,fontFamily:"var(--font-mono)",color:"var(--text-3)",textAlign:"right",flexShrink:0,marginLeft:16}}>
+                                {new Date(email.receivedDateTime).toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}
+                                <br/>
+                                {new Date(email.receivedDateTime).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit"})}
+                              </div>
+                            </div>
+                            {loadingBody ? (
+                              <div style={{fontSize:13,color:"var(--text-3)",padding:12}}>Loading email…</div>
+                            ) : fullBody != null && fullBody !== "" ? (
+                              isHtml ? (
+                                <div dangerouslySetInnerHTML={{__html: cleanEmailBody(fullBody)}} style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)"}}/>
+                              ) : (
+                                <div style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)",wordWrap:"break-word",overflowWrap:"break-word",whiteSpace:"pre-wrap"}}>{fullBody}</div>
+                              )
+                            ) : (
+                              <div style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)",wordWrap:"break-word",overflowWrap:"break-word",whiteSpace:"pre-wrap"}}>{email.bodyPreview||""}</div>
+                            )}
+                            <div style={{display:"flex",gap:8,marginTop:12}}>
+                              <button type="button" className="btn-ghost" style={{fontSize:11}} onClick={()=>handleReplyToEmail(email)}>Reply</button>
+                              <button type="button" className="btn-ghost" style={{fontSize:11}} onClick={()=>handleForwardEmail(email)}>Forward</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })() : <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-3)",fontSize:13}}>Select an email</div>}
+                  </div>
+                  <div style={{width:4,background:"var(--border)",cursor:"col-resize",flexShrink:0,transition:"background 0.15s"}} onMouseEnter={e=>{e.target.style.background="var(--blue)"}} onMouseLeave={e=>{e.target.style.background="var(--border)"}} onMouseDown={e=>handlePanelResize(e,1)}/>
+                  <div className="contact-modal-right" style={{width:contactPanelWidths[2],flexShrink:0}}>
+                    <div style={{background:"var(--white)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",padding:"16px",marginBottom:"16px",overflow:"hidden"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+                        <div style={{fontSize:12,fontWeight:700,color:"var(--text)"}}>Contact Details</div>
+                        <button type="button" className="btn-ghost" style={{fontSize:11,padding:"3px 10px"}} onClick={()=>{ setContactForm({ name: viewingContact.name||"", type: viewingContact.type||"Client", email: viewingContact.email||"", phone: viewingContact.phone||"", address: viewingContact.address||"", company: viewingContact.company||"", is_referrer: !!viewingContact.is_referrer, referrer_fee: viewingContact.referrer_fee!=null?String(viewingContact.referrer_fee):"", formal_agreement: !!viewingContact.formal_agreement, notes: viewingContact.notes||"" }); setEditingContact(viewingContact); setViewingContact(null); setContactModal(true); }}>Edit</button>
+                      </div>
+                      {[["Name",viewingContact?.name],["Type",viewingContact?.type],["Email",viewingContact?.email],["Phone",viewingContact?.phone],["Address",viewingContact?.address],["Company",viewingContact?.company],["Referrer",viewingContact?.is_referrer?"Yes ★":"No"]].map(([label,value])=>(
+                        <div key={label} style={{display:"flex",flexDirection:"column",padding:"6px 0",borderBottom:"1px solid var(--border-2)"}}>
+                          <span style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:"2px"}}>{label}</span>
+                          <span style={{fontSize:12,color:"var(--text)",wordBreak:"break-word",lineHeight:1.5}}>{value||"—"}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{fontSize:12,fontWeight:700,color:"var(--text)",marginBottom:8}}>✦ AI Insights</div>
+                    <div className="contact-ai-card" style={{marginBottom:16}}>
+                      {contactAILoading && !contactAI[viewingContact.id] ? <div className="comms-summary-shimmer" style={{height:100,borderRadius:8}}/> : contactAI[viewingContact.id] ? <div style={{fontSize:12,lineHeight:1.7,color:"var(--text-2)"}}>{renderSummaryMarkdown(contactAI[viewingContact.id])}</div> : <div style={{fontSize:11,color:"var(--text-3)"}}>Loading…</div>}
+                    </div>
+                    <div style={{background:"var(--white)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",padding:"16px",marginBottom:"16px"}}>
+                      <div style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1.5px",marginBottom:"10px"}}>✦ Ask AI</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:"10px"}}>
+                        {["What's outstanding?","Draft an email","Summarise history"].map((q)=>(<button key={q} type="button" className="filter-btn" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>sendContactAI(q)}>{q}</button>))}
+                      </div>
+                      {contactAIChat.length > 0 && (
+                        <div style={{maxHeight:"200px",overflowY:"auto",marginBottom:"10px",display:"flex",flexDirection:"column",gap:"8px"}}>
+                          {contactAIChat.map((m,i)=>(
+                            <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"85%",background:m.role==="user"?"var(--blue)":"var(--surface)",color:m.role==="user"?"white":"var(--text)",padding:"8px 12px",borderRadius:"10px",fontSize:"11px",lineHeight:1.6}}>{m.text}</div>
+                          ))}
+                          {contactAITyping && (
+                            <div style={{alignSelf:"flex-start",background:"var(--surface)",padding:"8px 12px",borderRadius:"10px"}}>
+                              <div className="ai-typing"><div className="typing-dot"/><div className="typing-dot"/><div className="typing-dot"/></div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div style={{display:"flex",gap:"6px"}}>
+                        <input style={{flex:1,border:"1px solid var(--border)",borderRadius:"6px",padding:"7px 10px",fontSize:"11px",fontFamily:"var(--font-body)",outline:"none",color:"var(--text)"}} placeholder={`Ask about ${viewingContact?.name?.split(",")[0]||"this contact"}...`} value={contactAIChatInput} onChange={e=>setContactAIChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendContactAI()}/>
+                        <button type="button" className="btn-gold" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>sendContactAI()}>›</button>
+                      </div>
+                    </div>
+                    <div style={{fontSize:12,fontWeight:700,color:"var(--text)",marginBottom:8,marginTop:16}}>Linked matters</div>
+                    <div className="contact-matters-list">
+                      {MATTERS.filter((m)=>m.client&&viewingContact.name&&(String(m.client).toLowerCase().includes(String(viewingContact.name).toLowerCase())||String(viewingContact.name).toLowerCase().includes(String(m.client).toLowerCase()))).length===0 ? <div style={{padding:12,textAlign:"center",color:"var(--text-3)",fontSize:11}}>No matters found</div> : MATTERS.filter((m)=>m.client&&viewingContact.name&&(String(m.client).toLowerCase().includes(String(viewingContact.name).toLowerCase())||String(viewingContact.name).toLowerCase().includes(String(m.client).toLowerCase()))).map((m)=>(
+                        <div key={m.id} className="contact-matter-row" onClick={()=>{ setSelectedMatter(m.id); setPage("matter_workspace"); setMatterTab("Overview"); setViewingContact(null); }}>
+                          <span style={{fontFamily:"var(--font-mono)",fontSize:11,color:"var(--text-3)"}}>{m.id}</span>
+                          <span className={`tag ${m.type==="Purchase"?"tag-teal":m.type==="Sale"?"tag-amber":"tag-gray"}`} style={{fontSize:9}}>{m.type}</span>
+                          <span style={{fontSize:11,color:"var(--text-2)"}}>{m.stage}</span>
+                          <span style={{fontSize:11,fontWeight:600,color:"var(--text)"}}>{m.price||"—"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div style={{position:"absolute",bottom:4,right:4,width:12,height:12,cursor:"se-resize",borderRight:"2px solid var(--border)",borderBottom:"2px solid var(--border)",borderRadius:"0 0 4px 0"}} onMouseDown={handleModalResize}/>
+              </div>
+            </div>
+          )}
+
+          {/* Matters Communications full-screen modal */}
+          {mattersCommsModal && selMatterObj && (
+            <div className="contact-modal-overlay" onClick={()=>{ setMattersCommsModal(false); setMatterTab("Overview"); }}>
+              <div className="contact-modal" ref={mattersCommsModalRef} style={{...mattersCommsModalSize,position:"relative"}} onClick={e=>e.stopPropagation()}>
+                <div style={{position:"absolute",bottom:4,right:4,width:12,height:12,cursor:"se-resize",borderRight:"2px solid var(--border)",borderBottom:"2px solid var(--border)",borderRadius:"0 0 4px 0",zIndex:10}} onMouseDown={handleMattersCommsModalResize}/>
+                <div className="contact-modal-hdr">
+                  <div style={{width:48,height:48,borderRadius:"50%",background:"linear-gradient(135deg,var(--blue),var(--ink))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:"white",fontWeight:700,flexShrink:0}}>✉️</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--font-display)",fontSize:20,fontWeight:500,color:"var(--text)",letterSpacing:"-0.3px"}}>{selMatterObj.client_name || selMatterObj.client}</div>
+                    <div style={{fontSize:11,color:"var(--text-3)",fontFamily:"var(--font-mono)",marginTop:2}}>{selMatterObj.matter_ref || selMatterObj.id} · {selMatterObj.address}</div>
+                  </div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span className={`tag ${selMatterObj.type==="Purchase"?"tag-teal":selMatterObj.type==="Sale"?"tag-amber":"tag-blue"}`}>{selMatterObj.type}</span>
+                    <span className="tag tag-gray">{selMatterObj.stage}</span>
+                    <button type="button" className="modal-close" onClick={()=>{ setMattersCommsModal(false); setMatterTab("Overview"); }}>✕</button>
+                  </div>
+                </div>
+                <div style={{flexShrink:0,borderBottom:"1px solid var(--border)"}}>
+                  <div className="comms-ai-bar" style={{cursor:"pointer"}} onClick={()=>setMattersCommsAISummaryExpanded(!mattersCommsAISummaryExpanded)}>
+                    <span style={{fontSize:13}}>✦</span>
+                    <span style={{fontSize:12,fontWeight:600,color:"var(--text)",flex:1}}>AI Summary</span>
+                    {mattersCommsAISummaryLoading && <span style={{fontSize:11,color:"var(--text-3)"}}>Generating…</span>}
+                    {!mattersCommsAISummaryLoading && mattersCommsAISummary && <span style={{fontSize:11,color:"var(--text-2)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:400}}>{mattersCommsAISummary.slice(0,100)}…</span>}
+                    <span style={{fontSize:12,color:"var(--text-3)"}}>{mattersCommsAISummaryExpanded ? "▲" : "▼"}</span>
+                  </div>
+                  {mattersCommsAISummaryExpanded && mattersCommsAISummary && (
+                    <div style={{padding:"14px 20px",background:"var(--gold-light)",maxHeight:250,overflowY:"auto",fontSize:12,lineHeight:1.8,color:"var(--text-2)",whiteSpace:"pre-wrap",borderBottom:"1px solid var(--border)"}}>{mattersCommsAISummary}</div>
+                  )}
+                </div>
+                <div style={{flex:1,overflow:"hidden",display:"flex",minHeight:0}}>
+                  <div style={{width:mattersCommsPanelWidths[0],flexShrink:0,display:"flex",flexDirection:"column",overflow:"hidden",borderRight:"1px solid var(--border)",background:"var(--white)"}}>
+                    <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <span style={{fontSize:13,fontWeight:700,color:"var(--text)",flex:1}}>Emails</span>
+                        <button type="button" style={{width:28,height:28,border:"1px solid var(--border)",borderRadius:6,background:"var(--surface)",cursor:"pointer",fontSize:11}} onClick={()=>setMattersCommsSortAsc(!mattersCommsSortAsc)} title={mattersCommsSortAsc?"Newest first":"Oldest first"}>{mattersCommsSortAsc?"↑":"↓"}</button>
+                        <button type="button" style={{width:28,height:28,border:"1px solid var(--border)",borderRadius:6,background:"var(--surface)",cursor:"pointer",fontSize:14}} onClick={fetchMattersCommsEmails}>↺</button>
+                      </div>
+                      <div style={{display:"flex",gap:6,marginBottom:8}}>
+                        {["all","inbox","sent"].map(t=>(<button key={t} type="button" className={`filter-btn ${mattersCommsTab===t?"active":""}`} style={{fontSize:10,padding:"3px 10px",textTransform:"capitalize"}} onClick={()=>setMattersCommsTab(t)}>{t}</button>))}
+                      </div>
+                      <input style={{width:"100%",border:"1px solid var(--border)",borderRadius:6,padding:"6px 10px",fontSize:11,outline:"none",fontFamily:"var(--font-body)"}} placeholder="Search emails…" value={mattersCommsSearch} onChange={e=>setMattersCommsSearch(e.target.value)}/>
+                    </div>
+                    <div style={{flex:1,overflowY:"auto",minHeight:0}}>
+                      {mattersCommsLoading ? (
+                        <div style={{padding:20,textAlign:"center",color:"var(--text-3)",fontSize:12}}>Loading emails…</div>
+                      ) : (()=>{
+                        const MAILBOX = (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL) ? process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL : "";
+                        const filtered = mattersCommsEmails
+                          .filter(e=>{ if (mattersCommsTab==="inbox") return (e.isOutgoing === false) || (e.from?.emailAddress?.address?.toLowerCase() !== MAILBOX.toLowerCase()); if (mattersCommsTab==="sent") return (e.isOutgoing === true) || (e.from?.emailAddress?.address?.toLowerCase() === MAILBOX.toLowerCase()); return true; })
+                          .filter(e=>!mattersCommsSearch || (e.subject||"").toLowerCase().includes(mattersCommsSearch.toLowerCase()) || (e.from?.emailAddress?.name||e.from?.name||"").toLowerCase().includes(mattersCommsSearch.toLowerCase()))
+                          .sort((a,b)=>{ const diff = new Date(a.receivedDateTime) - new Date(b.receivedDateTime); return mattersCommsSortAsc ? diff : -diff; });
+                        if (!filtered.length) return <div style={{padding:20,textAlign:"center",color:"var(--text-3)",fontSize:12}}>No emails found</div>;
+                        return filtered.map(e=>{
+                          const initials = (e.from?.emailAddress?.name||e.from?.name||"?").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                          const ci = (initials.charCodeAt(0)||0) % (AVATAR_COLORS.length||1);
+                          const isSelected = mattersCommsEmailId === e.id;
+                          return (
+                            <div key={e.id} className="comms-email-row" style={{background:isSelected?"var(--ink)":"var(--white)",color:isSelected?"white":"var(--text)",borderLeft:!e.isRead&&!isSelected?"3px solid var(--gold)":"3px solid transparent",padding:"12px 14px",borderBottom:"1px solid var(--border-2)",cursor:"pointer",display:"flex",gap:10,alignItems:"flex-start",transition:"all 0.12s"}} onClick={()=>setMattersCommsEmailId(e.id)}>
+                              <div style={{width:34,height:34,borderRadius:"50%",background:`linear-gradient(135deg,${AVATAR_COLORS[ci]},${AVATAR_COLORS[(ci+1)%AVATAR_COLORS.length]})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"white",flexShrink:0}}>{initials}</div>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                                  <span style={{fontSize:12,fontWeight:e.isRead?500:700,color:isSelected?"white":"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:140}}>{e.from?.emailAddress?.name||e.from?.name||e.from?.emailAddress?.address}</span>
+                                  <span style={{fontSize:9,fontFamily:"var(--font-mono)",color:isSelected?"rgba(255,255,255,0.6)":"var(--text-3)",flexShrink:0,marginLeft:4}}>{formatEmailDate(e.receivedDateTime)}</span>
+                                </div>
+                                <div style={{fontSize:11,color:isSelected?"rgba(255,255,255,0.8)":"var(--text-2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}}>{e.subject}</div>
+                                <div style={{fontSize:10,color:isSelected?"rgba(255,255,255,0.5)":"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.bodyPreview?.slice(0,60)}</div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                  <div style={{width:4,background:"var(--border-2)",cursor:"col-resize",flexShrink:0}} onMouseDown={e=>handleMattersCommsPanelResize(e,0)}/>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:300,background:"var(--surface)"}}>
+                    {(()=>{
+                      const email = mattersCommsEmails.find(e=>e.id===mattersCommsEmailId);
+                      if (!email) return (
+                        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8,color:"var(--text-3)"}}>
+                          <div style={{fontSize:32,opacity:0.2}}>✉️</div>
+                          <div style={{fontSize:12}}>Select an email to view</div>
+                        </div>
+                      );
+                      const bodyCache = emailBodies[email.id];
+                      const loadingBody = loadingEmailBodyId === email.id;
+                      const fullBody = bodyCache?.content;
+                      const isHtml = (bodyCache?.contentType||"").toLowerCase()==="html";
+                      return (
+                        <>
+                          <div style={{flex:1,overflowY:"auto",minHeight:0,padding:20,background:"var(--white)"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"0 0 14px",borderBottom:"1px solid var(--border-2)",marginBottom:16}}>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:15,fontWeight:700,color:"var(--text)",marginBottom:6}}>{email.subject}</div>
+                                <div style={{fontSize:11,color:"var(--text-3)",marginBottom:2}}>From: {email.from?.emailAddress?.name||email.from?.name} &lt;{email.from?.emailAddress?.address||email.from?.address}&gt;</div>
+                                <div style={{fontSize:11,color:"var(--text-3)"}}>To: {email.toRecipients?.[0]?.emailAddress?.address||email.toRecipients?.[0]?.address||"—"}</div>
+                              </div>
+                              <div style={{fontSize:11,fontFamily:"var(--font-mono)",color:"var(--text-3)",textAlign:"right",flexShrink:0,marginLeft:16}}>
+                                {new Date(email.receivedDateTime).toLocaleDateString("en-AU",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}<br/>{new Date(email.receivedDateTime).toLocaleTimeString("en-AU",{hour:"2-digit",minute:"2-digit"})}
+                              </div>
+                            </div>
+                            {loadingBody ? <div style={{fontSize:13,color:"var(--text-3)",padding:12}}>Loading email…</div> : fullBody != null && fullBody !== "" ? (isHtml ? <div dangerouslySetInnerHTML={{__html:cleanEmailBody(fullBody)}} style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)"}}/> : <div style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{fullBody}</div>) : <div style={{fontSize:13,lineHeight:1.8,color:"var(--text-2)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{email.bodyPreview||""}</div>}
+                            <div style={{display:"flex",gap:8,marginTop:16,paddingTop:12,borderTop:"1px solid var(--border-2)"}}>
+                              <button type="button" className="btn-ghost" style={{fontSize:11}} onClick={()=>{ const sender = email.from?.emailAddress?.address||email.from?.address; const myEmail = (typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL) ? process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL : ""; const to = sender&&myEmail&&sender.toLowerCase()===myEmail.toLowerCase() ? (email.toRecipients?.[0]?.emailAddress?.address||email.toRecipients?.[0]?.address) : sender; setComposeTo(to||""); setComposeSubject((email.subject||"").startsWith("Re:")?email.subject:"Re: "+(email.subject||"")); setComposeBody(""); setComposeModal(true); }}>↩ Reply</button>
+                              <button type="button" className="btn-ghost" style={{fontSize:11}} onClick={()=>{ setComposeTo(""); setComposeSubject((email.subject||"").startsWith("Fwd:")?email.subject:"Fwd: "+(email.subject||"")); setComposeBody("\n\n-------- Forwarded Message --------\nFrom: "+(email.from?.emailAddress?.name||email.from?.name)+"\nDate: "+new Date(email.receivedDateTime).toLocaleDateString("en-AU")+"\nSubject: "+(email.subject||"")+"\n\n"+(email.bodyPreview||"")); setComposeModal(true); }}>→ Forward</button>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div style={{width:4,background:"var(--border-2)",cursor:"col-resize",flexShrink:0}} onMouseDown={e=>handleMattersCommsPanelResize(e,1)}/>
+                  <div style={{width:mattersCommsPanelWidths[2],flexShrink:0,overflowY:"auto",padding:16,background:"var(--white)",borderLeft:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{background:"var(--surface)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",padding:14}}>
+                      <div style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>Matter Details</div>
+                      {[["Client",selMatterObj.client_name||selMatterObj.client],["Type",selMatterObj.type],["Stage",selMatterObj.stage],["Value",selMatterObj.price],["Settlement",selMatterObj.settlement]].map(([label,value])=>(<div key={label} style={{display:"flex",flexDirection:"column",padding:"5px 0",borderBottom:"1px solid var(--border-2)"}}><span style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:1}}>{label}</span><span style={{fontSize:12,color:"var(--text)",wordBreak:"break-word"}}>{value||"—"}</span></div>))}
+                    </div>
+                    <div style={{background:"var(--gold-light)",borderRadius:"var(--radius-lg)",border:"1px solid var(--gold-dim)",padding:14}}>
+                      <div style={{fontFamily:"var(--font-display)",fontSize:14,fontWeight:500,color:"var(--text)",marginBottom:10}}>✦ AI Insights</div>
+                      {mattersCommsAISummaryLoading ? <div style={{fontSize:11,color:"var(--text-3)"}}>Analysing communications…</div> : mattersCommsAISummary ? <div style={{fontSize:12,lineHeight:1.75,color:"var(--text-2)",whiteSpace:"pre-wrap"}}>{mattersCommsAISummary}</div> : <div style={{fontSize:11,color:"var(--text-3)"}}>No summary yet — refresh emails to generate</div>}
+                    </div>
+                    <div style={{background:"var(--white)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",padding:14,flex:1,display:"flex",flexDirection:"column",gap:8}}>
+                      <div style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1.5px"}}>✦ Ask AI</div>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                        {["What's due?","Draft update","Any risks?","Summarise emails"].map(q=>(<button key={q} type="button" className="filter-btn" style={{fontSize:10,padding:"3px 9px"}} onClick={()=>sendMattersCommsAI(q)}>{q}</button>))}
+                      </div>
+                      {mattersCommsAIChat.length > 0 && (
+                        <div style={{flex:1,maxHeight:220,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+                          {mattersCommsAIChat.map((m,i)=>(<div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",background:m.role==="user"?"var(--blue-light)":"var(--surface)",color:m.role==="user"?"var(--blue)":"var(--text)",border:"1px solid var(--border)",padding:"7px 11px",borderRadius:8,fontSize:11,lineHeight:1.65,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.text}</div>))}
+                          {mattersCommsAITyping && (<div style={{alignSelf:"flex-start",background:"var(--surface)",border:"1px solid var(--border)",padding:"7px 11px",borderRadius:8}}><div className="ai-typing"><div className="typing-dot"/><div className="typing-dot"/><div className="typing-dot"/></div></div>)}
+                        </div>
+                      )}
+                      <div style={{display:"flex",gap:6,marginTop:"auto"}}>
+                        <input style={{flex:1,border:"1px solid var(--border)",borderRadius:6,padding:"6px 10px",fontSize:11,fontFamily:"var(--font-body)",outline:"none",color:"var(--text)",background:"var(--surface)"}} placeholder="Ask about this matter…" value={mattersCommsAIChatInput} onChange={e=>setMattersCommsAIChatInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendMattersCommsAI()}/>
+                        <button type="button" className="btn-gold" style={{fontSize:12,padding:"6px 12px"}} onClick={()=>sendMattersCommsAI()}>›</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2892,7 +3641,7 @@ Return only the email body text, no subject line.`;
           )}
 
           {/* Catch-all */}
-          {!["dashboard","matters","matter_workspace","referrals","communications","accounting","insights"].includes(page) && (
+          {!["dashboard","matters","matter_workspace","referrals","contacts","communications","accounting","insights"].includes(page) && (
             <div className="under-construction">
               <div style={{textAlign:"center",color:"var(--text-3)"}}>
                 <div style={{fontFamily:"var(--font-display)",fontSize:48,opacity:0.15,marginBottom:12}}>⚖</div>
@@ -2935,6 +3684,35 @@ Return only the email body text, no subject line.`;
                 <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>setComposeModal(false)}>Discard</button>
                 <button type="button" className="btn-primary" style={{fontSize:12}} disabled={sendingEmail||!composeTo.trim()||!composeSubject.trim()} onClick={sendMatterEmail}>{sendingEmail?"Sending…":"Send ✉️"}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact modal */}
+      {contactModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(13,15,26,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{ setContactModal(false); setEditingContact(null); }}>
+          <div style={{background:"var(--white)",borderRadius:16,width:560,maxWidth:"90vw",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"var(--shadow-xl)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:500,color:"var(--text)"}}>{editingContact ? "Edit Contact" : "Add Contact"}</div>
+              <button type="button" className="modal-close" onClick={()=>{ setContactModal(false); setEditingContact(null); }}>✕</button>
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:20}}>
+              <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:12}}>
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Name *</label><input className="intake-input" value={contactForm.name} onChange={e=>setContactForm(f=>({...f,name:e.target.value}))} placeholder="Full name" style={{width:"100%"}}/></div>
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Type</label><select className="intake-input" value={contactForm.type} onChange={e=>setContactForm(f=>({...f,type:e.target.value}))} style={{width:"100%"}}><option value="Client">Client</option><option value="Real Estate Agent">Real Estate Agent</option><option value="Broker">Broker</option><option value="Accountant">Accountant</option><option value="Other">Other</option></select></div>
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Email</label><input className="intake-input" type="email" value={contactForm.email} onChange={e=>setContactForm(f=>({...f,email:e.target.value}))} placeholder="Email" style={{width:"100%"}}/></div>
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Phone</label><input className="intake-input" value={contactForm.phone} onChange={e=>setContactForm(f=>({...f,phone:e.target.value}))} placeholder="Phone" style={{width:"100%"}}/></div>
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Address</label><input className="intake-input" value={contactForm.address} onChange={e=>setContactForm(f=>({...f,address:e.target.value}))} placeholder="Address" style={{width:"100%"}}/></div>
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Company</label><input className="intake-input" value={contactForm.company} onChange={e=>setContactForm(f=>({...f,company:e.target.value}))} placeholder="Company" style={{width:"100%"}}/></div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" id="contact-is-referrer" checked={contactForm.is_referrer} onChange={e=>setContactForm(f=>({...f,is_referrer:e.target.checked}))}/><label htmlFor="contact-is-referrer" className="contact-field-label" style={{marginBottom:0}}>Is Referrer</label></div>
+                {contactForm.is_referrer && (<><div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Referrer Fee</label><input className="intake-input" value={contactForm.referrer_fee} onChange={e=>setContactForm(f=>({...f,referrer_fee:e.target.value}))} placeholder="e.g. $300" style={{width:"100%"}}/></div><div style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" id="contact-formal" checked={contactForm.formal_agreement} onChange={e=>setContactForm(f=>({...f,formal_agreement:e.target.checked}))}/><label htmlFor="contact-formal" className="contact-field-label" style={{marginBottom:0}}>Formal Agreement</label></div></>)}
+                <div><label className="contact-field-label" style={{display:"block",marginBottom:4}}>Notes</label><textarea className="intake-textarea" value={contactForm.notes} onChange={e=>setContactForm(f=>({...f,notes:e.target.value}))} placeholder="Notes" style={{minHeight:60}}/></div>
+              </div>
+            </div>
+            <div style={{padding:"12px 20px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button type="button" className="btn-ghost" onClick={()=>{ setContactModal(false); setEditingContact(null); }}>Cancel</button>
+              <button type="button" className="btn-gold" disabled={!contactForm.name.trim()} onClick={async ()=>{ if(!contactForm.name.trim()) return; const payload = { name: contactForm.name.trim(), type: contactForm.type, email: contactForm.email.trim() || null, phone: contactForm.phone.trim() || null, address: contactForm.address.trim() || null, company: contactForm.company.trim() || null, is_referrer: contactForm.is_referrer, referrer_fee: contactForm.referrer_fee ? String(contactForm.referrer_fee).trim() : null, formal_agreement: contactForm.formal_agreement, notes: contactForm.notes.trim() || null }; if(editingContact){ const { error } = await supabase.from("contacts").update(payload).eq("id",editingContact.id); if(!error){ setContacts(prev=>prev.map(c=>c.id===editingContact.id?{...c,...payload}:c)); if(selectedContact?.id===editingContact.id) setSelectedContact({...editingContact,...payload}); } } else { const { data, error } = await supabase.from("contacts").insert(payload).select().single(); if(!error && data){ setContacts(prev=>[...prev,data]); setSelectedContact(data); } } setContactModal(false); setEditingContact(null); }}>{editingContact ? "Save" : "Add Contact"}</button>
             </div>
           </div>
         </div>
