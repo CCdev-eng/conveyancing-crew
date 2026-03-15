@@ -68,7 +68,7 @@ const matchAI = q => {
 const URGENCY_COLOR = { critical:"#dc2626", high:"#ea580c", medium:"#ca8a04", low:"#16a34a", none:"#94a3b8" };
 const AVATAR_COLORS = [
   "linear-gradient(135deg, #0f766e 0%, #0e9488 100%)",
-  "linear-gradient(135deg, #c9a84c 0%, #a07830 100%)",
+  "linear-gradient(135deg, #245eb0 0%, #1a4a9e 100%)",
   "linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)",
   "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
   "linear-gradient(135deg, #ca8a04 0%, #b45309 100%)",
@@ -374,22 +374,39 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --ink:#0d0f1a; --ink-2:#1e2130; --ink-3:#2d3149;
-  --surface:#f9f8f6; --white:#ffffff;
-  --border:#e8e6e0; --border-2:#f0ede8;
-  --muted:#8b8880; --text:#1a1a2e; --text-2:#4a4860; --text-3:#7b7990;
-  --gold:#c9a84c; --gold-light:#fdf8ec; --gold-dim:#e8d5a0;
-  --teal:#0f766e; --teal-light:#f0faf9;
-  --red:#dc2626; --red-light:#fef2f2;
-  --amber:#ca8a04; --amber-light:#fefce8;
-  --green:#16a34a; --green-light:#f0fdf4;
-  --blue:#1d4ed8; --blue-light:#eff6ff;
-  --purple:#7c3aed; --purple-light:#f5f3ff;
-  --radius:10px; --radius-sm:6px; --radius-lg:16px;
-  --shadow-sm:0 1px 3px rgba(13,15,26,0.06),0 1px 2px rgba(13,15,26,0.04);
-  --shadow:0 4px 20px rgba(13,15,26,0.08);
-  --shadow-lg:0 16px 48px rgba(13,15,26,0.14);
-  --shadow-xl:0 24px 64px rgba(13,15,26,0.2);
+  --ink:#1a2744;
+  --ink-2:#243360;
+  --ink-3:#2d4080;
+  --surface:#f4f6fb;
+  --white:#ffffff;
+  --border:#dde3f0;
+  --border-2:#e8ecf5;
+  --muted:#8a96b0;
+  --text:#1a2744;
+  --text-2:#3d4f7a;
+  --text-3:#7b8db0;
+  --gold:#245eb0;
+  --gold-light:#eef3fb;
+  --gold-dim:#82a7d4;
+  --teal:#1a4a9e;
+  --teal-light:#eef3fb;
+  --red:#dc2626;
+  --red-light:#fef2f2;
+  --amber:#b45309;
+  --amber-light:#fffbeb;
+  --green:#16a34a;
+  --green-light:#f0fdf4;
+  --blue:#245eb0;
+  --blue-light:#eef3fb;
+  --purple:#5b21b6;
+  --purple-light:#f5f3ff;
+  --radius:10px;
+  --radius-sm:6px;
+  --radius-lg:16px;
+  --shadow-sm:0 1px 3px rgba(26,39,68,0.08),0 1px 2px rgba(26,39,68,0.05);
+  --shadow:0 4px 20px rgba(26,39,68,0.1);
+  --shadow-lg:0 16px 48px rgba(26,39,68,0.15);
+  --shadow-xl:0 24px 64px rgba(26,39,68,0.22);
   --font-display:'Fraunces',Georgia,serif;
   --font-body:'DM Sans',system-ui,sans-serif;
   --font-mono:'DM Mono',monospace;
@@ -400,6 +417,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+@keyframes toastFade{0%,70%{opacity:1}100%{opacity:0}}
 .fade-up{animation:fadeUp 0.35s ease both}
 .fade-up-1{animation:fadeUp 0.35s 0.05s ease both}
 .fade-up-2{animation:fadeUp 0.35s 0.1s ease both}
@@ -410,10 +428,10 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 
 /* ── SIDEBAR ── */
 .sidebar{width:228px;flex-shrink:0;background:var(--ink);display:flex;flex-direction:column;position:relative;overflow:hidden}
-.sidebar::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 20% 80%,rgba(201,168,76,0.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(15,118,110,0.06) 0%,transparent 50%);pointer-events:none}
+.sidebar::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 20% 80%,rgba(36,94,176,0.12) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(36,94,176,0.06) 0%,transparent 50%);pointer-events:none}
 .sb-brand{padding:24px 20px 18px;border-bottom:1px solid rgba(255,255,255,0.06);position:relative;z-index:1}
 .sb-logo{display:flex;align-items:center;gap:10px}
-.sb-logo-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--gold) 0%,#a07830 100%);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;box-shadow:0 2px 8px rgba(201,168,76,0.3)}
+.sb-logo-mark{width:auto;height:32px;border-radius:0;background:none;box-shadow:none;display:flex;align-items:center}
 .sb-logo-text{font-family:var(--font-display);font-size:16px;font-weight:500;color:#f5f0e8;letter-spacing:-0.2px}
 .sb-logo-sub{font-size:9px;color:rgba(255,255,255,0.3);font-family:var(--font-mono);letter-spacing:1.5px;text-transform:uppercase;margin-top:1px}
 .sb-nav{flex:1;padding:12px 10px;overflow-y:auto;position:relative;z-index:1}
@@ -421,12 +439,12 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .sb-section{font-size:9px;font-family:var(--font-mono);color:rgba(255,255,255,0.2);letter-spacing:2px;text-transform:uppercase;padding:14px 10px 6px}
 .sb-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:rgba(255,255,255,0.45);transition:all 0.15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left;font-family:var(--font-body);position:relative}
 .sb-item:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.8)}
-.sb-item.active{background:linear-gradient(90deg,rgba(201,168,76,0.18) 0%,rgba(201,168,76,0.06) 100%);color:var(--gold-dim);font-weight:600}
-.sb-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--gold);border-radius:0 3px 3px 0;box-shadow:0 0 8px rgba(201,168,76,0.5)}
+.sb-item.active{background:var(--blue-light);color:var(--text);font-weight:600}
+.sb-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:#245eb0;border-radius:0 3px 3px 0;box-shadow:0 0 8px rgba(36,94,176,0.4)}
 .sb-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0;opacity:0.7}
 .sb-item.active .sb-icon{opacity:1}
 .sb-badge{margin-left:auto;background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:20px;font-family:var(--font-mono)}
-.sb-badge.gold{background:var(--gold);color:var(--ink)}
+.sb-badge.gold{background:#245eb0;color:var(--white)}
 .sb-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:10px;position:relative;z-index:1}
 .sb-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--teal),#0e9488);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;box-shadow:0 2px 6px rgba(15,118,110,0.3)}
 .sb-user-name{font-size:12px;font-weight:600;color:#e2e8f0}
@@ -442,16 +460,16 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .tb-page-sub{font-size:11px;color:var(--muted);font-family:var(--font-mono)}
 .tb-right{display:flex;align-items:center;gap:8px}
 .tb-search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 12px;width:220px;transition:all 0.15s}
-.tb-search:focus-within{border-color:var(--gold-dim);background:var(--white);box-shadow:0 0 0 3px var(--gold-light)}
+.tb-search:focus-within{border-color:var(--gold-dim);background:var(--white);box-shadow:0 0 0 3px rgba(36,94,176,0.15)}
 .tb-search input{border:none;background:none;font-size:12px;color:var(--text);outline:none;width:100%;font-family:var(--font-body)}
 .tb-search input::placeholder{color:var(--text-3)}
 .icon-btn{width:34px;height:34px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;position:relative;transition:all 0.15s}
-.icon-btn:hover{background:var(--white);border-color:var(--gold-dim)}
+.icon-btn:hover{background:var(--white);border-color:#82a7d4}
 .icon-btn .dot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:var(--red);border-radius:50%;border:1.5px solid var(--white)}
 .btn-primary{background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all 0.15s;display:flex;align-items:center;gap:6px}
 .btn-primary:hover{background:var(--ink-2);box-shadow:var(--shadow)}
-.btn-gold{background:linear-gradient(135deg,var(--gold) 0%,#a07830 100%);color:var(--ink);border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
-.btn-gold:hover{box-shadow:0 4px 16px rgba(201,168,76,0.35);transform:translateY(-1px)}
+.btn-gold{background:linear-gradient(135deg,#245eb0 0%,#1a4a9e 100%);color:white;border:none;border-radius:var(--radius-sm);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
+.btn-gold:hover{box-shadow:0 4px 16px rgba(36,94,176,0.35);transform:translateY(-1px)}
 .btn-gold:disabled{opacity:0.45;transform:none;box-shadow:none;cursor:not-allowed}
 .btn-ghost{background:none;border:1px solid var(--border);color:var(--text-2);border-radius:var(--radius-sm);padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
 .btn-ghost:hover{border-color:var(--ink);color:var(--ink)}
@@ -483,7 +501,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 /* ── TAGS ── */
 .tag{display:inline-flex;align-items:center;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap;font-family:var(--font-mono)}
 .tag-teal{background:var(--teal-light);color:var(--teal)}
-.tag-gold{background:var(--gold-light);color:#92660a;border:1px solid var(--gold-dim)}
+.tag-gold{background:#eef3fb;color:#245eb0;border:1px solid #82a7d4}
 .tag-red{background:var(--red-light);color:var(--red)}
 .tag-amber{background:var(--amber-light);color:var(--amber)}
 .tag-green{background:var(--green-light);color:var(--green)}
@@ -530,14 +548,15 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .comms-left-col{width:300px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;height:100%;background:var(--white);border-right:1px solid var(--border)}
 .comms-right-col{flex:1;display:flex;flex-direction:column;overflow:hidden;height:100%;min-height:0;background:var(--white);border-left:1px solid var(--border)}
 .comms-detail-thread{flex:1;overflow-y:auto;min-height:0;padding:20px}
-.comms-compose-wrap{flex-shrink:0;max-height:350px;overflow-y:auto}
+.comms-compose-wrap{flex-shrink:0;border-top:2px solid #82a7d4;background:var(--white)}
+.comms-compose-buttons{display:flex;gap:8px;align-items:center;padding:8px 20px 8px;background:var(--white)}
 .comms-inbox-tabs{display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--border-2);flex-shrink:0}
 .comms-inbox-tab{padding:5px 12px;font-size:11px;font-weight:500;border-radius:999px;border:none;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
 .comms-inbox-tab.inactive{background:var(--surface);color:var(--text-2)}
 .comms-inbox-tab.active{background:var(--ink);color:var(--white)}
-.comms-ai-bar{background:var(--gold-light);border-left:3px solid var(--gold);padding:10px 16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;gap:10px;transition:background 0.15s}
+.comms-ai-bar{background:var(--blue-light);border-left:3px solid #245eb0;padding:10px 16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;gap:10px;transition:background 0.15s}
 .comms-ai-bar:hover{background:rgba(253,248,236,0.9)}
-.comms-ai-expanded{overflow:hidden;transition:max-height 0.3s ease;background:var(--gold-light);padding:0 20px}
+.comms-ai-expanded{overflow:hidden;transition:max-height 0.3s ease;background:var(--blue-light);padding:0 20px}
 .comms-ai-expanded .comms-ai-expanded-inner{max-height:300px;overflow-y:auto}
 .comms-email-list{flex:1;overflow-y:auto;background:var(--white);min-height:0}
 .comms-email-row{padding:14px 20px;border-bottom:1px solid var(--border-2);cursor:pointer;display:flex;gap:12px;align-items:flex-start;transition:all 0.15s;position:relative}
@@ -545,9 +564,9 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .comms-email-row.selected{background:var(--ink);color:var(--white);border-left:none}
 .comms-email-row.selected:hover{background:var(--ink-2)}
 .comms-email-row.selected .comms-row-muted{color:rgba(255,255,255,0.85)}
-.comms-email-row.unread{border-left:3px solid var(--gold)}
-.comms-email-row.unread.selected{border-left:3px solid var(--gold-dim)}
-.comms-email-expanded{background:var(--white);border-bottom:2px solid var(--gold-dim);padding:20px 24px;animation:fadeUp 0.2s ease}
+.comms-email-row.unread{border-left:3px solid #245eb0}
+.comms-email-row.unread.selected{border-left:3px solid #82a7d4}
+.comms-email-expanded{background:var(--white);border-bottom:2px solid #82a7d4;padding:20px 24px;animation:fadeUp 0.2s ease}
 .comms-compose-bar{padding:10px 20px;background:var(--white);border-top:1px solid var(--border);flex-shrink:0}
 .comms-compose-form{overflow:hidden;transition:max-height 0.3s ease;background:var(--white);padding:0 20px}
 .comms-avatar-36{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
@@ -565,9 +584,9 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .comms-summary-list-teal li::before{content:'';position:absolute;left:0;top:0.65em;width:5px;height:5px;border-radius:50%;background:var(--teal)}
 .comms-summary-list-gold{list-style:none;padding:0;margin:0;counter-reset:step}
 .comms-summary-list-gold li{counter-increment:step;padding-left:22px;position:relative;margin-bottom:4px}
-.comms-summary-list-gold li::before{content:counter(step);position:absolute;left:0;top:0;font-family:var(--font-display);font-size:12px;font-weight:600;color:var(--gold)}
+.comms-summary-list-gold li::before{content:counter(step);position:absolute;left:0;top:0;font-family:var(--font-display);font-size:12px;font-weight:600;color:#245eb0}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
-.comms-summary-shimmer{animation:shimmer 1.5s ease-in-out infinite;background:linear-gradient(90deg,var(--gold-light) 0%,rgba(232,213,160,0.4) 50%,var(--gold-light) 100%);background-size:200% 100%}
+.comms-summary-shimmer{animation:shimmer 1.5s ease-in-out infinite;background:linear-gradient(90deg,var(--blue-light) 0%,rgba(130,167,212,0.4) 50%,var(--blue-light) 100%);background-size:200% 100%}
 .comms-row-shimmer{height:56px;border-bottom:1px solid var(--border-2);background:linear-gradient(90deg,var(--surface) 0%,var(--white) 50%,var(--surface) 100%);background-size:200% 100%;animation:shimmer 1.5s ease-in-out infinite}
 
 /* Settlements */
@@ -579,27 +598,27 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 
 /* AI Panel */
 .ai-panel{grid-row:1/4;background:var(--ink);border-radius:var(--radius-lg);display:flex;flex-direction:column;height:100%;overflow:hidden;position:relative;border:1px solid var(--ink-2);box-shadow:var(--shadow-lg)}
-.ai-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:200px;background:radial-gradient(ellipse at 50% 0%,rgba(201,168,76,0.12) 0%,transparent 70%);pointer-events:none}
+.ai-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:200px;background:radial-gradient(ellipse at 50% 0%,rgba(36,94,176,0.12) 0%,transparent 70%);pointer-events:none}
 .ai-panel-hdr{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.06);position:relative;z-index:1}
 .ai-panel-title{font-size:11px;font-family:var(--font-mono);color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
-.ai-model-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.25);border-radius:20px;padding:4px 10px;font-size:10px;font-weight:600;color:var(--gold-dim);font-family:var(--font-mono)}
-.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2s ease infinite}
+.ai-model-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(36,94,176,0.15);border:1px solid rgba(36,94,176,0.25);border-radius:20px;padding:4px 10px;font-size:10px;font-weight:600;color:#82a7d4;font-family:var(--font-mono)}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:#245eb0;animation:pulse 2s ease infinite}
 .ai-messages{flex:1;overflow-y:scroll;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-height:0;max-height:400px;}
 .ai-messages::-webkit-scrollbar{width:0}
 .ai-msg{display:flex;gap:8px;max-width:100%}
 .ai-msg.user{flex-direction:row-reverse}
 .ai-msg-avatar{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
-.ai-msg-avatar.ai-av{background:linear-gradient(135deg,var(--gold),#a07830);color:var(--ink)}
+.ai-msg-avatar.ai-av{background:linear-gradient(135deg,#245eb0,#1a4a9e);color:var(--white)}
 .ai-msg-avatar.user-av{background:linear-gradient(135deg,var(--teal),#0e9488);color:#fff;font-size:8px}
 .ai-bubble{padding:9px 12px;border-radius:10px;font-size:11px;line-height:1.65}
 .ai-bubble.ai-b{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.75);border-radius:3px 10px 10px 10px}
-.ai-bubble.user-b{background:rgba(201,168,76,0.18);border:1px solid rgba(201,168,76,0.25);color:var(--gold-dim);border-radius:10px 3px 10px 10px}
+.ai-bubble.user-b{background:rgba(36,94,176,0.18);border:1px solid rgba(36,94,176,0.25);color:#82a7d4;border-radius:10px 3px 10px 10px}
 .ai-bullets{list-style:none;margin-top:6px}
 .ai-bullets li{font-size:10px;padding:3px 0 3px 14px;position:relative;color:rgba(255,255,255,0.55);line-height:1.6;border-bottom:1px solid rgba(255,255,255,0.04)}
 .ai-bullets li:last-child{border-bottom:none}
-.ai-bullets li::before{content:'›';position:absolute;left:0;color:var(--gold);font-weight:700}
+.ai-bullets li::before{content:'›';position:absolute;left:0;color:#245eb0;font-weight:700}
 .ai-typing{display:flex;gap:3px;padding:4px 0}
-.typing-dot{width:5px;height:5px;border-radius:50%;background:var(--gold);opacity:0.6;animation:bounce 1.4s ease infinite}
+.typing-dot{width:5px;height:5px;border-radius:50%;background:#245eb0;opacity:0.6;animation:bounce 1.4s ease infinite}
 .typing-dot:nth-child(2){animation-delay:0.2s}
 .typing-dot:nth-child(3){animation-delay:0.4s}
 .ai-input-area{padding:12px 14px;border-top:1px solid rgba(255,255,255,0.06)}
@@ -610,7 +629,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .ai-input{flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 11px;font-size:11px;color:rgba(255,255,255,0.8);outline:none;font-family:var(--font-body);transition:all 0.15s}
 .ai-input:focus{border-color:rgba(201,168,76,0.4);background:rgba(255,255,255,0.08)}
 .ai-input::placeholder{color:rgba(255,255,255,0.2)}
-.ai-send{background:linear-gradient(135deg,var(--gold),#a07830);color:var(--ink);border:none;border-radius:7px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
+.ai-send{background:linear-gradient(135deg,#245eb0,#1a4a9e);color:white;border:none;border-radius:7px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
 .ai-send:hover{box-shadow:0 2px 8px rgba(201,168,76,0.3)}
 
 /* Financial */
@@ -649,7 +668,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .ws-tabs{display:flex;gap:0}
 .ws-tab{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--text-3);font-family:var(--font-body);border-bottom:2px solid transparent;transition:all 0.15s;margin-right:2px}
 .ws-tab:hover{color:var(--text)}
-.ws-tab.active{color:var(--ink);font-weight:700;border-bottom-color:var(--gold)}
+.ws-tab.active{color:var(--ink);font-weight:700;border-bottom-color:#245eb0}
 .ws-content{flex:1;overflow-y:auto;padding:20px 24px}
 
 /* Timeline */
@@ -664,7 +683,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 
 /* Doc items */
 .doc-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--white);cursor:pointer;transition:all 0.15s}
-.doc-item:hover{border-color:var(--gold-dim);background:var(--gold-light)}
+.doc-item:hover{border-color:#82a7d4;background:var(--blue-light)}
 .doc-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
 .doc-name{font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px}
 .doc-meta{font-size:10px;font-family:var(--font-mono);color:var(--text-3)}
@@ -689,7 +708,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .thread-meta{font-size:10px;font-family:var(--font-mono);color:var(--text-3);margin-bottom:5px}
 .comms-compose{padding:14px 20px;border-top:1px solid var(--border);background:var(--white);flex-shrink:0}
 .compose-textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;font-family:var(--font-body);resize:none;outline:none;min-height:72px;color:var(--text);background:var(--surface);transition:all 0.15s}
-.compose-textarea:focus{border-color:var(--gold-dim);background:var(--white)}
+.compose-textarea:focus{border-color:#82a7d4;background:var(--white);box-shadow:0 0 0 3px rgba(36,94,176,0.15)}
 .ai-summary-card{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow-sm)}
 .ai-sum-label{font-size:9px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
 .ai-sum-item{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-2);font-size:11px;color:var(--text-2);line-height:1.5}
@@ -701,7 +720,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .ref-list{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);overflow-y:auto;box-shadow:var(--shadow-sm)}
 .ref-list-item{padding:14px 16px;border-bottom:1px solid var(--border-2);cursor:pointer;transition:all 0.15s;position:relative}
 .ref-list-item:hover{background:var(--surface)}
-.ref-list-item.active{background:var(--gold-light);border-right:3px solid var(--gold)}
+.ref-list-item.active{background:var(--blue-light);border-right:3px solid #245eb0}
 .rli-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px}
 .rli-type{font-size:10px;font-family:var(--font-mono);color:var(--text-3);margin-bottom:6px}
 .ref-detail{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);overflow-y:auto;box-shadow:var(--shadow-sm)}
@@ -746,7 +765,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .is-step{display:flex;align-items:center;gap:7px}
 .is-dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0}
 .is-dot.done{background:var(--teal);color:#fff}
-.is-dot.curr{background:var(--ink);color:var(--white);box-shadow:0 0 0 3px rgba(13,15,26,0.1)}
+.is-dot.curr{background:var(--ink);color:var(--white);box-shadow:0 0 0 3px rgba(36,94,176,0.15)}
 .is-dot.todo{background:var(--surface);color:var(--text-3);border:2px solid var(--border)}
 .is-label{font-size:11px;font-weight:500;color:var(--text-2)}
 .is-label.curr{color:var(--ink);font-weight:700}
@@ -755,21 +774,21 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .intake-body{padding:22px 26px}
 .intake-source-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}
 .src-card{padding:14px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;text-align:center;transition:all 0.15s;background:var(--surface)}
-.src-card:hover{border-color:var(--gold-dim);background:var(--gold-light)}
-.src-card.sel{border-color:var(--gold);background:var(--gold-light)}
+.src-card:hover{border-color:#82a7d4;background:var(--blue-light)}
+.src-card.sel{border-color:#245eb0;background:var(--blue-light)}
 .src-icon{font-size:22px;margin-bottom:5px}
 .src-label{font-size:11px;font-weight:600;color:var(--text)}
 .src-desc{font-size:10px;color:var(--text-3);margin-top:2px}
 .intake-label{font-size:10px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;display:block}
 .intake-input{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;font-family:var(--font-body);outline:none;color:var(--text);background:var(--surface);transition:all 0.15s}
-.intake-input:focus{border-color:var(--gold-dim);background:var(--white);box-shadow:0 0 0 3px var(--gold-light)}
+.intake-input:focus{border-color:#82a7d4;background:var(--white);box-shadow:0 0 0 3px rgba(36,94,176,0.15)}
 .intake-textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;font-family:var(--font-body);resize:vertical;min-height:90px;outline:none;color:var(--text);background:var(--surface);transition:all 0.15s}
-.intake-textarea:focus{border-color:var(--gold-dim);background:var(--white)}
+.intake-textarea:focus{border-color:#82a7d4;background:var(--white);box-shadow:0 0 0 3px rgba(36,94,176,0.15)}
 .intake-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .intake-footer{padding:14px 26px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:0 0 20px 20px}
 .extracted-card{background:var(--ink);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:14px;position:relative;overflow:hidden}
-.extracted-card::before{content:'';position:absolute;top:0;right:0;width:80px;height:80px;background:radial-gradient(circle,rgba(201,168,76,0.15) 0%,transparent 70%);pointer-events:none}
-.ext-badge{font-size:8px;font-family:var(--font-mono);background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.3);color:var(--gold-dim);padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;display:inline-block;margin-bottom:10px}
+.extracted-card::before{content:'';position:absolute;top:0;right:0;width:80px;height:80px;background:radial-gradient(circle,rgba(36,94,176,0.15) 0%,transparent 70%);pointer-events:none}
+.ext-badge{font-size:8px;font-family:var(--font-mono);background:rgba(36,94,176,0.2);border:1px solid rgba(36,94,176,0.3);color:#82a7d4;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;display:inline-block;margin-bottom:10px}
 .ext-field{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px;gap:8px}
 .ext-field:last-child{border-bottom:none}
 .ext-key{color:rgba(255,255,255,0.4);font-family:var(--font-mono)}
@@ -813,15 +832,15 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .wf-prog-step{flex:1;padding:10px 8px;text-align:center;cursor:pointer;transition:all 0.15s;border-right:1px solid var(--border);position:relative}
 .wf-prog-step:last-child{border-right:none}
 .wf-prog-step:hover{background:var(--surface)}
-.wf-prog-step.current{background:var(--gold-light)}
+.wf-prog-step.current{background:var(--blue-light)}
 .wf-prog-step.completed{background:var(--teal-light)}
 .wf-prog-icon{font-size:16px;margin-bottom:3px}
 .wf-prog-label{font-size:9px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;line-height:1.3}
-.wf-prog-step.current .wf-prog-label{color:var(--gold);font-weight:700}
+.wf-prog-step.current .wf-prog-label{color:#245eb0;font-weight:700}
 .wf-prog-step.completed .wf-prog-label{color:var(--teal)}
 .wf-type-selector{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
 .wf-type-btn{padding:7px 16px;border-radius:20px;font-size:12px;font-weight:500;border:1px solid var(--border);background:var(--white);color:var(--text-2);cursor:pointer;transition:all 0.15s;font-family:var(--font-body)}
-.wf-type-btn:hover{border-color:var(--gold-dim);color:var(--text)}
+.wf-type-btn:hover{border-color:#82a7d4;color:var(--text)}
 .wf-type-btn.active{background:var(--ink);border-color:var(--ink);color:var(--white);font-weight:600}
 
 /* ── SETTINGS STUB ── */
@@ -831,21 +850,21 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--surface);font-family:var(--font-body)}
 .login-card{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);box-shadow:var(--shadow-lg);padding:40px;width:100%;max-width:380px}
 .login-logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center}
-.login-logo-mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--gold) 0%,#a07830 100%);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 12px rgba(201,168,76,0.35)}
+.login-logo-mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#245eb0 0%,#1a4a9e 100%);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 2px 12px rgba(36,94,176,0.35)}
 .login-logo-text{font-family:var(--font-display);font-size:22px;font-weight:500;color:var(--text);letter-spacing:-0.2px}
 .login-logo-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px}
 .login-field{margin-bottom:18px}
 .login-field label{display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px;font-family:var(--font-body)}
 .login-input{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;color:var(--text);background:var(--white);font-family:var(--font-body);outline:none;transition:border-color 0.15s}
-.login-input:focus{border-color:var(--gold-dim);box-shadow:0 0 0 3px var(--gold-light)}
+.login-input:focus{border-color:#82a7d4;box-shadow:0 0 0 3px rgba(36,94,176,0.15)}
 .login-input::placeholder{color:var(--text-3)}
-.login-btn{width:100%;padding:12px;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font-body);background:linear-gradient(135deg,var(--gold) 0%,#a07830 100%);color:var(--ink);transition:all 0.15s;margin-top:8px}
-.login-btn:hover:not(:disabled){box-shadow:0 4px 16px rgba(201,168,76,0.35);transform:translateY(-1px)}
+.login-btn{width:100%;padding:12px;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font-body);background:linear-gradient(135deg,#245eb0 0%,#1a4a9e 100%);color:white;transition:all 0.15s;margin-top:8px}
+.login-btn:hover:not(:disabled){box-shadow:0 4px 16px rgba(36,94,176,0.35);transform:translateY(-1px)}
 .login-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
 .login-error{font-size:12px;color:var(--red);margin-top:12px;padding:8px 12px;background:var(--red-light);border-radius:var(--radius-sm);font-family:var(--font-body)}
 .login-loading{font-family:var(--font-display);font-size:18px;color:var(--text-2)}
 .sb-signout{background:none;border:none;color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;font-family:var(--font-body);padding:4px 8px;border-radius:6px;margin-left:auto}
-.sb-signout:hover{color:var(--gold-dim);background:rgba(255,255,255,0.06)}
+.sb-signout:hover{color:#82a7d4;background:rgba(255,255,255,0.06)}
 `;
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
@@ -881,13 +900,16 @@ export default function App() {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [aiDraftLoading, setAiDraftLoading] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState(null);
   const [commSearchFilter, setCommSearchFilter] = useState("");
   const [emailSummary, setEmailSummary] = useState(null);
   const [emailSummaryLoading, setEmailSummaryLoading] = useState(false);
   const [aiSummaryExpanded, setAiSummaryExpanded] = useState(false);
   const [expandedEmailId, setExpandedEmailId] = useState(null);
-  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeModal, setComposeModal] = useState(false);
+  const [composeModalMode, setComposeModalMode] = useState("new");
+  const [sendSuccessToast, setSendSuccessToast] = useState(false);
   const [commInboxTab, setCommInboxTab] = useState("inbox");
   const [intakeAddress, setIntakeAddress] = useState("");
   const [intakeState, setIntakeState] = useState("NSW");
@@ -902,6 +924,7 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const aiEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const composeBodyRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1160,7 +1183,7 @@ export default function App() {
     if (matterTab === "Communications" && selMatterObj?.id) {
       setSelectedEmailId(null);
       setExpandedEmailId(null);
-      setComposeOpen(false);
+      setComposeModal(false);
       setAiSummaryExpanded(false);
       setCommInboxTab("inbox");
     }
@@ -1175,26 +1198,37 @@ export default function App() {
   const handleReplyToEmail = (email) => {
     if (!email) return;
     const toAddress = email.isOutgoing
-      ? (email.toRecipients?.[0]?.address || "")
-      : (email.from?.address || "");
+      ? (email.toRecipients?.[0]?.emailAddress?.address || email.toRecipients?.[0]?.address || "")
+      : (email.from?.emailAddress?.address || email.from?.address || "");
     setComposeTo(toAddress);
     setComposeSubject((s) => (s && s.startsWith("Re:") ? s : `Re: ${email.subject || ""}`.trim()));
     setComposeBody("");
-    setComposeOpen(true);
+    setComposeModalMode("reply");
+    setComposeModal(true);
   };
 
   const handleForwardEmail = (email) => {
     if (!email) return;
-    const sender = email.from?.name || email.from?.address || "";
+    const sender = email.from?.emailAddress?.name || email.from?.name || email.from?.emailAddress?.address || email.from?.address || "";
     const date = email.receivedDateTime ? new Date(email.receivedDateTime).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" }) : "";
     const rawSubject = email.subject || "(No subject)";
     const subject = rawSubject.startsWith("Fwd:") ? rawSubject : `Fwd: ${rawSubject}`;
     const bodyPreview = email.bodyPreview || "";
+    const forwardedBlock = `\n\n-------- Forwarded Message --------\nFrom: ${sender}\nDate: ${date}\nSubject: ${rawSubject}\n\n${bodyPreview}`;
     setComposeTo("");
     setComposeSubject(subject);
-    setComposeBody(`\n\n-------- Forwarded Message --------\nFrom: ${sender}\nDate: ${date}\nSubject: ${rawSubject}\n\n${bodyPreview}`);
-    setComposeOpen(true);
+    setComposeBody(forwardedBlock);
+    setComposeModalMode("forward");
+    setComposeModal(true);
   };
+
+  useEffect(() => {
+    if (composeModal && composeBodyRef.current) {
+      const t = composeBodyRef.current;
+      const id = setTimeout(() => { t.focus(); t.setSelectionRange(0, 0); }, 50);
+      return () => clearTimeout(id);
+    }
+  }, [composeModal]);
 
   function formatCommsTime(dateStr) {
     if (!dateStr) return "";
@@ -1361,7 +1395,9 @@ export default function App() {
         setComposeTo("");
         setComposeSubject("");
         setComposeBody("");
-        setComposeOpen(false);
+        setComposeModal(false);
+        setSendSuccessToast(true);
+        setTimeout(() => setSendSuccessToast(false), 3000);
         fetchMatterEmails();
       } else {
         alert(data.error || "Failed to send email");
@@ -1374,21 +1410,41 @@ export default function App() {
   };
 
   const requestEmailDraft = async () => {
-    const threadSummary = matterEmails.slice(0, 5).map((e) => `From: ${e.from?.name || e.from?.address || ""}\nSubject: ${e.subject}\n${e.bodyPreview || ""}`).join("\n\n");
-    const prompt = `Draft a professional reply email for this matter. Recent thread:\n\n${threadSummary}\n\nDraft the reply in plain text (no HTML).`;
-    const apiMessages = [{ role: "user", content: prompt }];
-    const mattersContext = selMatterObj ? `Current matter: ${selMatterObj.id}, Client: ${selMatterObj.client}, Type: ${selMatterObj.type}, Stage: ${selMatterObj.stage}.` : "";
+    const selectedEmail = (matterEmails || []).find((e) => e.id === selectedEmailId);
+    if (!selectedEmail) {
+      alert("Please select an email to reply to first.");
+      return;
+    }
+    const fromName = selectedEmail.from?.emailAddress?.name || selectedEmail.from?.name || "";
+    const fromAddr = selectedEmail.from?.emailAddress?.address || selectedEmail.from?.address || "";
+    const signOff = process.env.NEXT_PUBLIC_MICROSOFT_MAILBOX_EMAIL || "Conveyancing Crew";
+    setAiDraftLoading(true);
     try {
+      const systemContext = `You are a conveyancer drafting a professional email reply. Matter: ${selMatterObj?.matter_ref ?? selMatterObj?.id ?? ""}, Client: ${selMatterObj?.client_name ?? selMatterObj?.client ?? ""}, Property: ${selMatterObj?.address ?? ""}`;
+      const userMessage = `Please draft a professional reply to this email:
+From: ${fromName || fromAddr || "—"}
+Subject: ${selectedEmail.subject ?? ""}
+Message: ${selectedEmail.bodyPreview ?? ""}
+
+The reply should be concise, professional and in plain English.
+Sign off as ${signOff}.
+Return only the email body text, no subject line.`;
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages, mattersContext }),
+        body: JSON.stringify({
+          messages: [{ role: "user", content: userMessage }],
+          mattersContext: selMatterObj ? `Current matter: ${selMatterObj.id}, Client: ${selMatterObj.client}, Type: ${selMatterObj.type}, Stage: ${selMatterObj.stage}.` : "",
+          systemOverride: systemContext,
+        }),
       });
       const data = await res.json();
-      if (res.ok && data.content) setComposeBody((b) => b ? `${b}\n\n--- AI draft ---\n${data.content}` : data.content);
+      if (res.ok && data.content) setComposeBody(data.content.trim());
       else alert("Could not generate draft");
     } catch (_) {
       alert("Could not generate draft");
+    } finally {
+      setAiDraftLoading(false);
     }
   };
 
@@ -1555,9 +1611,10 @@ export default function App() {
         <div className="sidebar">
           <div className="sb-brand">
             <div className="sb-logo">
-              <div className="sb-logo-mark">⚖️</div>
+              <div className="sb-logo-mark">
+                <img src="https://mhdyxhxybcbowhcszxct.supabase.co/storage/v1/object/public/public-assets/logo-jpg%20new.jpg" alt="Conveyancing Crew" style={{height:"32px",width:"auto",objectFit:"contain"}}/>
+              </div>
               <div>
-                <div className="sb-logo-text">Conveyancing Crew</div>
                 <div className="sb-logo-sub">Practice OS · NSW & VIC</div>
               </div>
             </div>
@@ -2327,7 +2384,10 @@ export default function App() {
                             <span style={{fontFamily:"var(--font-display)",fontSize:15,fontWeight:600,color:"var(--text)"}}>Communications</span>
                             {(()=>{const u=(matterEmails||[]).filter(e=>!e.isRead).length; return u>0 ? <span className="tag tag-gold" style={{fontSize:10}}>{u} unread</span> : null;})()}
                           </div>
-                          <button type="button" className="icon-btn" onClick={fetchMatterEmails} disabled={matterEmailsLoading} title="Refresh">↻</button>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <button type="button" className="btn-ghost" style={{fontSize:11}} onClick={()=>{setComposeTo(selMatterObj?.email||"");setComposeSubject("");setComposeBody("");setComposeModalMode("new");setComposeModal(true);}}>New email</button>
+                            <button type="button" className="icon-btn" onClick={fetchMatterEmails} disabled={matterEmailsLoading} title="Refresh">↻</button>
+                          </div>
                         </div>
                         <div className="comms-inbox-tabs">
                           {(()=>{const emails=matterEmails||[]; const inboxCount=emails.filter(e=>!e.isOutgoing).length; const sentCount=emails.filter(e=>e.isOutgoing).length; return (
@@ -2379,6 +2439,7 @@ export default function App() {
                       </div>
                       {/* Right column: email detail + compose */}
                       <div className="comms-right-col">
+                        <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 280px)",overflow:"hidden",minHeight:0}}>
                         <div className="comms-detail-thread" style={{background:"var(--white)",color:"var(--text)"}}>
                           {!selectedEmailId ? (
                             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:"var(--text-3)",fontSize:14}}>Select an email to view</div>
@@ -2394,30 +2455,13 @@ export default function App() {
                                 <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
                                   <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>handleReplyToEmail(email)}>Reply</button>
                                   <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>handleForwardEmail(email)}>→ Forward</button>
+                                  <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={async ()=>{handleReplyToEmail(email);setTimeout(()=>requestEmailDraft(),100);}}>✦ AI Draft</button>
                                 </div>
                               </div>
                             );
                           })()}
                         </div>
-                        {composeOpen && (
-                        <div className="comms-compose-wrap" style={{borderTop:"1px solid var(--border)",background:"var(--white)"}}>
-                          <div className="comms-compose-form" style={{maxHeight:420}}>
-                            <div style={{padding:"16px 20px 20px"}}>
-                              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
-                                <div><label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>To</label><input className="intake-input" placeholder="client@example.com" value={composeTo} onChange={e=>setComposeTo(e.target.value)} style={{width:"100%"}}/></div>
-                                <div><label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>Subject</label><input className="intake-input" placeholder="Subject" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} style={{width:"100%"}}/></div>
-                                <div><label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>Body <span style={{fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{composeBody.length} chars</span></label><textarea className="compose-textarea" placeholder="Type your message..." value={composeBody} onChange={e=>setComposeBody(e.target.value)} rows={4} style={{width:"100%",minHeight:80}}/></div>
-                              </div>
-                              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                                <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={requestEmailDraft}>✦ AI Draft</button>
-                                <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>setComposeOpen(false)}>Discard</button>
-                                <div style={{flex:1}}/>
-                                <button type="button" className="btn-primary" style={{fontSize:12}} disabled={sendingEmail||!composeTo.trim()||!composeSubject.trim()} onClick={sendMatterEmail}>{sendingEmail?"Sending…":"Send ✉️"}</button>
-                              </div>
-                            </div>
-                          </div>
                         </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -2757,7 +2801,7 @@ export default function App() {
                         <div className="chart-wrap">
                           {firmYTD_data.map((d,i)=>(
                             <div key={d.m} className="chart-bar"
-                              style={{height:`${(d.v/5200)*100}%`,background:i===firmYTD_data.length-1?"linear-gradient(to top,var(--gold),rgba(201,168,76,0.3))":"linear-gradient(to top,var(--teal),rgba(15,118,110,0.2))"}}>
+                              style={{height:`${(d.v/5200)*100}%`,background:i===firmYTD_data.length-1?"linear-gradient(to top,#245eb0,rgba(36,94,176,0.3))":"linear-gradient(to top,var(--teal),rgba(26,74,158,0.2))"}}>
                               <div className="chart-bar-label">{d.m}</div>
                             </div>
                           ))}
@@ -2860,6 +2904,46 @@ export default function App() {
 
         </div>{/* /main */}
       </div>{/* /app */}
+
+      {/* Compose email modal */}
+      {composeModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(13,15,26,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setComposeModal(false)}>
+          <div style={{background:"var(--white)",borderRadius:16,width:680,maxWidth:"90vw",maxHeight:"85vh",display:"flex",flexDirection:"column",boxShadow:"var(--shadow-xl)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:500,color:"var(--text)"}}>{composeModalMode==="reply"?"Reply":composeModalMode==="forward"?"Forward":"New Email"}</div>
+              <button type="button" className="modal-close" onClick={()=>setComposeModal(false)}>✕</button>
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:20}}>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>To</label>
+                <input className="intake-input" placeholder="client@example.com" value={composeTo} onChange={e=>setComposeTo(e.target.value)} style={{width:"100%"}}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>Subject</label>
+                <input className="intake-input" placeholder="Subject" value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} style={{width:"100%"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:"var(--text-3)",display:"block",marginBottom:4}}>Body</label>
+                <textarea ref={composeBodyRef} placeholder="Type your message..." value={composeBody} onChange={e=>setComposeBody(e.target.value)} style={{width:"100%",height:300,resize:"vertical",fontFamily:"var(--font-body)",fontSize:13,lineHeight:1.7,padding:12,border:"1px solid var(--border)",borderRadius:8,outline:"none",color:"var(--text)",background:"var(--surface)"}}/>
+                <div style={{fontSize:11,fontFamily:"var(--font-mono)",color:"var(--text-3)",marginTop:4}}>{composeBody.length} chars</div>
+                <div style={{fontSize:11,color:"var(--text-3)",marginTop:6}}>Your signature will be added automatically.</div>
+              </div>
+            </div>
+            <div style={{padding:"12px 20px",borderTop:"1px solid var(--border)",display:"flex",gap:8,justifyContent:"space-between",alignItems:"center"}}>
+              <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={requestEmailDraft} disabled={aiDraftLoading}>{aiDraftLoading?"Drafting...":"✦ AI Draft"}</button>
+              <div style={{display:"flex",gap:8}}>
+                <button type="button" className="btn-ghost" style={{fontSize:12}} onClick={()=>setComposeModal(false)}>Discard</button>
+                <button type="button" className="btn-primary" style={{fontSize:12}} disabled={sendingEmail||!composeTo.trim()||!composeSubject.trim()} onClick={sendMatterEmail}>{sendingEmail?"Sending…":"Send ✉️"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {sendSuccessToast && (
+        <div style={{position:"fixed",bottom:24,right:24,zIndex:1001,background:"var(--green)",color:"var(--white)",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"var(--shadow-lg)",animation:"toastFade 3s ease forwards"}}>Email sent ✓</div>
+      )}
 
       {/* ══════════════════════════════════════════════
           NEW MATTER INTAKE MODAL

@@ -54,17 +54,38 @@ export async function POST(request) {
       : "https://graph.microsoft.com/v1.0/me";
     const url = `${baseUrl}/sendMail`;
 
+    const plainBody = (body || "").split("--")[0].trim();
+    const htmlEmail = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;font-size:13px;line-height:1.8;color:#333;max-width:600px">
+<div style="margin-bottom:20px">${plainBody.replace(/\n/g, "<br/>")}</div>
+<div style="border-top:2px solid #245eb0;padding-top:12px;margin-top:12px">
+<div style="font-weight:700;font-size:14px;color:#0d0f1a">Gitu Kaur</div>
+<div style="color:#555">Conveyancing Crew, Conveyancer/Director</div>
+<div><img src="https://mhdyxhxybcbowhcszxct.supabase.co/storage/v1/object/public/public-assets/logo-jpg%20new.jpg" alt="Conveyancing Crew" style="height:50px;margin:8px 0;display:block"/></div>
+<div style="color:#555">+61422387113</div>
+<div style="color:#555">PO Box 6621, Baulkham Hills, NSW 2153</div>
+<div><a href="https://conveyancingcrew.com.au" style="color:#245eb0;text-decoration:none">https://conveyancingcrew.com.au</a></div>
+</div>
+<div style="margin-top:16px;padding:10px 12px;background:#eef3fb;border-left:3px solid #245eb0;font-size:11px;color:#555;line-height:1.6">
+<strong>FRAUD WARNING:</strong> There has been a recent increase in the number of attempted fraud cases relating to the transfer of money. Please ensure that you DO NOT deposit money to an account nominated by CONVEYANCING CREW UNLESS you have first telephoned us on a known or separately verified number to verify the account number by phone. We will not accept responsibility if you transfer money into an incorrect account not provided by us and without first verifying the account details with us.
+</div>
+</body></html>`;
+
+    const toRecipients = Array.isArray(to)
+      ? to.map((e) => ({ emailAddress: { address: typeof e === "string" ? e : e.address } }))
+      : [{ emailAddress: { address: to } }];
+
     const payload = {
       message: {
         subject: subject || "(No subject)",
         body: {
           contentType: "HTML",
-          content: body ? body.replace(/\n/g, "<br>") : "",
+          content: htmlEmail,
         },
-        toRecipients: Array.isArray(to)
-          ? to.map((e) => ({ emailAddress: { address: typeof e === "string" ? e : e.address } }))
-          : [{ emailAddress: { address: to } }],
+        toRecipients,
       },
+      saveToSentItems: true,
     };
 
     const graphRes = await fetch(url, {

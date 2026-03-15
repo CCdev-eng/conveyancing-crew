@@ -6,9 +6,9 @@ const client = new Anthropic({
 
 export async function POST(request) {
   try {
-    const { messages, mattersContext } = await request.json();
+    const { messages, mattersContext, systemOverride } = await request.json();
 
-    const systemPrompt = `You are an AI assistant for Conveyancing Crew, 
+    const defaultSystem = `You are an AI assistant for Conveyancing Crew, 
 an Australian conveyancing practice operating in NSW and VIC. 
 You help conveyancers manage their matters, identify risks, draft 
 communications, and stay on top of their workload.
@@ -20,6 +20,8 @@ Be concise, practical and professional. When asked about specific
 matters, reference the actual data provided. Format responses clearly 
 with bullet points where appropriate. Always consider Australian 
 conveyancing law and practice.`;
+
+    const systemPrompt = systemOverride ?? defaultSystem;
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
