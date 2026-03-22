@@ -151,16 +151,17 @@ const PIE_COLORS_REVENUE = [
 ];
 
 /** Donut pie chart for Accounting revenue / expense breakdown (inline SVG). */
-function PieChart({ data, title, colors = PIE_COLORS_REVENUE, onSliceClick }) {
+function PieChart({ data, title, colors = PIE_COLORS_REVENUE, onSliceClick, compact = false }) {
   const [hoveredSlice, setHoveredSlice] = useState(null);
   const total = data.reduce((s, d) => s + d.value, 0);
   if (!total) return null;
 
-  const size = 180;
+  const size = compact ? 150 : 180;
   const cx = size / 2;
   const cy = size / 2;
-  const r = 70;
-  const holeR = 40;
+  const scale = size / 180;
+  const r = 70 * scale;
+  const holeR = 40 * scale;
 
   let currentAngle = -Math.PI / 2;
   const slices = data.map((d, i) => {
@@ -186,18 +187,29 @@ function PieChart({ data, title, colors = PIE_COLORS_REVENUE, onSliceClick }) {
 
   return (
     <div
+      className="pie-chart-card"
       style={{
         background: "var(--white)",
         borderRadius: "var(--radius-lg)",
         border: "1px solid var(--border)",
-        padding: "20px",
+        padding: compact ? "14px 12px" : "20px",
         boxShadow: "var(--shadow-sm)",
+        minWidth: 0,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>{title}</div>
-      <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-        <div style={{ position: "relative", flexShrink: 0 }}>
-          <svg width={size} height={size}>
+      <div style={{ fontSize: compact ? 12 : 13, fontWeight: 700, color: "var(--text)", marginBottom: compact ? 12 : 16 }}>{title}</div>
+      <div
+        className="pie-chart-inner"
+        style={{
+          display: "flex",
+          gap: compact ? 14 : 20,
+          alignItems: "center",
+          flexDirection: compact ? "column" : "row",
+          justifyContent: compact ? "flex-start" : undefined,
+        }}
+      >
+        <div style={{ position: "relative", flexShrink: 0, maxWidth: "100%" }}>
+          <svg width={size} height={size} style={{ display: "block", maxWidth: "100%", height: "auto" }}>
             {slices.map((s, i) => (
               <path
                 key={i}
@@ -239,9 +251,17 @@ function PieChart({ data, title, colors = PIE_COLORS_REVENUE, onSliceClick }) {
             <div
               style={{
                 position: "absolute",
-                top: "50%",
-                left: "110%",
-                transform: "translateY(-50%)",
+                ...(compact
+                  ? {
+                      top: "100%",
+                      left: "50%",
+                      transform: "translate(-50%, 8px)",
+                    }
+                  : {
+                      top: "50%",
+                      left: "110%",
+                      transform: "translateY(-50%)",
+                    }),
                 background: "var(--ink)",
                 color: "white",
                 borderRadius: 8,
@@ -265,7 +285,7 @@ function PieChart({ data, title, colors = PIE_COLORS_REVENUE, onSliceClick }) {
           )}
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ flex: compact ? undefined : 1, width: compact ? "100%" : undefined, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
           {slices.map((s, i) => (
             <div
               key={i}
@@ -1254,35 +1274,92 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .sb-signout:hover{color:#82a7d4;background:rgba(255,255,255,0.06)}
 
 @media (max-width: 768px) {
+  html, body { overflow-x: hidden; max-width: 100%; }
   .sidebar { display: none !important; }
-  .app { flex-direction: column; }
-  .main { width: 100vw; }
-  .topbar { padding: 0 14px; height: 52px; }
-  .content { padding: 14px; padding-bottom: 80px; }
-  .stat-row { grid-template-columns: repeat(2,1fr) !important; }
+  .app {
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh;
+    min-height: 100svh;
+    height: auto;
+    max-height: none;
+  }
+  .main {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    flex: 1;
+    min-height: 0;
+  }
+  .topbar {
+    padding: max(8px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 8px max(14px, env(safe-area-inset-left, 0px));
+    height: auto;
+    min-height: 44px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .tb-search { width: min(220px, 42vw) !important; flex: 1; min-width: 0; }
+  .content { padding: 14px max(14px, env(safe-area-inset-right, 0px)) 88px max(14px, env(safe-area-inset-left, 0px)); }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .dash-grid { grid-template-columns: 1fr !important; }
   .dash-main-grid { grid-template-columns: 1fr !important; }
   .dash-bottom-grid { grid-template-columns: 1fr !important; }
-  .contacts-layout { grid-template-columns: 1fr !important; }
-  .matter-table { font-size: 11px; }
+  .dash-hero { padding: 18px 16px !important; }
+  .dash-greeting { font-size: 22px !important; }
+  .dash-hero-stats { flex-wrap: wrap; gap: 16px !important; }
+  .contacts-layout { grid-template-columns: 1fr !important; height: auto !important; min-height: calc(100dvh - 52px - 68px) !important; }
+  .matter-table { font-size: 11px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .mt-thead { display: none; }
-  .mt-row { grid-template-columns: 1fr !important; gap: 4px !important; }
-  .ws-tabs { overflow-x: auto; white-space: nowrap; }
+  .mt-row { grid-template-columns: 1fr !important; gap: 4px !important; min-width: 0; }
+  .ws-tabs { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
   .ws-tab { font-size: 11px !important; padding: 8px 12px !important; }
   .calendar-grid { font-size: 10px; }
   .calendar-day { min-height: 60px !important; padding: 3px !important; }
   .cal-day-num { font-size: 10px !important; }
   .cal-event-pill { font-size: 9px !important; }
-  .contact-modal { width: 100vw !important; height: 100vh !important; border-radius: 0 !important; max-width: 100vw !important; }
+  .week-grid { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .contact-modal { width: 100% !important; height: 100% !important; max-height: 100dvh !important; border-radius: 0 !important; max-width: 100% !important; }
   .contact-modal-body { grid-template-columns: 1fr !important; }
   .contact-modal-left { display: none; }
   .contact-modal-right { display: none; }
   .comms-layout { grid-template-columns: 1fr !important; }
-  .ref-layout { grid-template-columns: 1fr !important; }
+  .comms-page { height: calc(100dvh - 52px - 68px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; min-height: 200px; }
+  .comms-page-mid { min-width: 0 !important; }
+  .ref-layout { grid-template-columns: 1fr !important; height: auto !important; min-height: min(70dvh, 560px); }
   .intake-grid { grid-template-columns: 1fr !important; }
-  .intake-source-grid { grid-template-columns: repeat(2,1fr) !important; }
-  .wf-progress { overflow-x: auto; }
-  .rdt-summary { grid-template-columns: repeat(2,1fr) !important; }
+  .intake-source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .intake-modal { max-height: 100dvh !important; border-radius: 12px !important; margin: env(safe-area-inset-top, 0px) 8px env(safe-area-inset-bottom, 0px); }
+  .wf-progress { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .rdt-summary { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .ws-content { padding: 12px !important; }
+  .acc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+  .acc-stat-val { font-size: 18px !important; word-break: break-word; }
+  .acc-period-toggle { flex-wrap: wrap; justify-content: flex-start; }
+  .acc-period-btn { padding: 6px 10px !important; font-size: 10px !important; }
+  .acc-chart-card { padding: 14px !important; overflow-x: auto; }
+  .insights-layout { grid-template-columns: 1fr !important; height: auto !important; min-height: 0; }
+  .insights-main { max-width: 100%; overflow-x: hidden; }
+  .inv-row, .inv-thead {
+    grid-template-columns: 64px minmax(80px, 1fr) 72px 72px 52px 48px !important;
+    gap: 8px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    font-size: 10px !important;
+  }
+  .icon-btn { min-width: 40px; min-height: 40px; }
+  .btn-primary, .btn-gold, .btn-ghost { min-height: 40px; }
+  .login-card { padding: 28px 20px !important; margin: 12px; max-width: calc(100% - 24px) !important; }
+  .modal-overlay { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)) !important; }
+  .thread-msg { max-width: 90% !important; }
+  .contact-fields-grid { grid-template-columns: 1fr !important; }
+  .comms-two-col { flex-direction: column !important; }
+  .comms-left-col { width: 100% !important; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+@media (max-width: 480px) {
+  .stat-row { grid-template-columns: 1fr !important; }
+  .acc-grid { grid-template-columns: 1fr !important; }
 }
 `;
 
@@ -3806,7 +3883,7 @@ Return only the email body text, no subject line.`;
         <div className="main">
 
           {/* ── TOPBAR ── */}
-          <div className="topbar" style={isMobile ? { height: 52, padding: "0 14px" } : undefined}>
+          <div className="topbar" style={isMobile ? { flexShrink: 0 } : undefined}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               {page==="matter_workspace" && (
                 <button className="btn-ghost" style={{padding:"5px 10px",fontSize:11}}
@@ -3990,10 +4067,12 @@ Return only the email body text, no subject line.`;
               ref={notifRef}
               style={{
                 position: "fixed",
-                top: 64,
-                right: 16,
-                width: 380,
-                maxHeight: "80vh",
+                top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 58px)" : 64,
+                right: isMobile ? "max(8px, env(safe-area-inset-right, 0px))" : 16,
+                left: isMobile ? "max(8px, env(safe-area-inset-left, 0px))" : "auto",
+                width: isMobile ? "auto" : 380,
+                maxWidth: isMobile ? "calc(100vw - 16px)" : 380,
+                maxHeight: isMobile ? "min(75dvh, 520px)" : "80vh",
                 background: "var(--white)",
                 borderRadius: "var(--radius-lg)",
                 border: "1px solid var(--border)",
@@ -6325,9 +6404,11 @@ Return only the email body text, no subject line.`;
                   to: m.to,
                   ...extractPlSeriesFromReport(m.report),
                 }));
-                const chartWidth = 800;
-                const chartHeight = 280;
-                const pad = { top: 20, right: 24, bottom: 44, left: 64 };
+                const chartWidth = isMobile ? 360 : 800;
+                const chartHeight = isMobile ? 220 : 280;
+                const pad = isMobile
+                  ? { top: 16, right: 10, bottom: 36, left: 44 }
+                  : { top: 20, right: 24, bottom: 44, left: 64 };
                 const innerW = chartWidth - pad.left - pad.right;
                 const innerH = chartHeight - pad.top - pad.bottom;
                 const len = Math.max(chartData.length, 1);
@@ -6446,7 +6527,13 @@ Return only the email body text, no subject line.`;
                       </div>
                     </div>
 
-                    <div className="acc-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 22 }}>
+                    <div
+                      className="acc-grid"
+                      style={{
+                        gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, 1fr)",
+                        marginBottom: 22,
+                      }}
+                    >
                       <div className="acc-stat">
                         <div className="acc-stat-icon">📈</div>
                         <div className="acc-stat-label">{`Revenue ${periodTitle}`}</div>
@@ -6701,13 +6788,13 @@ Return only the email body text, no subject line.`;
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 20,
+                        gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                        gap: isMobile ? 14 : 20,
                         marginBottom: 20,
                         alignItems: "stretch",
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         {xeroLoading ? (
                           <div
                             style={{
@@ -6724,6 +6811,7 @@ Return only the email body text, no subject line.`;
                             data={revenuePieData}
                             title="Revenue by Source"
                             colors={PIE_COLORS_REVENUE}
+                            compact={isMobile}
                             onSliceClick={(s) =>
                               fetchTransactions(
                                 null,
@@ -6746,7 +6834,7 @@ Return only the email body text, no subject line.`;
                           </div>
                         )}
                       </div>
-                      <div>
+                      <div style={{ minWidth: 0 }}>
                         {xeroLoading ? (
                           <div
                             style={{
@@ -6763,6 +6851,7 @@ Return only the email body text, no subject line.`;
                             data={expensePieData}
                             title="Expenses by Category"
                             colors={PIE_COLORS_EXPENSE}
+                            compact={isMobile}
                             onSliceClick={(s) =>
                               fetchTransactions(
                                 null,
@@ -6994,10 +7083,43 @@ Return only the email body text, no subject line.`;
             const sourceTotal = sourceCountsMap.reduce((a, b) => a + b.count, 0) || 1;
 
             return (
-              <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+              <div
+                className="content"
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                  padding: 0,
+                }}
+              >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    padding: isMobile ? "14px 16px" : "20px 24px",
+                    minWidth: 0,
+                  }}
+                >
                   {/* Section 1 - Firm Performance Stats */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(5, 1fr)",
+                      gap: 12,
+                      marginBottom: 24,
+                    }}
+                  >
                     {[
                       { label: "Total Matters YTD", value: totalMatters, sub: "matters" },
                       { label: "Settlement Rate", value: settlementRate + "%", sub: "closed" },
@@ -7014,7 +7136,14 @@ Return only the email body text, no subject line.`;
                   </div>
 
                   {/* Section 2 - Two column */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                      gap: 16,
+                      marginBottom: 24,
+                    }}
+                  >
                     <div className="card">
                       <div className="card-hdr"><div className="card-title">Matter Pipeline Analysis</div></div>
                       <div style={{ padding: "12px 16px 16px" }}>
@@ -7046,7 +7175,14 @@ Return only the email body text, no subject line.`;
                   </div>
 
                   {/* Section 3 - Three column */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
+                      gap: 16,
+                      marginBottom: 24,
+                    }}
+                  >
                     <div className="card">
                       <div className="card-hdr"><div className="card-title">Matter Type Mix</div></div>
                       <div style={{ padding: "12px 16px 16px" }}>
@@ -7130,7 +7266,16 @@ Return only the email body text, no subject line.`;
                           {marketData.marketOverview && (
                             <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 16 }}>
                               <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>Market Overview</div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 11, lineHeight: 1.6, color: "var(--text-2)" }}>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                                  gap: 12,
+                                  fontSize: 11,
+                                  lineHeight: 1.6,
+                                  color: "var(--text-2)",
+                                }}
+                              >
                                 {marketData.marketOverview.sydney && <div><strong>Sydney:</strong> {(marketData.marketOverview.sydney || "").slice(0, 200)}</div>}
                                 {marketData.marketOverview.melbourne && <div><strong>Melbourne:</strong> {(marketData.marketOverview.melbourne || "").slice(0, 200)}</div>}
                               </div>
@@ -7142,7 +7287,16 @@ Return only the email body text, no subject line.`;
                           {marketData?.conveyancingFees && (
                             <div style={{ borderTop: "1px solid var(--border-2)", paddingTop: 16, marginTop: 16 }}>
                               <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>Average conveyancing fees (market)</div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 11, lineHeight: 1.5, color: "var(--text-2)" }}>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                                  gap: 12,
+                                  fontSize: 11,
+                                  lineHeight: 1.5,
+                                  color: "var(--text-2)",
+                                }}
+                              >
                                 {marketData.conveyancingFees.nsw && (
                                   <div>
                                     <strong>NSW</strong>
@@ -7208,7 +7362,20 @@ Return only the email body text, no subject line.`;
                 </div>
 
                 {/* Right panel - Insights Intelligence */}
-                <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--ink)", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+                <div
+                  style={{
+                    width: isMobile ? "100%" : 340,
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                    background: "var(--ink)",
+                    borderLeft: isMobile ? "none" : "1px solid rgba(255,255,255,0.06)",
+                    borderTop: isMobile ? "1px solid rgba(255,255,255,0.06)" : "none",
+                    minHeight: isMobile ? 280 : undefined,
+                    maxHeight: isMobile ? "min(55dvh, 420px)" : undefined,
+                  }}
+                >
                   <div style={{ padding: "16px 18px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
                     <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: 6 }}>✦ Insights Intelligence</div>
                     <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500, color: "white" }}>Practice AI</div>
@@ -7253,6 +7420,7 @@ Return only the email body text, no subject line.`;
                   </div>
                 </div>
               </div>
+              </div>
             );
           })()}
 
@@ -7270,7 +7438,7 @@ Return only the email body text, no subject line.`;
         </div>{/* /main */}
 
         {isMobile && (
-          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 60, background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 100, paddingBottom: "env(safe-area-inset-bottom)" }}>
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, minHeight: 56, paddingTop: 6, background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 100, paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
             {[
               { id: "dashboard", icon: "⊞", label: "Home" },
               { id: "matters", icon: "⚖️", label: "Matters" },
