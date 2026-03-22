@@ -1355,6 +1355,20 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
   .contact-fields-grid { grid-template-columns: 1fr !important; }
   .comms-two-col { flex-direction: column !important; }
   .comms-left-col { width: 100% !important; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+  .mobile-tab-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 2px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0 4px;
+  }
+  .mobile-tab-bar::-webkit-scrollbar { height: 0; display: none; }
 }
 
 @media (max-width: 480px) {
@@ -7438,24 +7452,35 @@ Return only the email body text, no subject line.`;
         </div>{/* /main */}
 
         {isMobile && (
-          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, minHeight: 56, paddingTop: 6, background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 100, paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, minHeight: 56, paddingTop: 6, background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, paddingBottom: "max(8px, env(safe-area-inset-bottom, 0px))", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
+            <div className="mobile-tab-bar" role="tablist" aria-label="Main navigation">
             {[
               { id: "dashboard", icon: "⊞", label: "Home" },
               { id: "matters", icon: "⚖️", label: "Matters" },
               { id: "contacts", icon: "👥", label: "Contacts" },
               { id: "calendar", icon: "📅", label: "Calendar" },
-              { id: "communications", icon: "✉️", label: "Emails" }
-            ].map((n) => (
+              { id: "communications", icon: "✉️", label: "Emails" },
+              { id: "accounting", icon: "💰", label: "Accounts" },
+              { id: "insights", icon: "✦", label: "Insights" },
+            ].map((n) => {
+              const active =
+                page === n.id || (n.id === "matters" && page === "matter_workspace");
+              return (
               <button
                 key={n.id}
                 type="button"
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", padding: "8px 12px", opacity: page === n.id ? 1 : 0.45, transition: "opacity 0.15s" }}
+                role="tab"
+                aria-selected={active}
+                className="mobile-tab-btn"
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: "6px 10px", flex: "0 0 auto", minWidth: 52, opacity: active ? 1 : 0.45, transition: "opacity 0.15s", WebkitTapHighlightColor: "transparent" }}
                 onClick={() => { setPage(n.id); if (n.id !== "matters") setSelectedMatter(null); }}
               >
-                <span style={{ fontSize: 20 }}>{n.icon}</span>
-                <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "white", textTransform: "uppercase", letterSpacing: "0.5px" }}>{n.label}</span>
+                <span style={{ fontSize: 18, lineHeight: 1 }}>{n.icon}</span>
+                <span style={{ fontSize: 8, fontFamily: "var(--font-mono)", color: "white", textTransform: "uppercase", letterSpacing: "0.3px", textAlign: "center", lineHeight: 1.15, maxWidth: 64, whiteSpace: "normal", wordBreak: "break-word" }}>{n.label}</span>
               </button>
-            ))}
+              );
+            })}
+            </div>
           </div>
         )}
       </div>{/* /app */}
