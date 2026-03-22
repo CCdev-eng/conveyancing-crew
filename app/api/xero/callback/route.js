@@ -1,6 +1,7 @@
 import { XeroClient } from "xero-node";
-import { writeFileSync } from "fs";
+import { writeFileSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { createClient } from "@supabase/supabase-js";
 
 const xero = new XeroClient({
   clientId: process.env.XERO_CLIENT_ID,
@@ -11,7 +12,16 @@ const xero = new XeroClient({
   scopes: "openid profile email offline_access accounting.invoices.read accounting.payments.read accounting.contacts.read accounting.reports.profitandloss.read accounting.reports.executivesummary.read accounting.banktransactions.read".split(" "),
 });
 
+const getBaseUrl = () => {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.XERO_REDIRECT_URI_PROD?.replace('/api/xero/callback', '') ||
+      'https://conveyancing-crew.vercel.app'
+  }
+  return 'http://localhost:3000'
+}
+
 export async function GET(request) {
+  const baseUrl = getBaseUrl()
   try {
     const url = new URL(request.url);
     const tokenSet = await xero.apiCallback(url.toString());
@@ -33,17 +43,39 @@ export async function GET(request) {
       scopes: tokenSet.scope
     };
 
-    writeFileSync(
-      join(process.cwd(), 'xero-tokens.json'),
-      JSON.stringify(tokenData, null, 2)
-    );
+    // Save to file for local dev
+    try {
+      writeFileSync(
+        join(process.cwd(), 'xero-tokens.json'),
+        JSON.stringify(tokenData, null, 2)
+      );
+      console.log('Tokens saved to file');
+    } catch(e) {
+      console.log('Could not save to file (expected on Vercel):', e.message);
+    }
 
-    console.log('Tokens saved, tenant:', activeTenantId);
-    console.log('Scopes granted:', tokenSet.scope);
+    // Save to Supabase for production
+    try {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      );
+      await supabase.from('xero_tokens').upsert({
+        id: 1,
+        tenant_id: activeTenantId,
+        access_token: tokenSet.access_token,
+        refresh_token: tokenSet.refresh_token,
+        expires_at: new Date(Date.now() + (tokenSet.expires_in * 1000)).toISOString()
+      });
+      console.log('Tokens saved to Supabase, tenant:', activeTenantId);
+    } catch(e) {
+      console.log('Supabase save error:', e.message);
+    }
 
-    return Response.redirect('http://localhost:3000?xero=connected');
+    console.log('Xero connected, redirecting to:', baseUrl);
+    return Response.redirect(`${baseUrl}?xero=connected`);
   } catch (error) {
     console.error('Xero callback error:', error.message || error);
-    return Response.redirect('http://localhost:3000?xero=error');
+    return Response.redirect(`${baseUrl}?xero=error`);
   }
 }
