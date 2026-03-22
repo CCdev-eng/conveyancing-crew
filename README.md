@@ -34,3 +34,9 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Xero OAuth
+
+API routes: `GET /api/xero/auth`, `GET /api/xero/callback`, `GET /api/xero/invoices`.
+
+Create the **`xero_tokens`** table in Supabase and configure env vars as described in **[docs/XERO_SUPABASE.md](docs/XERO_SUPABASE.md)** (run the SQL manually in the Supabase SQL editor).

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 
 // ─── DATA ──────────────────────────────────────────────────────────────────────
@@ -22,6 +22,309 @@ const matchAI = q => {
   if (l.includes("revenue")||l.includes("money")||l.includes("financ")) return AI_CANNED["revenue"];
   return AI_CANNED["default"];
 };
+
+/** Format P&L currency the same way as Xero-style display (en-AU, 2 dp). */
+function formatPlCurrency(value) {
+  const n = parseFloat(String(value ?? "0").replace(/[^0-9.-]/g, "")) || 0;
+  return (
+    "$" +
+    n.toLocaleString("en-AU", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  );
+}
+
+/**
+ * Parse Xero P&L: top-level Rows with Section "Income", "Less Operating Expenses", and Net Profit row.
+ */
+function parseXeroProfitAndLoss(report) {
+  const rows = report?.Rows || [];
+
+  const incomeSection = rows.find((r) => r.RowType === "Section" && r.Title === "Income");
+  const totalIncomeRaw =
+    incomeSection?.Rows?.find((r) => r.RowType === "SummaryRow")?.Cells?.[1]?.Value ?? "0";
+
+  const expensesSection = rows.find(
+    (r) => r.RowType === "Section" && (r.Title || "").includes("Operating Expenses")
+  );
+  const totalExpensesRaw =
+    expensesSection?.Rows?.find((r) => r.RowType === "SummaryRow")?.Cells?.[1]?.Value ?? "0";
+
+  const netProfitRow = rows
+    .flatMap((r) => r.Rows || [])
+    .find((r) => r.RowType === "Row" && r.Cells?.[0]?.Value === "Net Profit");
+  const netProfitRaw = netProfitRow?.Cells?.[1]?.Value ?? "0";
+
+  const toNum = (v) => parseFloat(String(v ?? "0").replace(/[^0-9.-]/g, "")) || 0;
+
+  const incomeLineItems = (incomeSection?.Rows || [])
+    .filter((r) => r.RowType === "Row")
+    .map((r) => ({
+      name: r.Cells?.[0]?.Value ?? "—",
+      amount: r.Cells?.[1]?.Value ?? "0",
+    }));
+
+  const expenseLineItems = (expensesSection?.Rows || [])
+    .filter((r) => r.RowType === "Row")
+    .map((r) => ({
+      name: r.Cells?.[0]?.Value ?? "—",
+      amount: r.Cells?.[1]?.Value ?? "0",
+    }));
+
+  return {
+    totalIncome: toNum(totalIncomeRaw),
+    totalExpenses: toNum(totalExpensesRaw),
+    netProfit: toNum(netProfitRaw),
+    totalIncomeRaw,
+    totalExpensesRaw,
+    netProfitRaw,
+    incomeLineItems,
+    expenseLineItems,
+  };
+}
+
+/** Income / expenses / profit for one P&L report (chart series point). */
+function extractPlSeriesFromReport(report) {
+  const rows = report?.Rows || [];
+  const incomeSection = rows.find((r) => r.RowType === "Section" && r.Title === "Income");
+  const income =
+    parseFloat(
+      String(incomeSection?.Rows?.find((r) => r.RowType === "SummaryRow")?.Cells?.[1]?.Value ?? "0").replace(
+        /[^0-9.-]/g,
+        ""
+      )
+    ) || 0;
+  const expSection = rows.find(
+    (r) => r.RowType === "Section" && (r.Title || "").includes("Expenses")
+  );
+  const expenses = Math.abs(
+    parseFloat(
+      String(expSection?.Rows?.find((r) => r.RowType === "SummaryRow")?.Cells?.[1]?.Value ?? "0").replace(
+        /[^0-9.-]/g,
+        ""
+      )
+    ) || 0
+  );
+  const netProfitRow = rows
+    .flatMap((r) => r.Rows || [])
+    .find((r) => r.RowType === "Row" && r.Cells?.[0]?.Value === "Net Profit");
+  const profitFromRow = parseFloat(
+    String(netProfitRow?.Cells?.[1]?.Value ?? "").replace(/[^0-9.-]/g, "")
+  );
+  const profit = Number.isFinite(profitFromRow) ? profitFromRow : income - expenses;
+  return { income, expenses, profit };
+}
+
+const PIE_COLORS_EXPENSE = [
+  "#dc2626",
+  "#ea580c",
+  "#ca8a04",
+  "#16a34a",
+  "#0891b2",
+  "#7c3aed",
+  "#db2777",
+  "#059669",
+  "#d97706",
+  "#2563eb",
+  "#9333ea",
+  "#0f766e",
+  "#b45309",
+  "#be185d",
+  "#1d4ed8",
+  "#15803d",
+  "#c2410c",
+  "#7e22ce",
+  "#0e7490",
+  "#92400e",
+];
+
+const PIE_COLORS_REVENUE = [
+  "#1d4ed8",
+  "#0891b2",
+  "#0f766e",
+  "#059669",
+  "#16a34a",
+  "#2563eb",
+  "#0284c7",
+  "#0369a1",
+];
+
+/** Donut pie chart for Accounting revenue / expense breakdown (inline SVG). */
+function PieChart({ data, title, colors = PIE_COLORS_REVENUE, onSliceClick }) {
+  const [hoveredSlice, setHoveredSlice] = useState(null);
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (!total) return null;
+
+  const size = 180;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 70;
+  const holeR = 40;
+
+  let currentAngle = -Math.PI / 2;
+  const slices = data.map((d, i) => {
+    const pct = d.value / total;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + pct * 2 * Math.PI;
+    currentAngle = endAngle;
+
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    const hx1 = cx + holeR * Math.cos(startAngle);
+    const hy1 = cy + holeR * Math.sin(startAngle);
+    const hx2 = cx + holeR * Math.cos(endAngle);
+    const hy2 = cy + holeR * Math.sin(endAngle);
+    const largeArc = pct > 0.5 ? 1 : 0;
+
+    const path = `M ${hx1} ${hy1} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} L ${hx2} ${hy2} A ${holeR} ${holeR} 0 ${largeArc} 0 ${hx1} ${hy1} Z`;
+
+    return { ...d, path, pct, color: colors[i % colors.length] };
+  });
+
+  return (
+    <div
+      style={{
+        background: "var(--white)",
+        borderRadius: "var(--radius-lg)",
+        border: "1px solid var(--border)",
+        padding: "20px",
+        boxShadow: "var(--shadow-sm)",
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>{title}</div>
+      <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <svg width={size} height={size}>
+            {slices.map((s, i) => (
+              <path
+                key={i}
+                d={s.path}
+                fill={s.color}
+                opacity={hoveredSlice === i ? 1 : 0.8}
+                style={{ cursor: onSliceClick ? "pointer" : "default", transition: "opacity 0.15s" }}
+                onMouseEnter={() => setHoveredSlice(i)}
+                onMouseLeave={() => setHoveredSlice(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSliceClick?.(s);
+                }}
+              />
+            ))}
+            <text
+              x={cx}
+              y={cy - 6}
+              textAnchor="middle"
+              fontSize={11}
+              fill="var(--text-3)"
+              fontFamily="var(--font-mono), monospace"
+            >
+              TOTAL
+            </text>
+            <text
+              x={cx}
+              y={cy + 10}
+              textAnchor="middle"
+              fontSize={13}
+              fontWeight={700}
+              fill="var(--text)"
+              fontFamily="var(--font-mono), monospace"
+            >
+              ${(total / 1000).toFixed(1)}k
+            </text>
+          </svg>
+          {hoveredSlice !== null && (
+            <div
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: "110%",
+                transform: "translateY(-50%)",
+                background: "var(--ink)",
+                color: "white",
+                borderRadius: 8,
+                padding: "8px 12px",
+                fontSize: 11,
+                whiteSpace: "nowrap",
+                boxShadow: "var(--shadow-lg)",
+                zIndex: 10,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>{slices[hoveredSlice]?.label}</div>
+              <div>
+                $
+                {slices[hoveredSlice]?.value.toLocaleString("en-AU", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </div>
+              <div style={{ color: "rgba(255,255,255,0.5)" }}>{(slices[hoveredSlice]?.pct * 100).toFixed(1)}%</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          {slices.map((s, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                cursor: onSliceClick ? "pointer" : "default",
+                padding: "3px 0",
+                opacity: hoveredSlice === null || hoveredSlice === i ? 1 : 0.4,
+                transition: "opacity 0.15s",
+              }}
+              onMouseEnter={() => setHoveredSlice(i)}
+              onMouseLeave={() => setHoveredSlice(null)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSliceClick?.(s);
+              }}
+            >
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: "var(--text)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {s.label}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, fontFamily: "var(--font-mono), monospace", color: "var(--text-2)", flexShrink: 0 }}>
+                {(s.pct * 100).toFixed(0)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {onSliceClick ? (
+        <div
+          style={{
+            fontSize: 9,
+            color: "var(--text-3)",
+            fontFamily: "var(--font-mono)",
+            textAlign: "center",
+            marginTop: 8,
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+          }}
+        >
+          Click any slice for transactions
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const URGENCY_COLOR = { critical:"#dc2626", high:"#ea580c", medium:"#ca8a04", low:"#16a34a", none:"#94a3b8" };
 const AVATAR_COLORS = [
@@ -817,6 +1120,19 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .inv-thead{background:var(--surface);font-size:9px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:1px;color:var(--text-3);border-bottom:1px solid var(--border)}
 .inv-id{font-family:var(--font-mono);font-size:10px;color:var(--text-3)}
 .xero-badge{display:inline-flex;align-items:center;gap:5px;background:#1AB4D7;color:#fff;border-radius:5px;padding:3px 9px;font-size:9px;font-weight:700;font-family:var(--font-mono)}
+.acc-period-toggle{display:flex;gap:4px;background:var(--surface);border-radius:20px;padding:3px;border:1px solid var(--border)}
+.acc-period-btn{padding:5px 14px;border-radius:20px;font-size:11px;font-weight:500;border:none;cursor:pointer;font-family:var(--font-body);transition:all 0.15s}
+.acc-period-btn.active{background:var(--ink);color:white}
+.acc-period-btn:not(.active){background:none;color:var(--text-2)}
+.acc-chart-card{background:var(--white);border-radius:var(--radius-lg);border:1px solid var(--border);padding:20px;margin-bottom:20px;box-shadow:var(--shadow-sm)}
+.acc-chart-wrap{position:relative;width:100%;overflow:visible}
+.acc-chart-tooltip{position:absolute;background:var(--ink);color:white;border-radius:8px;padding:10px 14px;font-size:11px;pointer-events:none;z-index:10;box-shadow:var(--shadow-lg);min-width:140px}
+.acc-breakdown-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border-2)}
+.acc-breakdown-bar{height:4px;border-radius:10px;margin-top:4px}
+.acc-ai-report{background:var(--ink);border-radius:var(--radius-lg);padding:24px;margin-top:20px;position:relative;overflow:hidden}
+.acc-ai-report::before{content:'';position:absolute;top:0;right:0;width:150px;height:150px;background:radial-gradient(circle,rgba(36,94,176,0.2) 0%,transparent 70%);pointer-events:none}
+@keyframes accChartFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.acc-chart-svg{animation:accChartFade 0.55s ease-out forwards}
 
 /* ── INSIGHTS ── */
 .insights-layout{display:grid;grid-template-columns:1fr 320px;gap:16px;height:100%}
@@ -1107,6 +1423,19 @@ export default function App() {
   const [insightsAutoLoading, setInsightsAutoLoading] = useState(false);
   const [insightsAutoError, setInsightsAutoError] = useState(null);
 
+  const [xeroData, setXeroData] = useState(null);
+  const [xeroLoading, setXeroLoading] = useState(true);
+  const [xeroConnected, setXeroConnected] = useState(false);
+  const [xeroPeriod, setXeroPeriod] = useState("monthly");
+  const [xeroChartHoverIdx, setXeroChartHoverIdx] = useState(null);
+  const [xeroAIReport, setXeroAIReport] = useState(null);
+  const [xeroAIReportLoading, setXeroAIReportLoading] = useState(false);
+  const [xeroAccBarHover, setXeroAccBarHover] = useState(null);
+  const [txAccountName, setTxAccountName] = useState("");
+  const [txModal, setTxModal] = useState(false);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txData, setTxData] = useState(null);
+
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1135,6 +1464,177 @@ export default function App() {
   const [newEvent, setNewEvent] = useState({
     title: "", event_type: "meeting", matter_ref: "", client_name: "", date: "", time: "", notes: ""
   });
+
+  const formatXeroMoney = (amount) =>
+    "$" +
+    Number(amount || 0).toLocaleString("en-AU", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const fetchXeroData = useCallback(async () => {
+    setXeroLoading(true);
+    try {
+      const res = await fetch(`/api/xero/invoices?period=${encodeURIComponent(xeroPeriod)}`);
+      if (res.status === 401) {
+        setXeroConnected(false);
+        setXeroData(null);
+        return;
+      }
+      const data = await res.json();
+      if (data.error) {
+        setXeroConnected(false);
+        setXeroData(null);
+      } else {
+        setXeroConnected(true);
+        setXeroData(data);
+        console.log("Xero full data:", data);
+        console.log("xeroData.currentMonth (after load):", data.currentMonth);
+      }
+    } catch (e) {
+      console.log("Xero fetch error:", e);
+      setXeroConnected(false);
+    } finally {
+      setXeroLoading(false);
+    }
+  }, [xeroPeriod]);
+
+  const fetchTransactions = useCallback(
+    async (_accountId, accountName, fromDate, toDate) => {
+      setTxAccountName(accountName);
+      setTxModal(true);
+      setTxLoading(true);
+      setTxData(null);
+
+      try {
+        const params = new URLSearchParams({
+          accountName: accountName || "",
+          fromDate:
+            fromDate ||
+            xeroData?.breakdownPeriod?.fromDate ||
+            xeroData?.summary?.fromDate ||
+            "2025-07-01",
+          toDate:
+            toDate ||
+            xeroData?.breakdownPeriod?.toDate ||
+            xeroData?.summary?.toDate ||
+            new Date().toISOString().split("T")[0],
+        });
+
+        const res = await fetch(`/api/xero/transactions?${params}`);
+        const data = await res.json();
+        setTxData(data);
+      } catch (e) {
+        console.log("Transaction fetch error:", e);
+        setTxData({ error: e.message || String(e), transactions: [] });
+      }
+      setTxLoading(false);
+    },
+    [xeroData]
+  );
+
+  const generateXeroAIReport = useCallback(async () => {
+    if (!xeroData?.financialYear?.report) {
+      setXeroAIReport(null);
+      return;
+    }
+    setXeroAIReportLoading(true);
+    try {
+      const xd = xeroData;
+      const fyPl = parseXeroProfitAndLoss(xd.financialYear.report);
+      const cmPl = parseXeroProfitAndLoss(xd.currentMonth?.report);
+      const trendSource =
+        xd.monthlyData?.length > 0
+          ? xd.monthlyData
+          : xd.chartData?.length > 0
+            ? xd.chartData
+            : xd.quarterlyData || xd.yearlyData || [];
+      const monthlySeries = trendSource.map((m) => ({
+        month: m.month,
+        ...extractPlSeriesFromReport(m.report),
+      }));
+      const monthlyTrend = monthlySeries
+        .slice(-6)
+        .map(
+          (d) =>
+            `${d.month}: Revenue $${d.income.toFixed(0)}, Expenses $${d.expenses.toFixed(0)}, Profit $${d.profit.toFixed(0)}`
+        )
+        .join("\n");
+      const expenseText = fyPl.expenseLineItems.map((r) => `${r.name}: ${r.amount}`).join("\n");
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: `You are a financial advisor reviewing the accounts 
+for Conveyancing Crew, an Australian conveyancing practice.
+
+FINANCIAL YEAR TO DATE (${xd.financialYear.from ?? xd.financialYear.fromDate} - ${xd.financialYear.to ?? xd.financialYear.toDate}):
+Total Revenue: $${fyPl.totalIncome.toFixed(0)}
+Total Expenses: $${fyPl.totalExpenses.toFixed(0)}
+Net Profit: $${fyPl.netProfit.toFixed(0)}
+
+CURRENT MONTH:
+Revenue: $${cmPl.totalIncome.toFixed(0)}
+Expenses: $${cmPl.totalExpenses.toFixed(0)}
+Net Profit: $${cmPl.netProfit.toFixed(0)}
+
+MONTHLY TREND (last 6 months):
+${monthlyTrend}
+
+EXPENSE CATEGORIES:
+${expenseText || "(none)"}
+
+Please provide a comprehensive financial health report:
+
+1. OVERALL HEALTH: Rate the practice as Excellent/Good/Fair/Needs Attention with a 2 sentence explanation
+
+2. REVENUE ANALYSIS: How is revenue trending? Any concerns or positives?
+
+3. EXPENSE ANALYSIS: Are expenses under control? Any areas of concern?
+
+4. PROFITABILITY: Comment on profit margins and sustainability
+
+5. RECOMMENDATIONS: 3 specific actionable recommendations to improve financial performance
+
+6. CASH FLOW NOTE: Any observations about cash flow timing
+
+Plain English only. No markdown symbols. Conversational and practical.
+Maximum 300 words.`,
+            },
+          ],
+          mattersContext: "Financial analysis",
+        }),
+      });
+      const data = await res.json();
+      setXeroAIReport(data.content || null);
+    } catch (e) {
+      console.error(e);
+      setXeroAIReport(null);
+    } finally {
+      setXeroAIReportLoading(false);
+    }
+  }, [xeroData]);
+
+  useEffect(() => {
+    if (!xeroConnected || !xeroData?.financialYear?.report) return;
+    generateXeroAIReport();
+  }, [xeroConnected, xeroData, generateXeroAIReport]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("xero") === "connected") {
+      setXeroConnected(true);
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (urlParams.get("xero") === "error") {
+      console.log("Xero connection failed");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    fetchXeroData();
+  }, [fetchXeroData]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1202,6 +1702,11 @@ export default function App() {
         return;
       }
 
+      if (txModal) {
+        setTxModal(false);
+        return;
+      }
+
       if (eventModal) {
         setEventModal(false);
         setSelectedEvent(null);
@@ -1236,6 +1741,7 @@ export default function App() {
     notifOpen,
     searchOpen,
     composeModal,
+    txModal,
     eventModal,
     addEventModal,
     tooltip,
@@ -3739,10 +4245,9 @@ Return only the email body text, no subject line.`;
               weekDays.push(d);
             }
 
-            const outstandingTotal = (invoices || []).filter((i) => i.status === "pending").reduce((s, i) => s + (i.amount || 0), 0);
-            const paidThisMonth = (invoices || []).filter((i) => i.status === "paid").reduce((s, i) => s + (i.amount || 0), 0);
-            const ytdRevenue = (invoices || []).filter((i) => i.status === "paid").reduce((s, i) => s + (i.amount || 0), 0);
             const pipelineValue = activeMatters.reduce((s, m) => s + (parseFloat(String(m.price || m.value || 0).replace(/[^0-9.]/g, "")) || 0), 0);
+            const xeroPl = xeroData?.financialYear?.report ? parseXeroProfitAndLoss(xeroData.financialYear.report) : null;
+            const xeroHasPl = Boolean(xeroData?.financialYear?.report);
 
             const typeOrder = ["Purchase", "Sale", "Lease", "Contract Review", "General Enquiry", "Other"];
             const typeCounts = {};
@@ -3796,16 +4301,40 @@ Return only the email body text, no subject line.`;
                         <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${(pipelineValue / 1000).toFixed(0)}K</div>
                       </div>
                       <div>
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Outstanding</div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${outstandingTotal.toLocaleString()}</div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Income YTD</div>
+                        {xeroHasPl && xeroPl ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--green)" }}>{formatXeroMoney(xeroPl.totalIncome ?? 0)}</div>
+                        ) : xeroLoading ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>…</div>
+                        ) : xeroData ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>—</div>
+                        ) : (
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
+                        )}
                       </div>
                       <div>
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Paid This Month</div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${paidThisMonth.toLocaleString()}</div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Expenses YTD</div>
+                        {xeroHasPl && xeroPl ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--red)" }}>{formatXeroMoney(xeroPl.totalExpenses ?? 0)}</div>
+                        ) : xeroLoading ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>…</div>
+                        ) : xeroData ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>—</div>
+                        ) : (
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
+                        )}
                       </div>
                       <div>
-                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>YTD Revenue</div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${ytdRevenue.toLocaleString()}</div>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Net Profit</div>
+                        {xeroHasPl && xeroPl ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: (xeroPl.netProfit ?? 0) >= 0 ? "var(--blue)" : "var(--red)" }}>{formatXeroMoney(xeroPl.netProfit ?? 0)}</div>
+                        ) : xeroLoading ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>…</div>
+                        ) : xeroData ? (
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>—</div>
+                        ) : (
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
+                        )}
                       </div>
                     </div>
                     <button type="button" className="btn-ghost" style={{ fontSize: 10, marginTop: 8, padding: 0 }} onClick={() => setPage("accounting")}>View Accounting →</button>
@@ -5694,51 +6223,720 @@ Return only the email body text, no subject line.`;
           ══════════════════════════════════════════════ */}
           {page === "accounting" && (
             <div className="content">
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-                <div className="xero-badge" style={{fontSize:10,padding:"4px 12px"}}>✓ Xero Connected</div>
-                <span style={{fontSize:11,color:"var(--text-3)",fontFamily:"var(--font-mono)"}}>Last synced: 2 min ago</span>
-                <div style={{flex:1}}/>
-                <button className="btn-ghost" style={{fontSize:12}}>⟳ Sync Xero</button>
-                <button className="btn-gold">＋ Create Invoice</button>
-              </div>
-              <div className="acc-grid">
-                {[
-                  {icon:"💰",label:"YTD Revenue",val:"$23,930",sub:"Jul 2024 – Mar 2025"},
-                  {icon:"📥",label:"Received (March)",val:"$3,150",sub:"↑ 12% vs Feb"},
-                  {icon:"⏳",label:"Outstanding",val:"$4,450",sub:"2 invoices"},
-                  {icon:"📤",label:"Referral Fees",val:"$1,800",sub:"paid this year"},
-                ].map(s=>(
-                  <div key={s.label} className="acc-stat">
-                    <div className="acc-stat-icon">{s.icon}</div>
-                    <div className="acc-stat-label">{s.label}</div>
-                    <div className="acc-stat-val">{s.val}</div>
-                    <div style={{fontSize:10,color:"var(--text-3)",marginTop:2}}>{s.sub}</div>
+              {!xeroConnected && !xeroLoading && (
+                <div
+                  style={{
+                    background: "var(--white)",
+                    borderRadius: "var(--radius-lg)",
+                    border: "2px dashed var(--border)",
+                    padding: "40px",
+                    textAlign: "center",
+                    marginBottom: 20,
+                  }}
+                >
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>🔗</div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 18,
+                      color: "var(--text)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Connect to Xero
                   </div>
-                ))}
-              </div>
-              <div className="matter-table">
-                <div className="inv-row inv-thead" style={{background:"var(--surface)",borderBottom:"1px solid var(--border)"}}>
-                  {["Invoice ID","Client / Matter","Amount","Status","Due Date","Action"].map(h=>(
-                    <div key={h} style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px"}}>{h}</div>
-                  ))}
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 20 }}>
+                    Connect your Xero account to see Profit &amp; Loss, bank/revenue accounts, and activity
+                  </div>
+                  <button type="button" className="btn-gold" onClick={() => { window.location.href = "/api/xero/auth"; }}>
+                    Connect Xero →
+                  </button>
                 </div>
-                {(invoices || []).map(inv=>(
-                  <div key={inv.id} className="inv-row" style={{background:"var(--white)"}}>
-                    <div className="inv-id">{inv.id}</div>
-                    <div>
-                      <div style={{fontSize:12,fontWeight:600,color:"var(--text)"}}>{inv.client}</div>
-                      <div style={{fontSize:10,fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{inv.matter}</div>
-                    </div>
-                    <div style={{fontSize:13,fontWeight:700,fontFamily:"var(--font-mono)",color:"var(--text)"}}>${inv.amount.toLocaleString()}</div>
-                    <div><span className={`tag ${inv.status==="paid"?"tag-green":"tag-amber"}`}>{inv.status}</span></div>
-                    <div style={{fontSize:11,fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{inv.due}</div>
-                    <div style={{display:"flex",gap:6}}>
-                      <button className="btn-ghost" style={{fontSize:11,padding:"4px 9px"}}>View</button>
-                      {inv.status!=="paid"&&<button className="btn-gold" style={{fontSize:11,padding:"4px 9px"}}>Send</button>}
-                    </div>
+              )}
+
+              {xeroLoading && !xeroData && (
+                <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+                  <div className="ai-typing">
+                    <div className="typing-dot" />
+                    <div className="typing-dot" />
+                    <div className="typing-dot" />
                   </div>
-                ))}
-              </div>
+                  Loading Xero data…
+                </div>
+              )}
+
+              {xeroConnected && xeroData && (() => {
+                const fyPl = parseXeroProfitAndLoss(xeroData.financialYear?.report);
+                const cmPl = parseXeroProfitAndLoss(xeroData.currentMonth?.report);
+                const cqPl = parseXeroProfitAndLoss(xeroData.currentQuarter?.report);
+                const prevMonthReport =
+                  xeroData.previousMonth?.report ??
+                  (xeroData.monthlyData?.length >= 2
+                    ? xeroData.monthlyData[xeroData.monthlyData.length - 2]?.report
+                    : null);
+                const prevPl = prevMonthReport ? parseXeroProfitAndLoss(prevMonthReport) : null;
+                const cm = xeroData.currentMonth || {};
+                const fy = xeroData.financialYear || {};
+                const periodData =
+                  xeroPeriod === "monthly"
+                    ? xeroData?.currentMonth
+                    : xeroPeriod === "quarterly"
+                      ? xeroData?.currentQuarter
+                      : xeroData?.financialYear;
+                const periodPl =
+                  xeroPeriod === "monthly" ? cmPl : xeroPeriod === "quarterly" ? cqPl : fyPl;
+                const periodTitle =
+                  xeroPeriod === "monthly"
+                    ? "This Month"
+                    : xeroPeriod === "quarterly"
+                      ? "This Quarter"
+                      : "This Financial Year";
+                const statRevenue = periodData?.income ?? periodPl.totalIncome;
+                const statExpenses = periodData?.expenses ?? periodPl.totalExpenses;
+                const statProfit = periodData?.profit ?? periodPl.netProfit;
+                const statFourth = fy.income ?? fyPl.totalIncome;
+                let revPct = null;
+                if (
+                  xeroPeriod === "monthly" &&
+                  prevPl &&
+                  prevPl.totalIncome > 0
+                ) {
+                  const curRev = cm.income ?? cmPl.totalIncome;
+                  revPct = ((curRev - prevPl.totalIncome) / prevPl.totalIncome) * 100;
+                }
+                const statSub1 =
+                  xeroPeriod === "monthly"
+                    ? "Calendar month to date"
+                    : xeroPeriod === "quarterly"
+                      ? "Current quarter to date"
+                      : "Financial year to date (AU)";
+                const statSub4 = `AU FY Jul 1 – ${xeroData.financialYear?.to || xeroData.financialYear?.toDate || "today"}`;
+                const seriesRaw =
+                  xeroData.chartData?.length > 0
+                    ? xeroData.chartData
+                    : xeroPeriod === "quarterly"
+                      ? xeroData.quarterlyData || []
+                      : xeroPeriod === "yearly"
+                        ? xeroData.yearlyData || []
+                        : xeroData.monthlyData || [];
+                const chartData = seriesRaw.map((m) => ({
+                  month: m.month,
+                  from: m.from,
+                  to: m.to,
+                  ...extractPlSeriesFromReport(m.report),
+                }));
+                const chartWidth = 800;
+                const chartHeight = 280;
+                const pad = { top: 20, right: 24, bottom: 44, left: 64 };
+                const innerW = chartWidth - pad.left - pad.right;
+                const innerH = chartHeight - pad.top - pad.bottom;
+                const len = Math.max(chartData.length, 1);
+                const minVal = Math.min(...chartData.map((d) => d.profit), 0);
+                const maxVal = Math.max(
+                  ...chartData.map((d) => Math.max(d.income, d.expenses)),
+                  1
+                );
+                const range = Math.max(maxVal - minVal, 1e-9);
+                const slotW = innerW / len;
+                const barW = slotW / 2.7;
+                const cx = (i) => pad.left + (i + 0.5) * slotW;
+                const getY = (v) =>
+                  pad.top + innerH - ((v - minVal) / range) * innerH;
+                const fmtAxis = (v) => {
+                  const neg = v < 0;
+                  const abs = Math.abs(v);
+                  let s;
+                  if (abs >= 1e6) s = `$${(abs / 1e6).toFixed(1)}M`;
+                  else if (abs >= 1e3) s = `$${(abs / 1e3).toFixed(abs >= 1e5 ? 0 : 1)}k`;
+                  else s = `$${Math.round(abs)}`;
+                  return neg ? `-${s}` : s;
+                };
+                const profitPathD = chartData.length
+                  ? chartData.map((d, i) => `${i === 0 ? "M" : "L"} ${cx(i)} ${getY(d.profit)}`).join(" ")
+                  : "";
+                const incTotal = Math.max(fyPl.totalIncome, 1);
+                const expTotal = Math.max(fyPl.totalExpenses, 1);
+                const expSorted = [...fyPl.expenseLineItems].sort(
+                  (a, b) =>
+                    (parseFloat(String(b.amount).replace(/[^0-9.-]/g, "")) || 0) -
+                    (parseFloat(String(a.amount).replace(/[^0-9.-]/g, "")) || 0)
+                );
+                const tip = xeroChartHoverIdx != null ? chartData[xeroChartHoverIdx] : null;
+                const tipLeftPct =
+                  tip != null && len
+                    ? ((pad.left + (xeroChartHoverIdx + 0.5) * slotW) / chartWidth) * 100
+                    : 50;
+                const revenuePieData = (xeroData?.incomeRows || [])
+                  .map((r) => ({
+                    label: r.Cells?.[0]?.Value || "",
+                    value:
+                      parseFloat(
+                        String(r.Cells?.[1]?.Value ?? "0").replace(/[^0-9.-]/g, "")
+                      ) || 0,
+                  }))
+                  .filter((d) => d.value > 0 && d.label);
+                const expensePieData = (xeroData?.expenseRows || [])
+                  .map((r) => ({
+                    label: r.Cells?.[0]?.Value || "",
+                    value:
+                      parseFloat(
+                        String(r.Cells?.[1]?.Value ?? "0").replace(/[^0-9.-]/g, "")
+                      ) || 0,
+                  }))
+                  .filter((d) => d.value > 0 && d.label);
+                return (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 14,
+                        marginBottom: 22,
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                        <div
+                          style={{
+                            fontFamily: "var(--font-display)",
+                            fontSize: 26,
+                            fontWeight: 500,
+                            color: "var(--text)",
+                            letterSpacing: "-0.5px",
+                          }}
+                        >
+                          Accounting
+                        </div>
+                        <div className="xero-badge" style={{ fontSize: 10, padding: "4px 12px" }}>
+                          ✓ Xero Connected
+                        </div>
+                        {xeroLoading && (
+                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>Refreshing…</span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <div className="acc-period-toggle" role="group" aria-label="Period">
+                          {[
+                            { id: "monthly", label: "Monthly" },
+                            { id: "quarterly", label: "Quarterly" },
+                            { id: "yearly", label: "Yearly" },
+                          ].map(({ id, label }) => (
+                            <button
+                              key={id}
+                              type="button"
+                              className={`acc-period-btn ${xeroPeriod === id ? "active" : ""}`}
+                              onClick={() => setXeroPeriod(id)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          style={{ fontSize: 12 }}
+                          onClick={() => window.open("https://go.xero.com", "_blank", "noopener,noreferrer")}
+                        >
+                          View in Xero
+                        </button>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => fetchXeroData()}>
+                          ↺ Refresh
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="acc-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 22 }}>
+                      <div className="acc-stat">
+                        <div className="acc-stat-icon">📈</div>
+                        <div className="acc-stat-label">{`Revenue ${periodTitle}`}</div>
+                        <div
+                          className="acc-stat-val"
+                          style={{
+                            color: "var(--green)",
+                            display: "flex",
+                            alignItems: "baseline",
+                            flexWrap: "wrap",
+                            gap: 6,
+                          }}
+                        >
+                          <span>{formatPlCurrency(statRevenue)}</span>
+                          {revPct != null && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                padding: "2px 8px",
+                                borderRadius: 8,
+                                background: revPct >= 0 ? "var(--green-light)" : "var(--red-light)",
+                                color: revPct >= 0 ? "var(--green)" : "var(--red)",
+                              }}
+                            >
+                              {revPct >= 0 ? "+" : ""}
+                              {revPct.toFixed(0)}% vs last month
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>{statSub1}</div>
+                      </div>
+                      <div className="acc-stat">
+                        <div className="acc-stat-icon">📉</div>
+                        <div className="acc-stat-label">{`Expenses ${periodTitle}`}</div>
+                        <div className="acc-stat-val" style={{ color: "var(--red)" }}>
+                          {formatPlCurrency(statExpenses)}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>{statSub1}</div>
+                      </div>
+                      <div className="acc-stat">
+                        <div className="acc-stat-icon">⚖️</div>
+                        <div className="acc-stat-label">{`Net Profit ${periodTitle}`}</div>
+                        <div
+                          className="acc-stat-val"
+                          style={{ color: (statProfit ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}
+                        >
+                          {formatPlCurrency(statProfit)}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>{statSub1}</div>
+                      </div>
+                      <div className="acc-stat">
+                        <div className="acc-stat-icon">🏛️</div>
+                        <div className="acc-stat-label">Financial Year Revenue</div>
+                        <div className="acc-stat-val" style={{ color: "var(--blue)" }}>
+                          {formatPlCurrency(statFourth)}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 4 }}>{statSub4}</div>
+                      </div>
+                    </div>
+
+                    <div className="acc-chart-card">
+                      <div style={{ fontFamily: "var(--font-display)", fontSize: 15, marginBottom: 14, color: "var(--text)" }}>
+                        Revenue &amp; expenses over time
+                      </div>
+                      <div className="acc-chart-wrap" style={{ minHeight: chartHeight }}>
+                        {tip && (
+                          <div
+                            className="acc-chart-tooltip"
+                            style={{
+                              left: `clamp(8px, calc(${tipLeftPct}% - 72px), calc(100% - 168px))`,
+                              top: 6,
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, marginBottom: 6 }}>{tip.month}</div>
+                            <div>Revenue: {formatPlCurrency(tip.income)}</div>
+                            <div>Expenses: {formatPlCurrency(tip.expenses)}</div>
+                            <div>Net profit: {formatPlCurrency(tip.profit)}</div>
+                          </div>
+                        )}
+                        <svg
+                          className="acc-chart-svg"
+                          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                          width="100%"
+                          height={chartHeight}
+                          preserveAspectRatio="xMidYMid meet"
+                          style={{ display: "block" }}
+                          onMouseLeave={() => {
+                            setXeroChartHoverIdx(null);
+                            setXeroAccBarHover(null);
+                          }}
+                          role="img"
+                          aria-label="Revenue expenses and profit chart"
+                        >
+                          {[0, 1, 2, 3, 4, 5].map((k) => {
+                            const t = k / 5;
+                            const val = minVal + (maxVal - minVal) * (1 - t);
+                            const y = getY(val);
+                            return (
+                              <g key={k}>
+                                <line
+                                  x1={pad.left}
+                                  y1={y}
+                                  x2={pad.left + innerW}
+                                  y2={y}
+                                  stroke="var(--border-2)"
+                                  strokeWidth={1}
+                                />
+                                <text
+                                  x={8}
+                                  y={y + 4}
+                                  fontSize={10}
+                                  fill="var(--text-3)"
+                                  fontFamily="var(--font-mono), monospace"
+                                >
+                                  {fmtAxis(val)}
+                                </text>
+                              </g>
+                            );
+                          })}
+                          <line
+                            x1={pad.left}
+                            y1={getY(0)}
+                            x2={pad.left + innerW}
+                            y2={getY(0)}
+                            stroke="var(--border)"
+                            strokeWidth={1.5}
+                            strokeDasharray="4 4"
+                          />
+                          {chartData.map((d, i) => {
+                            const y0 = getY(0);
+                            const yi = getY(d.income);
+                            const ye = getY(d.expenses);
+                            return (
+                              <g key={`b-${i}`}>
+                                <rect
+                                  x={cx(i) - barW - 2}
+                                  y={Math.min(y0, yi)}
+                                  width={barW}
+                                  height={Math.max(0, Math.abs(y0 - yi))}
+                                  fill="rgb(36, 94, 176)"
+                                  fillOpacity={xeroAccBarHover === `inc-${i}` ? 1 : 0.8}
+                                  rx={3}
+                                  style={{ cursor: "pointer", transition: "fill-opacity 0.15s" }}
+                                  onMouseEnter={() => {
+                                    setXeroChartHoverIdx(i);
+                                    setXeroAccBarHover(`inc-${i}`);
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fetchTransactions(null, "Income", d.from, d.to);
+                                  }}
+                                />
+                                <rect
+                                  x={cx(i) + 2}
+                                  y={Math.min(y0, ye)}
+                                  width={barW}
+                                  height={Math.max(0, Math.abs(y0 - ye))}
+                                  fill="#ef4444"
+                                  fillOpacity={xeroAccBarHover === `exp-${i}` ? 1 : 0.8}
+                                  rx={3}
+                                  style={{ cursor: "pointer", transition: "fill-opacity 0.15s" }}
+                                  onMouseEnter={() => {
+                                    setXeroChartHoverIdx(i);
+                                    setXeroAccBarHover(`exp-${i}`);
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    fetchTransactions(null, "Operating Expenses", d.from, d.to);
+                                  }}
+                                />
+                              </g>
+                            );
+                          })}
+                          {profitPathD ? (
+                            <path
+                              d={profitPathD}
+                              fill="none"
+                              stroke="#16a34a"
+                              strokeWidth={2.5}
+                              strokeLinejoin="round"
+                              strokeLinecap="round"
+                            />
+                          ) : null}
+                          {chartData.map((d, i) => (
+                            <circle
+                              key={`c-${i}`}
+                              cx={cx(i)}
+                              cy={getY(d.profit)}
+                              r={5}
+                              fill={d.profit >= 0 ? "#16a34a" : "#dc2626"}
+                              stroke="#fff"
+                              strokeWidth={1.5}
+                              style={{ cursor: "pointer" }}
+                              onMouseEnter={() => setXeroChartHoverIdx(i)}
+                            />
+                          ))}
+                          {chartData.map((d, i) => (
+                            <text
+                              key={`t-${i}`}
+                              x={cx(i)}
+                              y={chartHeight - 12}
+                              textAnchor="middle"
+                              fontSize={10}
+                              fill="var(--text-3)"
+                              fontFamily="var(--font-mono), monospace"
+                            >
+                              {d.month}
+                            </text>
+                          ))}
+                        </svg>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 20,
+                            marginTop: 14,
+                            fontSize: 11,
+                            color: "var(--text-2)",
+                            alignItems: "center",
+                          }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ width: 12, height: 12, borderRadius: 3, background: "rgb(36, 94, 176)", opacity: 0.8 }} />
+                            Revenue
+                          </span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ width: 12, height: 12, borderRadius: 3, background: "#ef4444", opacity: 0.8 }} />
+                            Expenses
+                          </span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ width: 14, height: 3, borderRadius: 2, background: "#16a34a" }} />
+                            Net profit
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 9,
+                            color: "var(--text-3)",
+                            fontFamily: "var(--font-mono)",
+                            textAlign: "center",
+                            marginTop: 4,
+                            textTransform: "uppercase",
+                            letterSpacing: "1px",
+                          }}
+                        >
+                          Click any bar to view transactions
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 20,
+                        marginBottom: 20,
+                        alignItems: "stretch",
+                      }}
+                    >
+                      <div>
+                        {xeroLoading ? (
+                          <div
+                            style={{
+                              padding: 40,
+                              textAlign: "center",
+                              color: "var(--text-3)",
+                              fontSize: 12,
+                            }}
+                          >
+                            Loading...
+                          </div>
+                        ) : revenuePieData.length > 0 ? (
+                          <PieChart
+                            data={revenuePieData}
+                            title="Revenue by Source"
+                            colors={PIE_COLORS_REVENUE}
+                            onSliceClick={(s) =>
+                              fetchTransactions(
+                                null,
+                                s.label,
+                                xeroData?.breakdownPeriod?.fromDate || xeroData?.summary?.fromDate,
+                                xeroData?.breakdownPeriod?.toDate || xeroData?.summary?.toDate
+                              )
+                            }
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              padding: 40,
+                              textAlign: "center",
+                              color: "var(--text-3)",
+                              fontSize: 12,
+                            }}
+                          >
+                            No revenue data for this period
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        {xeroLoading ? (
+                          <div
+                            style={{
+                              padding: 40,
+                              textAlign: "center",
+                              color: "var(--text-3)",
+                              fontSize: 12,
+                            }}
+                          >
+                            Loading...
+                          </div>
+                        ) : expensePieData.length > 0 ? (
+                          <PieChart
+                            data={expensePieData}
+                            title="Expenses by Category"
+                            colors={PIE_COLORS_EXPENSE}
+                            onSliceClick={(s) =>
+                              fetchTransactions(
+                                null,
+                                s.label,
+                                xeroData?.breakdownPeriod?.fromDate || xeroData?.summary?.fromDate,
+                                xeroData?.breakdownPeriod?.toDate || xeroData?.summary?.toDate
+                              )
+                            }
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              padding: 40,
+                              textAlign: "center",
+                              color: "var(--text-3)",
+                              fontSize: 12,
+                            }}
+                          >
+                            No expense data for this period
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 16,
+                        marginBottom: 20,
+                        alignItems: "start",
+                      }}
+                    >
+                      <div className="card" style={{ margin: 0 }}>
+                        <div className="card-hdr">
+                          <div className="card-title">Revenue Breakdown</div>
+                          <div className="card-sub">Financial year to date</div>
+                        </div>
+                        <div style={{ padding: "12px 18px 18px", maxHeight: 360, overflowY: "auto" }}>
+                          {fyPl.incomeLineItems.length === 0 ? (
+                            <div style={{ fontSize: 12, color: "var(--text-3)" }}>No income lines in P&amp;L.</div>
+                          ) : (
+                            fyPl.incomeLineItems.map((row, idx) => {
+                              const raw = parseFloat(String(row.amount).replace(/[^0-9.-]/g, "")) || 0;
+                              const pct = Math.min(100, (raw / incTotal) * 100);
+                              return (
+                                <div key={`rev-${idx}-${row.name}`} style={{ marginBottom: 12 }}>
+                                  <div className="acc-breakdown-row" style={{ border: "none", padding: "0 0 4px" }}>
+                                    <span style={{ fontSize: 12, color: "var(--text)" }}>{row.name}</span>
+                                    <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text)" }}>
+                                      {formatPlCurrency(row.amount)}
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 4, borderRadius: 10, background: "var(--surface)", overflow: "hidden" }}>
+                                    <div
+                                      className="acc-breakdown-bar"
+                                      style={{ width: `${pct}%`, background: "var(--teal)", height: "100%" }}
+                                    />
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{pct.toFixed(0)}% of FY revenue</div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                      <div className="card" style={{ margin: 0 }}>
+                        <div className="card-hdr">
+                          <div className="card-title">Expense Breakdown</div>
+                          <div className="card-sub">Financial year to date · sorted by amount</div>
+                        </div>
+                        <div style={{ padding: "12px 18px 18px", maxHeight: 360, overflowY: "auto" }}>
+                          {expSorted.length === 0 ? (
+                            <div style={{ fontSize: 12, color: "var(--text-3)" }}>No expense lines in P&amp;L.</div>
+                          ) : (
+                            expSorted.map((row, idx) => {
+                              const raw = parseFloat(String(row.amount).replace(/[^0-9.-]/g, "")) || 0;
+                              const pct = Math.min(100, (raw / expTotal) * 100);
+                              return (
+                                <div key={`ex-${idx}-${row.name}`} style={{ marginBottom: 12 }}>
+                                  <div className="acc-breakdown-row" style={{ border: "none", padding: "0 0 4px" }}>
+                                    <span style={{ fontSize: 12, color: "var(--text)" }}>{row.name}</span>
+                                    <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--text)" }}>
+                                      {formatPlCurrency(row.amount)}
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 4, borderRadius: 10, background: "var(--surface)", overflow: "hidden" }}>
+                                    <div
+                                      className="acc-breakdown-bar"
+                                      style={{ width: `${pct}%`, background: "#ea580c", height: "100%" }}
+                                    />
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{pct.toFixed(0)}% of FY expenses</div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="acc-ai-report">
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          marginBottom: 16,
+                          flexWrap: "wrap",
+                          gap: 12,
+                          position: "relative",
+                          zIndex: 1,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--gold)", marginBottom: 6, letterSpacing: "2px" }}>
+                            ✦ AI Financial Analysis
+                          </div>
+                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Powered by your live Xero P&amp;L</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontFamily: "var(--font-mono)",
+                              color: "rgba(255,255,255,0.35)",
+                              padding: "4px 8px",
+                              border: "1px solid rgba(255,255,255,0.12)",
+                              borderRadius: 6,
+                            }}
+                          >
+                            Generated by Claude
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            style={{
+                              fontSize: 11,
+                              color: "white",
+                              borderColor: "rgba(255,255,255,0.25)",
+                            }}
+                            onClick={() => generateXeroAIReport()}
+                          >
+                            ↺ Regenerate
+                          </button>
+                        </div>
+                      </div>
+                      {xeroAIReportLoading ? (
+                        <div style={{ padding: "24px 0", position: "relative", zIndex: 1 }}>
+                          <div className="ai-typing" style={{ justifyContent: "flex-start" }}>
+                            <div className="typing-dot" />
+                            <div className="typing-dot" />
+                            <div className="typing-dot" />
+                          </div>
+                          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 10 }}>Analysing your numbers…</div>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            color: "rgba(255,255,255,0.9)",
+                            fontSize: 13,
+                            lineHeight: 1.8,
+                            whiteSpace: "pre-wrap",
+                            position: "relative",
+                            zIndex: 1,
+                          }}
+                        >
+                          {xeroAIReport || "Your financial narrative will appear here after data loads."}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -6093,6 +7291,123 @@ Return only the email body text, no subject line.`;
           </div>
         )}
       </div>{/* /app */}
+
+      {/* Xero transaction drill-down */}
+      {txModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(13,15,26,0.6)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onClick={() => setTxModal(false)}
+        >
+          <div
+            style={{
+              background: "var(--white)",
+              borderRadius: 16,
+              width: 720,
+              maxWidth: "92vw",
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "var(--shadow-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: "16px 20px",
+                borderBottom: "1px solid var(--border)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 500, color: "var(--text)" }}>
+                {txAccountName || "Transactions"}
+                {txData?.fromDate && txData?.toDate ? (
+                  <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-2)", marginLeft: 8 }}>
+                    {txData.fromDate} → {txData.toDate}
+                  </span>
+                ) : null}
+              </div>
+              <button type="button" className="modal-close" onClick={() => setTxModal(false)}>
+                ✕
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+              {txLoading ? (
+                <div style={{ fontSize: 13, color: "var(--text-3)" }}>Loading transactions…</div>
+              ) : txData?.error ? (
+                <div style={{ fontSize: 13, color: "var(--red)" }}>{txData.error}</div>
+              ) : !txData?.transactions?.length ? (
+                <div style={{ fontSize: 13, color: "var(--text-3)" }}>
+                  {txData?.message || "No matching transactions in this range."}
+                </div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid var(--border)",
+                        color: "var(--text-3)",
+                        fontFamily: "var(--font-mono), monospace",
+                      }}
+                    >
+                      <th style={{ padding: "8px 6px" }}>Date</th>
+                      <th style={{ padding: "8px 6px" }}>Account</th>
+                      <th style={{ padding: "8px 6px" }}>Description</th>
+                      <th style={{ padding: "8px 6px", textAlign: "right" }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {txData.transactions.map((r, idx) => (
+                      <tr
+                        key={`${r.reference}-${idx}-${r.accountName || r.accountCode}`}
+                        style={{ borderBottom: "1px solid var(--border-2)" }}
+                      >
+                        <td style={{ padding: "8px 6px", fontFamily: "var(--font-mono), monospace", color: "var(--text-2)" }}>
+                          {r.date}
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>{r.accountName || r.accountCode || "—"}</td>
+                        <td style={{ padding: "8px 6px", color: "var(--text-2)" }}>{r.description || "—"}</td>
+                        <td style={{ padding: "8px 6px", textAlign: "right", fontFamily: "var(--font-mono), monospace" }}>
+                          {formatPlCurrency(r.netAmount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {!txLoading && txData?.transactions?.length > 0 && txData?.total != null ? (
+                <div style={{ fontSize: 12, fontWeight: 600, marginTop: 12, fontFamily: "var(--font-mono), monospace" }}>
+                  Total: {formatPlCurrency(txData.total)}
+                </div>
+              ) : null}
+            </div>
+            {txData?.note && (
+              <div
+                style={{
+                  padding: "8px 24px",
+                  background: "var(--gold-light)",
+                  borderTop: "1px solid var(--gold-dim)",
+                  fontSize: 11,
+                  color: "var(--text-3)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                ℹ️ {txData.note}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Compose email modal */}
       {composeModal && (
