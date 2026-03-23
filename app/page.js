@@ -23,6 +23,54 @@ const matchAI = q => {
   return AI_CANNED["default"];
 };
 
+const CACHE_KEY_BRIEF = 'cc_morning_brief'
+const CACHE_KEY_BRIEF_TIME = 'cc_morning_brief_time'
+
+const CACHE_KEY_INSIGHTS = 'cc_insights_summary'
+const CACHE_KEY_INSIGHTS_TIME = 'cc_insights_summary_time'
+
+const getCachedBrief = () => {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY_BRIEF)
+    const cachedTime = localStorage.getItem(CACHE_KEY_BRIEF_TIME)
+    if (cached && cachedTime) {
+      const age = Date.now() - parseInt(cachedTime)
+      if (age < 4 * 60 * 60 * 1000) { // 4 hours
+        return cached
+      }
+    }
+  } catch (e) {}
+  return null
+}
+
+const cacheBrief = (content) => {
+  try {
+    localStorage.setItem(CACHE_KEY_BRIEF, content)
+    localStorage.setItem(CACHE_KEY_BRIEF_TIME, Date.now().toString())
+  } catch (e) {}
+}
+
+const getCachedInsights = () => {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY_INSIGHTS)
+    const cachedTime = localStorage.getItem(CACHE_KEY_INSIGHTS_TIME)
+    if (cached && cachedTime) {
+      const age = Date.now() - parseInt(cachedTime)
+      if (age < 4 * 60 * 60 * 1000) { // 4 hours
+        return cached
+      }
+    }
+  } catch (e) {}
+  return null
+}
+
+const cacheInsights = (content) => {
+  try {
+    localStorage.setItem(CACHE_KEY_INSIGHTS, content)
+    localStorage.setItem(CACHE_KEY_INSIGHTS_TIME, Date.now().toString())
+  } catch (e) {}
+}
+
 /** Format P&L currency the same way as Xero-style display (en-AU, 2 dp). */
 function formatPlCurrency(value) {
   const n = parseFloat(String(value ?? "0").replace(/[^0-9.-]/g, "")) || 0;
@@ -1505,6 +1553,24 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  const [aiAutoMode, setAiAutoMode] = useState(() => {
+    try {
+      if (typeof window === "undefined") return false;
+      return localStorage.getItem("cc_ai_auto_mode") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const toggleAiAutoMode = (val) => {
+    setAiAutoMode(val);
+    try {
+      localStorage.setItem("cc_ai_auto_mode", val.toString());
+    } catch (e) {}
+  };
+
+  const aiButtonLabel = aiAutoMode ? "↺ Regenerate" : "✦ Generate";
+
   const [marketData, setMarketData] = useState(null);
   const [marketLoading, setMarketLoading] = useState(false);
   const [insightsAIChat, setInsightsAIChat] = useState([]);
@@ -1710,9 +1776,11 @@ Maximum 300 words.`,
   }, [xeroData]);
 
   useEffect(() => {
+    if (!aiAutoMode) return;
     if (!xeroConnected || !xeroData?.financialYear?.report) return;
+    if (xeroAIReport || xeroAIReportLoading) return;
     generateXeroAIReport();
-  }, [xeroConnected, xeroData, generateXeroAIReport]);
+  }, [aiAutoMode, xeroConnected, xeroData, xeroAIReport, xeroAIReportLoading, generateXeroAIReport]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1724,7 +1792,6 @@ Maximum 300 words.`,
       console.log("Xero connection failed");
       window.history.replaceState({}, "", window.location.pathname);
     }
-    fetchXeroData();
   }, [fetchXeroData]);
 
   useEffect(() => {
@@ -1852,10 +1919,10 @@ Maximum 300 words.`,
 
   useEffect(() => {
     if (page === "insights") {
-      generateInsightsSummary();
       fetchMarketIntelligence();
+      if (aiAutoMode) generateInsightsSummary();
     }
-  }, [page]);
+  }, [page, aiAutoMode]);
 
   useEffect(() => {
     setNotifAI(null);
@@ -1903,6 +1970,7 @@ Maximum 300 words.`,
     };
 
     fetchMatters();
+    fetchXeroData();
   }, []);
 
   useEffect(() => {
@@ -1989,27 +2057,56 @@ Maximum 300 words.`,
   }, []);
 
   const contactForAI = viewingContact || selectedContact;
-  useEffect(() => {
-    if (!contactForAI?.id || contactAI[contactForAI.id]) return;
-    const loadContactAI = async () => {
-      setContactAILoading(true);
-      const linkedMatters = MATTERS.filter((m) => m.client && contactForAI.name && (String(m.client).toLowerCase().includes(String(contactForAI.name).toLowerCase()) || String(contactForAI.name).toLowerCase().includes(String(m.client).toLowerCase())));
-      const mattersList = linkedMatters.length ? linkedMatters.map((m) => `${m.id} (${m.type}, ${m.stage})`).join("; ") : "None";
-      const totalValue = linkedMatters.reduce((s, m) => s + (parseFloat(String(m.price||0).replace(/[^0-9.]/g, "")) || 0), 0);
-      const prompt = `You are reviewing contact ${contactForAI.name} (${contactForAI.type || "Contact"}). Their linked matters: ${mattersList}. Generate:\n1. RELATIONSHIP SUMMARY: Who are they, how long have you worked with them\n2. ACTIVE MATTERS: Current status of their matters\n3. NEXT STEPS: What needs to happen for this contact\n4. VALUE: Total matter value across all their matters`;
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: [{ role: "user", content: prompt }], mattersContext: "", systemOverride: "You are an assistant for a conveyancing practice. Respond in clear markdown with the requested sections." }),
-        });
-        const data = await res.json();
-        if (res.ok && data.content) setContactAI((prev) => ({ ...prev, [contactForAI.id]: data.content }));
-      } catch (_) {}
+  const generateContactAIInsights = async () => {
+    const contact = viewingContact || selectedContact;
+    if (!contact?.id || contactAI[contact.id]) return;
+    setContactAILoading(true);
+    try {
+      const linkedMatters = MATTERS.filter(
+        (m) =>
+          m.client &&
+          contact.name &&
+          (String(m.client).toLowerCase().includes(String(contact.name).toLowerCase()) ||
+            String(contact.name).toLowerCase().includes(String(m.client).toLowerCase()))
+      );
+      const mattersList = linkedMatters.length
+        ? linkedMatters
+            .slice(0, 5)
+            .map((m) => `${m.id} (${m.type}, ${m.stage})`)
+            .join("; ")
+        : "None";
+      const totalValue = linkedMatters.reduce(
+        (s, m) => s + (parseFloat(String(m.price || 0).replace(/[^0-9.]/g, "")) || 0),
+        0
+      );
+      const prompt = `You are reviewing contact ${contact.name} (${contact.type || "Contact"}). Their linked matters: ${mattersList}. Generate:\n1. RELATIONSHIP SUMMARY: Who are they, how long have you worked with them\n2. ACTIVE MATTERS: Current status of their matters\n3. NEXT STEPS: What needs to happen for this contact\n4. VALUE: Total matter value across all their matters`;
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }],
+          mattersContext: "",
+          systemOverride:
+            "You are an assistant for a conveyancing practice. Respond in clear markdown with the requested sections.",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.content) {
+        setContactAI((prev) => ({ ...prev, [contact.id]: data.content }));
+      }
+    } catch (_) {
+      // ignore
+    } finally {
       setContactAILoading(false);
-    };
-    loadContactAI();
-  }, [contactForAI?.id]);
+    }
+  };
+
+  useEffect(() => {
+    if (!aiAutoMode) return;
+    if (!contactForAI?.id) return;
+    if (contactAI[contactForAI.id]) return;
+    generateContactAIInsights();
+  }, [aiAutoMode, contactForAI?.id]);
 
   const fetchContactEmails = async () => {
     if (!viewingContact?.name) return;
@@ -2125,7 +2222,7 @@ Maximum 300 words.`,
       const data = await res.json();
       const emails = Array.isArray(data) ? data : (data?.emails || []);
       setMattersCommsEmails(emails);
-      if (emails.length) generateMattersCommsAISummary(emails);
+      if (aiAutoMode) generateMattersCommsAISummary(emails);
     } catch (e) {
       setMattersCommsEmails([]);
     }
@@ -2135,7 +2232,7 @@ Maximum 300 words.`,
   const generateMattersCommsAISummary = async (emails) => {
     if (!emails.length || !selMatterObj) return;
     setMattersCommsAISummaryLoading(true);
-    const emailContext = emails.slice(0, 10).map((e) => `From: ${e.from?.emailAddress?.name || e.from?.name}, Subject: ${e.subject}, Preview: ${(e.bodyPreview || "").slice(0, 150)}`).join("\n");
+    const emailContext = emails.slice(0, 5).map((e) => `From: ${e.from?.emailAddress?.name || e.from?.name}, Subject: ${e.subject}, Preview: ${(e.bodyPreview || "").slice(0, 100)}`).join("\n");
     const dueTasks = tasks.filter((t) => t.matter === (selMatterObj.matter_ref || selMatterObj.id) && !t.done);
     try {
       const res = await fetch("/api/chat", {
@@ -2143,7 +2240,7 @@ Maximum 300 words.`,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: [{ role: "user", content: "Summarise communications for this matter" }],
-          mattersContext: `Matter ${selMatterObj.matter_ref || selMatterObj.id} - ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nDue Tasks: ${dueTasks.map((t) => `${t.task} due ${t.due}`).join(", ") || "None"}\nEmails:\n${emailContext}\n\nReply in plain English with:\n1. OVERVIEW: What are these emails about in 2 sentences\n2. KEY POINTS: 3 most important things from emails as simple numbered list\n3. NEXT STEPS: 2-3 specific actions needed\n4. URGENCY: Low, Medium or High with one sentence why\n\nNo markdown symbols. Plain English only.`,
+          mattersContext: `Matter ${selMatterObj.matter_ref || selMatterObj.id} - ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nDue Tasks: ${dueTasks.slice(0, 5).map((t) => `${t.task} due ${t.due}`).join(", ") || "None"}\nEmails:\n${emailContext}\n\nReply in plain English with:\n1. OVERVIEW: What are these emails about in 2 sentences\n2. KEY POINTS: 3 most important things from emails as simple numbered list\n3. NEXT STEPS: 2-3 specific actions needed\n4. URGENCY: Low, Medium or High with one sentence why\n\nNo markdown symbols. Plain English only.`,
         }),
       });
       const data = await res.json();
@@ -2165,7 +2262,7 @@ Maximum 300 words.`,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: [{ role: "user", content: q }],
-          mattersContext: `Matter: ${selMatterObj.matter_ref || selMatterObj.id}\nClient: ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nValue: ${selMatterObj.price || ""}\nSettlement: ${selMatterObj.settlement || ""}\nDue Tasks: ${dueTasks.map((t, i) => `${i + 1}. ${t.task} due ${t.due} (${t.urgency})`).join("\n") || "None"}\nRecent emails: ${mattersCommsEmails.slice(0, 5).map((e) => `${e.from?.name || e.from?.address || ""}: ${e.subject || ""}`).join(", ")}\n\nPlain English only. No markdown. If tasks due list them numbered.`,
+          mattersContext: `Matter: ${selMatterObj.matter_ref || selMatterObj.id}\nClient: ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nValue: ${selMatterObj.price || ""}\nSettlement: ${selMatterObj.settlement || ""}\nDue Tasks: ${dueTasks.slice(0, 5).map((t, i) => `${i + 1}. ${t.task} due ${t.due} (${t.urgency})`).join("\n") || "None"}\nRecent emails: ${mattersCommsEmails.slice(0, 5).map((e) => `${e.from?.name || e.from?.address || ""}: ${e.subject || ""}`).join(", ")}\n\nPlain English only. No markdown. If tasks due list them numbered.`,
         }),
       });
       const data = await res.json();
@@ -2221,7 +2318,7 @@ Maximum 300 words.`,
       const data = await res.json();
       const emails = data.emails || data || [];
       setAllEmails(emails);
-      generateCommsPageSummary(emails);
+      if (aiAutoMode) generateCommsPageSummary(emails);
     } catch (e) {
       setAllEmails([]);
     }
@@ -2243,7 +2340,7 @@ Maximum 300 words.`,
         body: JSON.stringify({
           messages: [{
             role: "user",
-            content: `You are reviewing both inbox and sent messages for Gitu Kaur at Conveyancing Crew, an Australian conveyancing practice. Consider incoming and outgoing emails together.\nToday: ${today}\n\nINBOX (${inboxEmails.length} emails):\n${inboxEmails.slice(0, 15).map((e) => `From: ${e.from?.emailAddress?.name || e.from?.name} | Subject: ${e.subject} | Date: ${new Date(e.receivedDateTime).toLocaleDateString("en-AU")} | Preview: ${(e.bodyPreview || "").slice(0, 150)}`).join("\n")}\n\nSENT (${sentEmails.length} emails):\n${sentEmails.slice(0, 15).map((e) => `To: ${e.toRecipients?.[0]?.emailAddress?.name || e.toRecipients?.[0]?.address} | Subject: ${e.subject} | Date: ${new Date(e.receivedDateTime).toLocaleDateString("en-AU")} | Preview: ${(e.bodyPreview || "").slice(0, 150)}`).join("\n")}\n\nKNOWN MATTERS:\n${MATTERS.filter((m) => m.status === "active").slice(0, 10).map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join("\n")}\n\nPlease provide a comprehensive email intelligence summary covering BOTH inbox and sent:\n\n1. OVERVIEW: How many emails (inbox + sent), general activity level (2 sentences)\n\n2. URGENT: List any emails needing immediate attention (replies overdue, urgent requests, deadlines mentioned) — from either inbox or sent\n\n3. BY MATTER: Group emails by which matter they relate to. For each matter mention what the email activity shows (incoming and outgoing).\n\n4. FOLLOW UPS NEEDED: List specific actions Gitu needs to take based on what she has received or sent\n\n5. PATTERNS: Any notable patterns (e.g. a client emailing multiple times, unanswered emails, threads where she has replied)\n\nPlain English only. No markdown symbols. Keep each section concise.`
+            content: `You are reviewing both inbox and sent messages for Gitu Kaur at Conveyancing Crew, an Australian conveyancing practice. Consider incoming and outgoing emails together.\nToday: ${today}\n\nINBOX (${inboxEmails.length} emails):\n${inboxEmails.slice(0, 15).map((e) => `From: ${e.from?.emailAddress?.name || e.from?.name} | Subject: ${e.subject} | Date: ${new Date(e.receivedDateTime).toLocaleDateString("en-AU")} | Preview: ${(e.bodyPreview || "").slice(0, 100)}`).join("\n")}\n\nSENT (${sentEmails.length} emails):\n${sentEmails.slice(0, 15).map((e) => `To: ${e.toRecipients?.[0]?.emailAddress?.name || e.toRecipients?.[0]?.address} | Subject: ${e.subject} | Date: ${new Date(e.receivedDateTime).toLocaleDateString("en-AU")} | Preview: ${(e.bodyPreview || "").slice(0, 100)}`).join("\n")}\n\nKNOWN MATTERS:\n${MATTERS.filter((m) => m.status === "active").slice(0, 5).map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join("\n")}\n\nPlease provide a comprehensive email intelligence summary covering BOTH inbox and sent:\n\n1. OVERVIEW: How many emails (inbox + sent), general activity level (2 sentences)\n\n2. URGENT: List any emails needing immediate attention (replies overdue, urgent requests, deadlines mentioned) — from either inbox or sent\n\n3. BY MATTER: Group emails by which matter they relate to. For each matter mention what the email activity shows (incoming and outgoing).\n\n4. FOLLOW UPS NEEDED: List specific actions Gitu needs to take based on what she has received or sent\n\n5. PATTERNS: Any notable patterns (e.g. a client emailing multiple times, unanswered emails, threads where she has replied)\n\nPlain English only. No markdown symbols. Keep each section concise.`
           }],
           mattersContext: "Communications page email summary"
         })
@@ -2291,7 +2388,7 @@ Maximum 300 words.`,
             ...commsPageAIChat.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text })),
             { role: "user", content: q }
           ],
-          mattersContext: `Communications context:\nTotal emails: ${allEmails.length}\n${selectedEmail ? `Currently viewing email:\nFrom: ${selectedEmail.from?.emailAddress?.name || selectedEmail.from?.name}\nSubject: ${selectedEmail.subject}\nPreview: ${(selectedEmail.bodyPreview || "").slice(0, 300)}` : "No email selected"}\n\nActive matters: ${MATTERS.filter((m) => m.status === "active").map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join(", ")}\n\nPlain English only. No markdown. End with one clear next action.`
+          mattersContext: `Communications context:\nTotal emails: ${allEmails.length}\n${selectedEmail ? `Currently viewing email:\nFrom: ${selectedEmail.from?.emailAddress?.name || selectedEmail.from?.name}\nSubject: ${selectedEmail.subject}\nPreview: ${(selectedEmail.bodyPreview || "").slice(0, 100)}` : "No email selected"}\n\nActive matters: ${MATTERS.filter((m) => m.status === "active").slice(0, 5).map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join(", ")}\n\nPlain English only. No markdown. End with one clear next action.`
         })
       });
       const data = await res.json();
@@ -2328,6 +2425,12 @@ Maximum 300 words.`,
   };
 
   const generateInsightsSummary = async () => {
+    const cached = getCachedInsights()
+    if (cached) {
+      setInsightsAutoSummary(cached)
+      setInsightsAutoError(null)
+      return
+    }
     setInsightsAutoLoading(true);
     setInsightsAutoError(null);
     try {
@@ -2352,7 +2455,9 @@ Maximum 300 words.`,
         return;
       }
       const text = data.content != null ? String(data.content).trim() : "";
-      setInsightsAutoSummary(text || null);
+      const content = text || null;
+      setInsightsAutoSummary(content);
+      if (content) cacheInsights(content)
       if (!text) setInsightsAutoError("No report content returned.");
     } catch (e) {
       setInsightsAutoSummary(null);
@@ -2650,7 +2755,7 @@ If no matches found return: []`
       let newTasks = [];
       let newCalEvents = [];
 
-      const activeMatters = MATTERS.filter((m) => m.status === "active" && (m.address || "").length > 5).slice(0, 10);
+      const activeMatters = MATTERS.filter((m) => m.status === "active" && (m.address || "").length > 5).slice(0, 5);
       const allMatterEmailsForTasks = [];
       for (const m of activeMatters) {
         try {
@@ -2690,14 +2795,14 @@ If no matches found return: []`
             {
               role: "user",
               content:
-                `You are scanning emails for Conveyancing Crew to find actionable tasks and deadlines.\n\nTODAY: ${new Date().toISOString().split("T")[0]}\n\nACTIVE MATTERS:\n${MATTERS.filter((m) => m.status === "active")
+                `You are scanning emails for Conveyancing Crew to find actionable tasks and deadlines.\n\nTODAY: ${new Date().toISOString().split("T")[0]}\n\nACTIVE MATTERS:\n${MATTERS.filter((m) => m.status === "active").slice(0, 5)
                   .map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage} | ${m.address}`)
                   .join("\n")}\n\nEMAILS TO SCAN (both sent and received):\n${uniqueMatterEmails
                   .map(
                     (e) =>
-                      `[${(e.direction || "").toUpperCase()}] Matter:${e.matterRef} | From:${fromName(e)} | Subject:${e.subject || ""} | Date:${e.receivedDateTime ? new Date(e.receivedDateTime).toLocaleDateString("en-AU") : ""} | Content:${(e.bodyPreview || "").slice(0, 200)}`
+                      `[${(e.direction || "").toUpperCase()}] Matter:${e.matterRef} | From:${fromName(e)} | Subject:${e.subject || ""} | Date:${e.receivedDateTime ? new Date(e.receivedDateTime).toLocaleDateString("en-AU") : ""} | Content:${(e.bodyPreview || "").slice(0, 100)}`
                   )
-                  .join("\n---\n")}\n\nTASK EXTRACTION RULES:\nFind ALL actionable items including:\n1. Documents requested but not yet received\n2. Information requested from client\n3. Deadlines mentioned\n4. Follow-ups needed\n5. Things promised but not done\n6. Urgent requests\n7. Search orders needed\n8. PEXA actions needed\n9. Payment actions\n10. Certificate requests\n\nFor each task found return:\n{"task":"clear description","matter_ref":"...","client_name":"...","due_date":"YYYY-MM-DD or null","urgency":"critical/high/medium/low","source":"brief description","type":"document|information|deadline|followup|payment|search|pexa|certificate|other"}\n\nOnly include tasks that are ACTIONABLE and NOT YET DONE. Return ONLY a valid JSON array. Empty array if nothing found.`
+                  .join("\n---\n")}\n\nTASK EXTRACTION RULES:\nFind ALL actionable items including:\n1. Documents requested but not yet received\n2. Information requested from client\n3. Deadlines mentioned\n4. Follow-ups needed\n5. Things promised but not done\n6. Urgent requests\n7. Search orders needed\n8. PEXA actions needed\n9. Payment actions\n10. Certificate requests\n\nFor each task found return:\n{"task":"clear description","matter_ref":"...","client_name":"...","due_date":"YYYY-MM-DD or null","urgency":"critical/high/medium/low","source":"brief description","type":"document|information|deadline|followup|payment|search|pexa|certificate|other"}\n\nOnly include tasks that are ACTIONABLE and NOT YET DONE. Return ONLY a valid JSON array. Empty array if nothing found. Return up to 5 tasks only.`
             }
           ],
           mattersContext: "Task extraction from emails"
@@ -2967,6 +3072,11 @@ No markdown. Plain English only.`
   };
 
   const generateMorningBrief = async () => {
+    const cached = getCachedBrief()
+    if (cached) {
+      setDashMorningBrief(cached)
+      return
+    }
     setDashBriefLoading(true);
     setDashMorningBrief(null);
     const today = new Date().toISOString().split("T")[0];
@@ -3027,7 +3137,9 @@ Keep it under 150 words. Conversational tone. No markdown symbols.`
         })
       });
       const data = await res.json();
-      setDashMorningBrief(data.content || null);
+      const content = data.content || null;
+      setDashMorningBrief(content);
+      if (content) cacheBrief(content);
     } catch (err) {
       console.log("Morning brief error:", err);
     }
@@ -3068,7 +3180,7 @@ Upcoming settlements: ${upcomingSettlements.map((e) => `${e.client_name} on ${e.
 
 Top active matters:
 ${activeMatters
-            .slice(0, 8)
+            .slice(0, 5)
             .map(
               (m) =>
                 `${m.matter_ref || m.id}: ${m.client_name || m.client} | ${m.type} | ${m.stage} | Settlement: ${m.settlement_date || m.settlement || "TBD"} | ${m.address || ""}`
@@ -3077,7 +3189,7 @@ ${activeMatters
 
 Due tasks:
 ${dueTasks
-            .slice(0, 10)
+            .slice(0, 5)
             .map((t) => `${t.task} — ${t.client_name || t.client} (${t.urgency}) due ${t.due_date || t.due || "TBD"}`)
             .join("\n")}
 
@@ -3102,8 +3214,10 @@ RESPONSE RULES:
   };
 
   useEffect(() => {
-    if (page === "dashboard" && !dashMorningBrief && !dashBriefLoading) generateMorningBrief();
-  }, [page]);
+    if (page === "dashboard" && aiAutoMode && !dashMorningBrief && !dashBriefLoading) {
+      generateMorningBrief();
+    }
+  }, [page, aiAutoMode]);
 
   const sendAI = async (q) => {
     const msg = q || aiInput.trim();
@@ -3119,7 +3233,7 @@ RESPONSE RULES:
     apiMessages.push({ role: "user", content: msg });
 
     const mattersContext = MATTERS.length
-      ? MATTERS.map(
+      ? MATTERS.slice(0, 5).map(
           (m) =>
             `Matter ${m.id}: Client ${m.client}, Type ${m.type}, Stage ${m.stage}, Urgency ${m.urgency || "—"}, Opened ${m.opened || "—"}${m.settlement ? ", Settlement " + m.settlement : ""}`
         ).join("\n")
@@ -3924,6 +4038,24 @@ Return only the email body text, no subject line.`;
                     🔔
                     {(() => { const notifCount = buildNotifications().length; return notifCount > 0 ? <div className="dot" style={{ background: "var(--red)" }}>{notifCount > 9 ? "9+" : notifCount}</div> : null; })()}
                   </div>
+                  <div
+                    style={{
+                      display:"flex",alignItems:"center",gap:6,
+                      padding:"4px 10px",
+                      background: aiAutoMode ? "var(--blue-light)" : "var(--surface)",
+                      border:"1px solid var(--border)",
+                      borderRadius:20,cursor:"pointer",
+                      fontSize:10,fontFamily:"var(--font-mono)",
+                      color: aiAutoMode ? "var(--blue)" : "var(--text-3)",
+                      transition:"all 0.15s"
+                    }}
+                    onClick={()=>toggleAiAutoMode(!aiAutoMode)}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div style={{ width:6,height:6,borderRadius:"50%", background: aiAutoMode ? "var(--blue)" : "var(--text-3)" }}/>
+                    {aiAutoMode ? "AI AUTO" : "AI MANUAL"}
+                  </div>
                   <button type="button" className="btn-gold" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setModal("intake")}>＋</button>
                 </>
               ) : (
@@ -4070,6 +4202,24 @@ Return only the email body text, no subject line.`;
                   ) : null;
                 })()}
               </div>
+                <div
+                  style={{
+                    display:"flex",alignItems:"center",gap:6,
+                    padding:"4px 10px",
+                    background: aiAutoMode ? "var(--blue-light)" : "var(--surface)",
+                    border:"1px solid var(--border)",
+                    borderRadius:20,cursor:"pointer",
+                    fontSize:10,fontFamily:"var(--font-mono)",
+                    color: aiAutoMode ? "var(--blue)" : "var(--text-3)",
+                    transition:"all 0.15s"
+                  }}
+                  onClick={()=>toggleAiAutoMode(!aiAutoMode)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div style={{ width:6,height:6,borderRadius:"50%", background: aiAutoMode ? "var(--blue)" : "var(--text-3)" }}/>
+                  {aiAutoMode ? "AI AUTO" : "AI MANUAL"}
+                </div>
               <button type="button" className="btn-gold" onClick={() => setModal("intake")}>＋ New Matter</button>
               </>
               )}
@@ -4338,9 +4488,22 @@ Return only the email body text, no subject line.`;
               weekDays.push(d);
             }
 
-            const pipelineValue = activeMatters.reduce((s, m) => s + (parseFloat(String(m.price || m.value || 0).replace(/[^0-9.]/g, "")) || 0), 0);
-            const xeroPl = xeroData?.financialYear?.report ? parseXeroProfitAndLoss(xeroData.financialYear.report) : null;
-            const xeroHasPl = Boolean(xeroData?.financialYear?.report);
+            const pipelineValue = activeMatters.reduce(
+              (s, m) => s + (parseFloat(String(m.price || m.value || 0).replace(/[^0-9.]/g, "")) || 0),
+              0
+            );
+            const incomeYtd =
+              xeroData?.financialYear?.income
+                ? "$" + (xeroData.financialYear.income / 1000).toFixed(1) + "k"
+                : "—";
+            const expensesYtd =
+              xeroData?.financialYear?.expenses
+                ? "$" + (xeroData.financialYear.expenses / 1000).toFixed(1) + "k"
+                : "—";
+            const netProfitYtd =
+              xeroData?.financialYear?.profit
+                ? "$" + (xeroData.financialYear.profit / 1000).toFixed(1) + "k"
+                : "—";
 
             const typeOrder = ["Purchase", "Sale", "Lease", "Contract Review", "General Enquiry", "Other"];
             const typeCounts = {};
@@ -4391,40 +4554,34 @@ Return only the email body text, no subject line.`;
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 24px" }}>
                       <div>
                         <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Active Pipeline</div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${(pipelineValue / 1000).toFixed(0)}K</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${(pipelineValue / 1000000).toFixed(1)}M</div>
                       </div>
                       <div>
                         <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Income YTD</div>
-                        {xeroHasPl && xeroPl ? (
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--green)" }}>{formatXeroMoney(xeroPl.totalIncome ?? 0)}</div>
-                        ) : xeroLoading ? (
+                        {xeroLoading ? (
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>…</div>
                         ) : xeroData ? (
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>—</div>
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--green)" }}>{incomeYtd}</div>
                         ) : (
                           <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
                         )}
                       </div>
                       <div>
                         <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Expenses YTD</div>
-                        {xeroHasPl && xeroPl ? (
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--red)" }}>{formatXeroMoney(xeroPl.totalExpenses ?? 0)}</div>
-                        ) : xeroLoading ? (
+                        {xeroLoading ? (
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>…</div>
                         ) : xeroData ? (
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>—</div>
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--red)" }}>{expensesYtd}</div>
                         ) : (
                           <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
                         )}
                       </div>
                       <div>
                         <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Net Profit</div>
-                        {xeroHasPl && xeroPl ? (
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: (xeroPl.netProfit ?? 0) >= 0 ? "var(--blue)" : "var(--red)" }}>{formatXeroMoney(xeroPl.netProfit ?? 0)}</div>
-                        ) : xeroLoading ? (
+                        {xeroLoading ? (
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>…</div>
                         ) : xeroData ? (
-                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text-3)" }}>—</div>
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--blue)" }}>{netProfitYtd}</div>
                         ) : (
                           <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
                         )}
@@ -4659,7 +4816,13 @@ Return only the email body text, no subject line.`;
                           <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, maxHeight: "120px", overflowY: "auto" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                               <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>Morning Brief</span>
-                              <button type="button" style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer" }} onClick={() => generateMorningBrief()}>↺</button>
+                              <button
+                                type="button"
+                                style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer" }}
+                                onClick={() => generateMorningBrief()}
+                              >
+                                {aiButtonLabel} Morning Brief
+                              </button>
                             </div>
                             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{dashMorningBrief}</div>
                           </div>
@@ -4667,6 +4830,34 @@ Return only the email body text, no subject line.`;
                         {dashBriefLoading && (
                           <div style={{ padding: "10px 18px", flexShrink: 0, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Generating morning brief…</span>
+                          </div>
+                        )}
+                        {!dashMorningBrief && !dashBriefLoading && (
+                          <div style={{ textAlign: "center", padding: "20px 10px" }}>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "rgba(255,255,255,0.3)",
+                                marginBottom: 12,
+                              }}
+                            >
+                              Click to generate your morning brief
+                            </div>
+                            <button
+                              style={{
+                                background: "rgba(255,255,255,0.1)",
+                                border: "1px solid rgba(255,255,255,0.15)",
+                                borderRadius: 8,
+                                padding: "8px 16px",
+                                fontSize: 11,
+                                color: "rgba(255,255,255,0.7)",
+                                cursor: "pointer",
+                                fontFamily: "var(--font-body)",
+                              }}
+                              onClick={() => generateMorningBrief()}
+                            >
+                              {aiButtonLabel} Morning Brief
+                            </button>
                           </div>
                         )}
                         {/* Messages — FIXED HEIGHT scroll box (this is what makes scrolling work) */}
@@ -5821,7 +6012,23 @@ Return only the email body text, no subject line.`;
                     </div>
                     <div style={{fontSize:12,fontWeight:700,color:"var(--text)",marginBottom:8}}>✦ AI Insights</div>
                     <div className="contact-ai-card" style={{marginBottom:16}}>
-                      {contactAILoading && !contactAI[viewingContact.id] ? <div className="comms-summary-shimmer" style={{height:100,borderRadius:8}}/> : contactAI[viewingContact.id] ? <div style={{fontSize:12,lineHeight:1.7,color:"var(--text-2)"}}>{renderSummaryMarkdown(contactAI[viewingContact.id])}</div> : <div style={{fontSize:11,color:"var(--text-3)"}}>Loading…</div>}
+                      {contactAILoading && !contactAI[viewingContact.id] ? (
+                        <div className="comms-summary-shimmer" style={{height:100,borderRadius:8}}/>
+                      ) : contactAI[viewingContact.id] ? (
+                        <div style={{fontSize:12,lineHeight:1.7,color:"var(--text-2)"}}>{renderSummaryMarkdown(contactAI[viewingContact.id])}</div>
+                      ) : null}
+
+                      <div style={{ marginTop: 12 }}>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          style={{ width: "100%", fontSize: 11, padding: "10px 12px" }}
+                          disabled={contactAILoading}
+                          onClick={() => generateContactAIInsights()}
+                        >
+                          {aiButtonLabel} Insights
+                        </button>
+                      </div>
                     </div>
                     <div style={{background:"var(--white)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",padding:"16px",marginBottom:"16px"}}>
                       <div style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1.5px",marginBottom:"10px"}}>✦ Ask AI</div>
@@ -5886,6 +6093,17 @@ Return only the email body text, no subject line.`;
                     <span style={{fontSize:12,fontWeight:600,color:"var(--text)",flex:1}}>AI Summary</span>
                     {mattersCommsAISummaryLoading && <span style={{fontSize:11,color:"var(--text-3)"}}>Generating…</span>}
                     {!mattersCommsAISummaryLoading && mattersCommsAISummary && <span style={{fontSize:11,color:"var(--text-2)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:400}}>{mattersCommsAISummary.slice(0,100)}…</span>}
+                    <button
+                      className="btn-ghost"
+                      style={{ fontSize: 11 }}
+                      disabled={mattersCommsAISummaryLoading}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        generateMattersCommsAISummary(mattersCommsEmails);
+                      }}
+                    >
+                      {aiButtonLabel} Summary
+                    </button>
                     <span style={{fontSize:12,color:"var(--text-3)"}}>{mattersCommsAISummaryExpanded ? "▲" : "▼"}</span>
                   </div>
                   {mattersCommsAISummaryExpanded && mattersCommsAISummary && (
@@ -6254,7 +6472,6 @@ Return only the email body text, no subject line.`;
               <div style={{ width: commsPanelWidths[2], flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--ink)", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "2px" }}>✦ AI Insights</div>
-                  <button type="button" style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer" }} onClick={() => generateCommsPageSummary(allEmails)}>↺ Refresh</button>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 16px" }}>
                   {commsPageAISummaryLoading ? (
@@ -6270,10 +6487,30 @@ Return only the email body text, no subject line.`;
                     <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.85, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{commsPageAISummary}</div>
                   ) : (
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "30px 10px" }}>
-                      <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.3 }}>✦</div>
-                      Load emails to generate AI insights
+                      ✦ Click the button to generate an email summary
                     </div>
                   )}
+
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      style={{
+                        width: "100%",
+                        background: "rgba(255,255,255,0.08)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        borderRadius: 8,
+                        padding: "10px",
+                        fontSize: 11,
+                        color: "rgba(255,255,255,0.6)",
+                        cursor: commsPageAISummaryLoading ? "not-allowed" : "pointer",
+                        opacity: commsPageAISummaryLoading ? 0.6 : 1,
+                        fontFamily: "var(--font-body)"
+                      }}
+                      disabled={commsPageAISummaryLoading}
+                      onClick={() => generateCommsPageSummary(allEmails)}
+                    >
+                      {aiButtonLabel} Email Summary
+                    </button>
+                  </div>
                 </div>
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, padding: "10px 14px" }}>
                   <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 8 }}>Ask AI</div>
@@ -6999,18 +7236,20 @@ Return only the email body text, no subject line.`;
                           >
                             Generated by Claude
                           </span>
-                          <button
-                            type="button"
-                            className="btn-ghost"
-                            style={{
-                              fontSize: 11,
-                              color: "white",
-                              borderColor: "rgba(255,255,255,0.25)",
-                            }}
-                            onClick={() => generateXeroAIReport()}
-                          >
-                            ↺ Regenerate
-                          </button>
+                          {xeroAIReport && (
+                            <button
+                              type="button"
+                              className="btn-ghost"
+                              style={{
+                                fontSize: 11,
+                                color: "white",
+                                borderColor: "rgba(255,255,255,0.25)",
+                              }}
+                              onClick={() => generateXeroAIReport()}
+                            >
+                              {aiButtonLabel}
+                            </button>
+                          )}
                         </div>
                       </div>
                       {xeroAIReportLoading ? (
@@ -7023,18 +7262,33 @@ Return only the email body text, no subject line.`;
                           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 10 }}>Analysing your numbers…</div>
                         </div>
                       ) : (
-                        <div
-                          style={{
-                            color: "rgba(255,255,255,0.9)",
-                            fontSize: 13,
-                            lineHeight: 1.8,
-                            whiteSpace: "pre-wrap",
-                            position: "relative",
-                            zIndex: 1,
-                          }}
-                        >
-                          {xeroAIReport || "Your financial narrative will appear here after data loads."}
-                        </div>
+                        <>
+                          {!xeroAIReport && (
+                            <div style={{ textAlign: "center", padding: 20 }}>
+                              <button
+                                className="btn-gold"
+                                style={{ fontSize: 12 }}
+                                onClick={() => generateXeroAIReport()}
+                              >
+                                {aiButtonLabel} AI Financial Report
+                              </button>
+                            </div>
+                          )}
+                          {xeroAIReport && (
+                            <div
+                              style={{
+                                color: "rgba(255,255,255,0.9)",
+                                fontSize: 13,
+                                lineHeight: 1.8,
+                                whiteSpace: "pre-wrap",
+                                position: "relative",
+                                zIndex: 1,
+                              }}
+                            >
+                              {xeroAIReport}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </>
@@ -7361,16 +7615,31 @@ Return only the email body text, no subject line.`;
                       ) : insightsAutoSummary ? (
                         <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>{insightsAutoSummary}</div>
                       ) : insightsAutoError ? (
-                        <>
-                          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 10 }}>{insightsAutoError}</div>
-                          <button type="button" className="btn-gold" style={{ fontSize: 12 }} onClick={() => generateInsightsSummary()}>Retry report</button>
-                        </>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 10 }}>{insightsAutoError}</div>
                       ) : (
-                        <>
-                          <div style={{ fontSize: 11, color: "var(--text-3)" }}>Report will generate when you open this page.</div>
-                          <button type="button" className="btn-ghost" style={{ fontSize: 12, marginTop: 8 }} onClick={() => generateInsightsSummary()}>Generate report</button>
-                        </>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", padding: "14px 6px" }}>No practice summary yet.</div>
                       )}
+
+                      <div style={{ marginTop: 12 }}>
+                        <button
+                          style={{
+                            width: "100%",
+                            background: "rgba(255,255,255,0.08)",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            borderRadius: 8,
+                            padding: "10px",
+                            fontSize: 11,
+                            color: "rgba(255,255,255,0.6)",
+                            cursor: insightsAutoLoading ? "not-allowed" : "pointer",
+                            opacity: insightsAutoLoading ? 0.6 : 1,
+                            fontFamily: "var(--font-body)"
+                          }}
+                          disabled={insightsAutoLoading}
+                          onClick={() => generateInsightsSummary()}
+                        >
+                          {aiButtonLabel} Practice Summary
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -7439,7 +7708,88 @@ Return only the email body text, no subject line.`;
           })()}
 
           {/* Catch-all */}
-          {!["dashboard","matters","matter_workspace","referrals","contacts","calendar","communications","accounting","insights"].includes(page) && (
+          {page === "settings" && (
+            <div className="content" style={{ paddingTop: 18, paddingBottom: 40 }}>
+              <div
+                style={{
+                  background: "var(--white)",
+                  borderRadius: "var(--radius-lg)",
+                  border: "1px solid var(--border)",
+                  padding: 20,
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: 16,
+                    fontWeight: 500,
+                    color: "var(--text)",
+                    marginBottom: 4,
+                  }}
+                >
+                  AI Features
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 16 }}>
+                  Control when AI summaries and insights are generated. Auto mode uses more API credits.
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 0",
+                    borderBottom: "1px solid var(--border-2)",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>
+                      Auto-generate AI summaries
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
+                      When ON, AI summaries generate automatically when pages load. When OFF, you control when AI is called
+                      using Generate buttons.
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-3)" }}>{aiAutoMode ? "Auto" : "Manual"}</span>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 24,
+                        borderRadius: 12,
+                        background: aiAutoMode ? "var(--blue)" : "var(--border)",
+                        position: "relative",
+                        cursor: "pointer",
+                        transition: "background 0.2s",
+                      }}
+                      onClick={() => toggleAiAutoMode(!aiAutoMode)}
+                      role="switch"
+                      aria-checked={aiAutoMode}
+                      tabIndex={0}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 3,
+                          left: aiAutoMode ? 23 : 3,
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: "white",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                          transition: "left 0.2s",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {!["dashboard","matters","matter_workspace","referrals","contacts","calendar","communications","accounting","insights","settings"].includes(page) && (
             <div className="under-construction">
               <div style={{textAlign:"center",color:"var(--text-3)"}}>
                 <div style={{fontFamily:"var(--font-display)",fontSize:48,opacity:0.15,marginBottom:12}}>⚖</div>

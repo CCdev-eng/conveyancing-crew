@@ -33,7 +33,7 @@ CRITICAL RESPONSE FORMAT RULES - always follow these without exception:
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
+      max_tokens: 600,
       system: systemPrompt,
       messages: messages,
     });
