@@ -2,6 +2,19 @@
 import { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import { supabase } from "../lib/supabase";
 
+/** Parse fetch Response body as JSON; on failure log snippet and return {} */
+async function safeParseFetchJson(res) {
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error("JSON parse failed:", text.slice(0, 200));
+    data = {};
+  }
+  return data;
+}
+
 // ─── DATA ──────────────────────────────────────────────────────────────────────
 // MATTERS, tasks, contacts, calendarEvents etc. are loaded from Supabase via useState + useEffect.
 
@@ -2403,7 +2416,7 @@ export default function App() {
         setXeroData(null);
         return;
       }
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       if (data.error) {
         setXeroConnected(false);
         setXeroData(null);
@@ -2444,7 +2457,7 @@ export default function App() {
         });
 
         const res = await fetch(`/api/xero/transactions?${params}`);
-        const data = await res.json();
+        const data = await safeParseFetchJson(res);
         setTxData(data);
       } catch (e) {
         console.log("Transaction fetch error:", e);
@@ -2530,7 +2543,7 @@ Maximum 300 words.`,
           mattersContext: "Financial analysis",
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setXeroAIReport(data.content || null);
     } catch (e) {
       console.error(e);
@@ -2849,7 +2862,7 @@ Maximum 300 words.`,
             "You are an assistant for a conveyancing practice. Respond in clear markdown with the requested sections.",
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       if (res.ok && data.content) {
         setContactAI((prev) => ({ ...prev, [contact.id]: data.content }));
       }
@@ -2872,7 +2885,7 @@ Maximum 300 words.`,
     setContactEmailsLoading(true);
     try {
       const res = await fetch(`/api/email?query=${encodeURIComponent(viewingContact.name)}`);
-      const data = res.ok ? await res.json() : [];
+      const data = res.ok ? await safeParseFetchJson(res) : [];
       setContactEmails(Array.isArray(data) ? data : []);
     } catch (_) {
       setContactEmails([]);
@@ -2903,7 +2916,7 @@ Maximum 300 words.`,
     const mattersContextStr = `Contact: ${viewingContact.name} (${viewingContact.type || "Contact"}). Email: ${viewingContact.email || ""}. Phone: ${viewingContact.phone || ""}. Linked matters: ${linkedMatters.length ? linkedMatters.map((m) => `${m.id} - ${m.type} - ${m.stage} - ${m.address || ""}`).join(", ") : "None"}`;
     try {
       const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: q }], mattersContext: mattersContextStr }) });
-      const data = await response.json();
+      const data = await safeParseFetchJson(response);
       setContactAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry, I couldn't get a response." }]);
     } catch (_) {
       setContactAIChat((prev) => [...prev, { role: "ai", text: "Sorry, I couldn't get a response." }]);
@@ -2978,7 +2991,7 @@ Maximum 300 words.`,
       const params = new URLSearchParams();
       if (selMatterObj.address) params.append("address", selMatterObj.address);
       const res = await fetch(`/api/email?${params}`);
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       const emails = Array.isArray(data) ? data : (data?.emails || []);
       setMattersCommsEmails(emails);
       if (aiAutoMode) generateMattersCommsAISummary(emails);
@@ -3002,7 +3015,7 @@ Maximum 300 words.`,
           mattersContext: `Matter ${selMatterObj.matter_ref || selMatterObj.id} - ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nDue Tasks: ${dueTasks.slice(0, 5).map((t) => `${t.task} due ${t.due}`).join(", ") || "None"}\nEmails:\n${emailContext}\n\nReply in plain English with:\n1. OVERVIEW: What are these emails about in 2 sentences\n2. KEY POINTS: 3 most important things from emails as simple numbered list\n3. NEXT STEPS: 2-3 specific actions needed\n4. URGENCY: Low, Medium or High with one sentence why\n\nNo markdown symbols. Plain English only.`,
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setMattersCommsAISummary(data.content || null);
     } catch (_) {}
     setMattersCommsAISummaryLoading(false);
@@ -3024,7 +3037,7 @@ Maximum 300 words.`,
           mattersContext: `Matter: ${selMatterObj.matter_ref || selMatterObj.id}\nClient: ${selMatterObj.client_name || selMatterObj.client || ""}\nProperty: ${selMatterObj.address || ""}\nStage: ${selMatterObj.stage || ""}\nValue: ${selMatterObj.price || ""}\nSettlement: ${selMatterObj.settlement || ""}\nDue Tasks: ${dueTasks.slice(0, 5).map((t, i) => `${i + 1}. ${t.task} due ${t.due} (${t.urgency})`).join("\n") || "None"}\nRecent emails: ${mattersCommsEmails.slice(0, 5).map((e) => `${e.from?.name || e.from?.address || ""}: ${e.subject || ""}`).join(", ")}\n\nPlain English only. No markdown. If tasks due list them numbered.`,
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setMattersCommsAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry I could not get a response." }]);
     } catch (_) {
       setMattersCommsAIChat((prev) => [...prev, { role: "ai", text: "Sorry I could not get a response." }]);
@@ -3074,7 +3087,7 @@ Maximum 300 words.`,
     setAllEmailsLoading(true);
     try {
       const res = await fetch("/api/email?allEmails=true&top=50");
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       const emails = data.emails || data || [];
       setAllEmails(emails);
       if (aiAutoMode) generateCommsPageSummary(emails);
@@ -3104,7 +3117,7 @@ Maximum 300 words.`,
           mattersContext: "Communications page email summary"
         })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setCommsPageAISummary(data.content || null);
     } catch (_) {
       setCommsPageAISummary(null);
@@ -3150,7 +3163,7 @@ Maximum 300 words.`,
           mattersContext: `Communications context:\nTotal emails: ${allEmails.length}\n${selectedEmail ? `Currently viewing email:\nFrom: ${selectedEmail.from?.emailAddress?.name || selectedEmail.from?.name}\nSubject: ${selectedEmail.subject}\nPreview: ${(selectedEmail.bodyPreview || "").slice(0, 100)}` : "No email selected"}\n\nActive matters: ${MATTERS.filter((m) => m.status === "active").slice(0, 5).map((m) => `${m.matter_ref}: ${m.client_name} | ${m.stage}`).join(", ")}\n\nPlain English only. No markdown. End with one clear next action.`
         })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setCommsPageAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry, could not get a response." }]);
     } catch (_) {
       setCommsPageAIChat((prev) => [...prev, { role: "ai", text: "Sorry, could not get a response." }]);
@@ -3175,7 +3188,7 @@ Maximum 300 words.`,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ suburbs: suburbs.length ? suburbs : ["Sydney", "Melbourne"] })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setMarketData(data?.error ? null : data);
     } catch (_) {
       setMarketData(null);
@@ -3207,7 +3220,7 @@ Maximum 300 words.`,
           mattersContext: "Insights page auto-summary"
         })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       if (!res.ok || data.error) {
         setInsightsAutoSummary(null);
         setInsightsAutoError(data.error || "Report could not be generated.");
@@ -3244,7 +3257,7 @@ Maximum 300 words.`,
           mattersContext: `Practice Intelligence Context:\nTotal matters: ${MATTERS.length}\nActive: ${MATTERS.filter((m) => m.status === "active").length}\nSettled: ${MATTERS.filter((m) => m.stage === "Settled").length}\nTypes: ${["Purchase", "Sale", "Lease"].map((t) => `${t}:${MATTERS.filter((m) => m.type === t).length}`).join(", ")}\nStates: NSW:${MATTERS.filter((m) => m.state === "NSW").length} VIC:${MATTERS.filter((m) => m.state === "VIC").length}\n${marketData?.marketOverview ? `Market: Sydney ${(marketData.marketOverview.sydney || "").slice(0, 100)}` : ""}\n\nPlain English only. No markdown. End with one recommendation.`
         })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setInsightsAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry could not get a response." }]);
     } catch (_) {
       setInsightsAIChat((prev) => [...prev, { role: "ai", text: "Sorry could not get a response." }]);
@@ -3257,7 +3270,7 @@ Maximum 300 words.`,
     try {
       console.log("Fetching PEXA emails...");
       const pexaRes = await fetch("/api/email?pexa=true");
-      const pexaData = await pexaRes.json();
+      const pexaData = await safeParseFetchJson(pexaRes);
       const pexaEmails = pexaData.emails || pexaData || [];
       console.log("PEXA emails found:", pexaEmails.length);
 
@@ -3265,7 +3278,7 @@ Maximum 300 words.`,
         pexaEmails.slice(0, 30).map(async (e) => {
           try {
             const res = await fetch(`/api/email?emailId=${e.id}`);
-            const data = await res.json();
+            const data = await safeParseFetchJson(res);
             const rawBody = data.body != null ? data.body : "";
             const fullBody = String(rawBody)
               .replace(/<[^>]*>/g, " ")
@@ -3397,7 +3410,7 @@ If no matches found return: []`
         })
       });
 
-      const data = await response.json();
+      const data = await safeParseFetchJson(response);
       const rawText = data.content || "[]";
       console.log("AI PEXA extraction response:", rawText);
 
@@ -3522,8 +3535,8 @@ If no matches found return: []`
             fetch(`/api/email?address=${encodeURIComponent(m.address)}&sent=false`),
             fetch(`/api/email?address=${encodeURIComponent(m.address)}&sent=true`)
           ]);
-          const inboxData = await inboxRes.json();
-          const sentData = await sentRes.json();
+          const inboxData = await safeParseFetchJson(inboxRes);
+          const sentData = await safeParseFetchJson(sentRes);
           const inboxList = inboxData.emails || inboxData || [];
           const sentList = sentData.emails || sentData || [];
           const emails = [
@@ -3567,7 +3580,7 @@ If no matches found return: []`
           mattersContext: "Task extraction from emails"
         })
       });
-      const taskData = await taskExtractionRes.json();
+      const taskData = await safeParseFetchJson(taskExtractionRes);
       const rawTaskText = taskData.content || "[]";
       let extractedTasks = [];
       try {
@@ -3821,7 +3834,7 @@ No markdown. Plain English only.`
             mattersContext: "Notification action suggestions"
           })
         });
-        const data = await res.json();
+        const data = await safeParseFetchJson(res);
         setNotifAI(data.content || null);
       } catch (err) {
         console.log("Notif AI error:", err);
@@ -3895,7 +3908,7 @@ Keep it under 150 words. Conversational tone. No markdown symbols.`
           mattersContext: "Morning briefing"
         })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       const content = data.content || null;
       setDashMorningBrief(content);
       if (content) cacheBrief(content);
@@ -3960,7 +3973,7 @@ RESPONSE RULES:
 - Keep responses under 150 words unless more detail is asked`
         })
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       setDashAIChat((prev) => [
         ...prev,
         { role: "ai", text: data.content || "Sorry, I could not get a response." }
@@ -4004,7 +4017,7 @@ RESPONSE RULES:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages, mattersContext }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
 
       if (!res.ok) {
         throw new Error(data.error || "Failed to get AI response");
@@ -4326,7 +4339,7 @@ RESPONSE RULES:
           path,
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       if (!res.ok) {
         console.error("Error from /api/storage:", data);
         alert(`Error creating signed URL: ${data.error || "Unknown error"}`);
@@ -4379,7 +4392,7 @@ RESPONSE RULES:
           path: `${matterRef}/${documentFile.name.trim()}`,
         }),
       });
-      const signedData = await signedRes.json();
+      const signedData = await safeParseFetchJson(signedRes);
       if (!signedData.signedUrl) {
         throw new Error("Could not access document");
       }
@@ -4534,11 +4547,21 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
           maxTokens: 8192,
         }),
       });
-      const reviewData = await reviewRes.json();
+      const reviewText = await reviewRes.text();
+      let reviewData;
+      try {
+        reviewData = JSON.parse(reviewText);
+      } catch (e) {
+        console.error("JSON parse failed:", reviewText.slice(0, 200));
+        throw new Error("AI service returned an error: " + reviewText.slice(0, 100));
+      }
       if (!reviewRes.ok || reviewData.error) {
         throw new Error(reviewData.error || "AI review request failed");
       }
       const rawText = reviewData.content || "{}";
+      if (!rawText || rawText.startsWith("Request") || rawText.startsWith("Error")) {
+        throw new Error("AI service returned an error: " + String(rawText).slice(0, 100));
+      }
       let parsed;
       try {
         const clean = rawText.replace(/```json|```/g, "").trim();
@@ -4621,7 +4644,7 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
     let cancelled = false;
     setLoadingEmailBodyId(id);
     fetch(`/api/email?emailId=${encodeURIComponent(id)}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => (r.ok ? await safeParseFetchJson(r) : null))
       .then((data) => {
         if (cancelled) return;
         setEmailBodies((prev) => ({ ...prev, [id]: { content: data?.body ?? null, contentType: data?.bodyContentType || "text" } }));
@@ -4645,7 +4668,7 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
       console.log("[Communications] fetch URL:", url);
       const res = await fetch(url);
       console.log("[Communications] response status:", res.status);
-      const data = res.ok ? await res.json() : [];
+      const data = res.ok ? await safeParseFetchJson(res) : [];
       console.log("[Communications] parsed response data:", data, "isArray:", Array.isArray(data), "length:", Array.isArray(data) ? data.length : "n/a");
       const emails = Array.isArray(data) ? data : [];
       setMatterEmails(emails);
@@ -4726,7 +4749,7 @@ RESPONSE RULES - ALWAYS follow these:
 - Maximum 150 words unless asked for more detail`;
     try {
       const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: q }], mattersContext: mattersContextStr }) });
-      const data = await response.json();
+      const data = await safeParseFetchJson(response);
       setMatterCommsAIChat((prev) => [...prev, { role: "ai", text: data.content || "Sorry I could not get a response." }]);
     } catch (_) {
       setMatterCommsAIChat((prev) => [...prev, { role: "ai", text: "Sorry I could not get a response." }]);
@@ -4938,7 +4961,7 @@ RESPONSE RULES - ALWAYS follow these:
             mattersContext,
           }),
         });
-        const data = await res.json();
+        const data = await safeParseFetchJson(res);
         if (res.ok && data.content) setEmailSummary(data.content);
         else setEmailSummary("Summary unavailable.");
       } catch (_) {
@@ -4963,7 +4986,7 @@ RESPONSE RULES - ALWAYS follow these:
           matterId: selMatterObj?.id,
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       if (res.ok) {
         setComposeTo("");
         setComposeSubject("");
@@ -5011,7 +5034,7 @@ Return only the email body text, no subject line.`;
           systemOverride: systemContext,
         }),
       });
-      const data = await res.json();
+      const data = await safeParseFetchJson(res);
       if (res.ok && data.content) setComposeBody(data.content.trim());
       else alert("Could not generate draft");
     } catch (_) {
@@ -10304,9 +10327,10 @@ Return only the email body text, no subject line.`;
 
                           for (const query of uniqueSearchQueries) {
                             try {
-                              const res = await fetch(
+                              const qRes = await fetch(
                                 `/api/email?query=${encodeURIComponent(query)}&top=20`
-                              ).then((r) => r.json());
+                              );
+                              const res = await safeParseFetchJson(qRes);
                               const emails = asEmailList(res);
                               console.log(
                                 `[AutoFill] Query "${query}" returned ${emails.length} emails`
@@ -10320,9 +10344,8 @@ Return only the email body text, no subject line.`;
                           }
 
                           try {
-                            const recentRes = await fetch(`/api/email?allEmails=true&top=30`).then(
-                              (r) => r.json()
-                            );
+                            const recentFetch = await fetch(`/api/email?allEmails=true&top=30`);
+                            const recentRes = await safeParseFetchJson(recentFetch);
                             const recentEmails = asEmailList(recentRes);
                             const cutoff = new Date();
                             cutoff.setDate(cutoff.getDate() - 7);
@@ -10394,7 +10417,7 @@ If none match return: []`;
                                 "Respond with ONLY a JSON array of integers (indices), or []. No markdown fences, no explanation, no other text.",
                             }),
                           });
-                          const matchData = await matchRes.json();
+                          const matchData = await safeParseFetchJson(matchRes);
                           console.log("[AutoFill] AI match response:", matchData.content);
 
                           let matchedIndices = [];
@@ -10453,7 +10476,7 @@ If none match return: []`;
                                 const res = await fetch(
                                   `/api/email?emailId=${encodeURIComponent(e.id)}`
                                 );
-                                const data = await res.json();
+                                const data = await safeParseFetchJson(res);
 
                                 const bodyText = String(data.body || "")
                                   .replace(/<[^>]*>/g, " ")
@@ -10492,7 +10515,7 @@ If none match return: []`;
                                       continue;
                                     }
 
-                                    const attData = await attRes.json();
+                                    const attData = await safeParseFetchJson(attRes);
                                     console.log(
                                       "[AutoFill] Attachment data keys:",
                                       Object.keys(attData || {})
@@ -10549,7 +10572,7 @@ lot numbers, property addresses, purchaser names, ABN/ACN numbers.`,
                                       });
 
                                       if (pdfExtractRes.ok) {
-                                        const pdfData = await pdfExtractRes.json();
+                                        const pdfData = await safeParseFetchJson(pdfExtractRes);
                                         pdfText += String(pdfData.content || "").slice(0, 2000);
                                         console.log(
                                           "[AutoFill] PDF text extracted, length:",
@@ -10739,7 +10762,7 @@ JOINT PURCHASER RULES:
                                 "You extract structured data from the user message. Respond with ONLY a single valid JSON object. No markdown fences, no explanation, no other text.",
                             }),
                           });
-                          const chatData = await chatRes.json();
+                          const chatData = await safeParseFetchJson(chatRes);
                           if (!chatRes.ok || chatData.error) {
                             setIntakeAutoFillError(chatData.error || "AI request failed");
                             setIntakeAutoFillResult({ low: true, subjects: subjectsForUi, zeroEmails: false });
