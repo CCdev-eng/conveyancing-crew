@@ -4303,13 +4303,21 @@ RESPONSE RULES:
       if (error) {
         console.error("Error uploading document:", error);
       } else {
-        const { data, error: listError } = await supabase.storage
-          .from("matter-documents")
-          .list(matterRef);
-        if (listError) {
-          console.error("Error refreshing documents after upload:", listError);
-        } else {
-          setDocuments(data || []);
+        try {
+          const { data, error: listError } = await supabase.storage
+            .from("matter-documents")
+            .list(matterRef);
+          console.log(
+            "[Documents] Raw storage response:",
+            JSON.stringify(data ?? null).slice(0, 200)
+          );
+          if (listError) {
+            console.error("Error refreshing documents after upload:", listError);
+          } else {
+            setDocuments(data || []);
+          }
+        } catch (err) {
+          console.error("[Documents] Fetch error:", err.message);
         }
       }
     } finally {
@@ -4366,13 +4374,21 @@ RESPONSE RULES:
       console.error("Error deleting document:", error);
       return;
     }
-    const { data, error: listError } = await supabase.storage
-      .from("matter-documents")
-      .list(matterRef);
-    if (listError) {
-      console.error("Error refreshing documents after delete:", listError);
-    } else {
-      setDocuments(data || []);
+    try {
+      const { data, error: listError } = await supabase.storage
+        .from("matter-documents")
+        .list(matterRef);
+      console.log(
+        "[Documents] Raw storage response:",
+        JSON.stringify(data ?? null).slice(0, 200)
+      );
+      if (listError) {
+        console.error("Error refreshing documents after delete:", listError);
+      } else {
+        setDocuments(data || []);
+      }
+    } catch (err) {
+      console.error("[Documents] Fetch error:", err.message);
     }
   };
 
@@ -4940,17 +4956,27 @@ Return only the email body text, no subject line.`;
         return;
       }
       setDocumentsLoading(true);
-      const { data, error } = await supabase.storage
-        .from("matter-documents")
-        .list(matterRef);
-      if (error) {
-        console.error("Error fetching documents from storage:", error);
+      try {
+        const { data, error } = await supabase.storage
+          .from("matter-documents")
+          .list(matterRef);
+        console.log(
+          "[Documents] Raw storage response:",
+          JSON.stringify(data ?? null).slice(0, 200)
+        );
+        if (error) {
+          console.error("Error fetching documents from storage:", error);
+          setDocuments([]);
+        } else {
+          console.log("Documents from storage for", matterRef, data);
+          setDocuments(data || []);
+        }
+      } catch (err) {
+        console.error("[Documents] Fetch error:", err.message);
         setDocuments([]);
-      } else {
-        console.log("Documents from storage for", matterRef, data);
-        setDocuments(data || []);
+      } finally {
+        setDocumentsLoading(false);
       }
-      setDocumentsLoading(false);
     };
     fetchDocuments();
   }, [selMatterObj]);
@@ -6474,7 +6500,7 @@ Return only the email body text, no subject line.`;
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                         <div className="card-title">
-                          Documents {documentsLoading ? "· Loading…" : documents.length ? `· ${documents.length}` : ""}
+                          Documents {documentsLoading ? "· Loading…" : (documents || []).length ? `· ${(documents || []).length}` : ""}
                         </div>
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           <button
@@ -6497,13 +6523,13 @@ Return only the email body text, no subject line.`;
                       </div>
                       {documentsLoading ? (
                         <div style={{ fontSize: 12, color: "var(--text-3)", padding: "12px 0" }}>Loading documents…</div>
-                      ) : documents.length === 0 ? (
+                      ) : (documents || []).length === 0 ? (
                         <div style={{ fontSize: 12, color: "var(--text-3)", padding: "12px 0" }}>
                           No documents yet — upload your first document
                         </div>
                       ) : (
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                          {documents.map((d, i) => (
+                          {(documents || []).map((d, i) => (
                             <div key={d.name || i} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                               <div className="doc-item">
                                 <div className="doc-icon" style={{ background: "#eff6ff" }}>📄</div>
