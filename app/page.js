@@ -2202,6 +2202,9 @@ export default function App() {
   const [contractReviewTab, setContractReviewTab] = useState("summary");
   const [contractReviewExpanded, setContractReviewExpanded] = useState({});
   const [contractReviewLoadStage, setContractReviewLoadStage] = useState(0);
+  const [lastReviewedAt, setLastReviewedAt] = useState("");
+  const [lastReviewedDoc, setLastReviewedDoc] = useState("");
+  const [reviewLoadedFromStorage, setReviewLoadedFromStorage] = useState(false);
   const [matterSearches, setMatterSearches] = useState({});
   const [matterEmails, setMatterEmails] = useState([]);
   const [matterEmailsLoading, setMatterEmailsLoading] = useState(false);
@@ -4397,6 +4400,7 @@ RESPONSE RULES:
     setContractReviewLoading(true);
     setContractReviewResult(null);
     setContractReviewError("");
+    setReviewLoadedFromStorage(false);
     try {
       const matterRef = selMatterObj.matter_ref || selMatterObj.id;
       // Only the storage path is sent — server loads the PDF from Supabase (avoids Vercel ~4.5MB body limit)
@@ -4433,15 +4437,21 @@ RESPONSE RULES:
 
       setContractReviewResult(parsed);
       setContractReviewTab("summary");
+      const reviewedAt = new Date().toISOString();
+      setLastReviewedAt(reviewedAt);
+      setLastReviewedDoc(documentFile.name || "");
       const { error: wfErr } = await supabase.from("matter_workflow").upsert(
         {
           matter_ref: selMatterObj.matter_ref || selMatterObj.id,
           step_key: "contract_review",
+          completed: true,
+          completed_at: reviewedAt,
           notes: JSON.stringify({
-            reviewedAt: new Date().toISOString(),
+            reviewedAt,
             documentName: documentFile.name,
             riskLevel: parsed.overallRiskLevel,
             redFlagCount: parsed.redFlags?.length || 0,
+            fullResult: parsed,
           }),
           updated_at: new Date().toISOString(),
         },
@@ -4484,7 +4494,42 @@ RESPONSE RULES:
     setContractReviewTab("summary");
     setContractReviewExpanded({});
     setContractReviewLoadStage(0);
+    setLastReviewedAt("");
+    setLastReviewedDoc("");
+    setReviewLoadedFromStorage(false);
   }, [selectedMatter]);
+
+  useEffect(() => {
+    const matterRef = selMatterObj?.matter_ref || selMatterObj?.id;
+    if (matterTab !== "Documents" || !matterRef) return;
+
+    const loadPreviousReview = async () => {
+      const { data } = await supabase
+        .from("matter_workflow")
+        .select("notes, completed_at, updated_at")
+        .eq("matter_ref", matterRef)
+        .eq("step_key", "contract_review")
+        .maybeSingle();
+
+      if (data?.notes) {
+        try {
+          const saved = JSON.parse(data.notes);
+          if (saved.fullResult) {
+            setContractReviewResult(saved.fullResult);
+            setContractReviewTab("summary");
+            setLastReviewedAt(saved.reviewedAt || "");
+            setLastReviewedDoc(saved.documentName || "");
+            setReviewLoadedFromStorage(true);
+            console.log("[ContractReview] Loaded previous review from:", saved.reviewedAt);
+          }
+        } catch (e) {
+          console.log("[ContractReview] No previous review found");
+        }
+      }
+    };
+
+    loadPreviousReview();
+  }, [matterTab, selMatterObj?.matter_ref, selMatterObj?.id]);
 
   useEffect(() => {
     if (!contractReviewLoading) return;
@@ -6495,7 +6540,25 @@ Return only the email body text, no subject line.`;
                               <div className="doc-item">
                                 <div className="doc-icon" style={{ background: "#eff6ff" }}>📄</div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div className="doc-name">{d.name}</div>
+                                  <div className="doc-name" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+                                    <span>{d.name}</span>
+                                    {lastReviewedDoc &&
+                                      (d.name || "").trim() === (lastReviewedDoc || "").trim() && (
+                                        <span
+                                          style={{
+                                            fontSize: 9,
+                                            background: "#e8f5e9",
+                                            color: "#2e7d32",
+                                            borderRadius: 4,
+                                            padding: "2px 6px",
+                                            marginLeft: 2,
+                                            fontFamily: "monospace",
+                                          }}
+                                        >
+                                          ✓ Reviewed
+                                        </span>
+                                      )}
+                                  </div>
                                   <div className="doc-meta">
                                     {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Uploaded"}
                                   </div>
@@ -6622,6 +6685,64 @@ Return only the email body text, no subject line.`;
                       )}
                       {!contractReviewLoading && R && (
                         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                          {reviewLoadedFromStorage && lastReviewedAt ? (
+                            <div
+                              style={{
+                                background: "#f0f7ff",
+                                border: "1px solid #bdd6f5",
+                                borderRadius: 8,
+                                padding: "8px 14px",
+                                margin: "10px 12px 0",
+                                marginBottom: 12,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                fontSize: 12,
+                                flexWrap: "wrap",
+                                gap: 8,
+                              }}
+                            >
+                              <span>
+                                📋 <strong>Previous review loaded</strong> —{lastReviewedDoc ? ` ${lastReviewedDoc} ·` : ""}{" "}
+                                reviewed{" "}
+                                {(() => {
+                                  try {
+                                    const dt = new Date(lastReviewedAt);
+                                    if (Number.isNaN(dt.getTime())) return lastReviewedAt;
+                                    return dt.toLocaleDateString("en-AU", {
+                                      day: "numeric",
+                                      month: "short",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    });
+                                  } catch {
+                                    return lastReviewedAt;
+                                  }
+                                })()}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const doc = (documents || []).find(
+                                    (x) => (x.name || "").trim() === (lastReviewedDoc || "").trim()
+                                  );
+                                  if (doc) runContractReview(doc);
+                                }}
+                                style={{
+                                  fontSize: 11,
+                                  background: "white",
+                                  border: "1px solid #bdd6f5",
+                                  borderRadius: 6,
+                                  padding: "4px 10px",
+                                  cursor: "pointer",
+                                  color: "#245eb0",
+                                }}
+                              >
+                                🔄 Re-review
+                              </button>
+                            </div>
+                          ) : null}
                           <div style={{ display: "flex", gap: 4, padding: "10px 12px 0", borderBottom: "1px solid var(--border-2)", flexWrap: "wrap" }}>
                             {[
                               { id: "summary", label: "Summary" },
