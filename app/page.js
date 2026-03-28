@@ -4408,6 +4408,17 @@ RESPONSE RULES:
         reader.onerror = () => reject(new Error("Could not read PDF"));
         reader.readAsDataURL(pdfBlob);
       });
+      const base64SizeKB = Math.round((base64.length * 0.75) / 1024);
+      console.log("[ContractReview] PDF size:", base64SizeKB, "KB");
+      if (base64SizeKB > 35000) {
+        setContractReviewError(
+          `This PDF is too large (${Math.round(base64SizeKB / 1024)}MB). ` +
+            `Please compress the PDF to under 35MB and try again. ` +
+            `You can use a free tool like ilovepdf.com to compress it.`
+        );
+        setContractReviewLoading(false);
+        return;
+      }
       const reviewPrompt = `You are an expert Australian conveyancer reviewing a property 
 contract. The matter is for client ${selMatterObj.client_name || selMatterObj.client || ""} 
 for the property at ${selMatterObj.address} in ${selMatterObj.state || "NSW"}.
@@ -4552,16 +4563,22 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
       try {
         reviewData = JSON.parse(reviewText);
       } catch (e) {
-        console.error("JSON parse failed:", reviewText.slice(0, 200));
-        throw new Error("AI service returned an error: " + reviewText.slice(0, 100));
+        console.error("[ContractReview] Response parse failed:", reviewText.slice(0, 300));
+        throw new Error("Server returned an invalid response. Please try again.");
       }
       if (!reviewRes.ok || reviewData.error) {
         throw new Error(reviewData.error || "AI review request failed");
       }
-      const rawText = reviewData.content || "{}";
-      if (!rawText || rawText.startsWith("Request") || rawText.startsWith("Error")) {
-        throw new Error("AI service returned an error: " + String(rawText).slice(0, 100));
+      if (
+        !reviewData.content ||
+        String(reviewData.content).startsWith("Request") ||
+        String(reviewData.content).startsWith("Error")
+      ) {
+        throw new Error(
+          "AI service error: " + String(reviewData.content || reviewText).slice(0, 150)
+        );
       }
+      const rawText = reviewData.content;
       let parsed;
       try {
         const clean = rawText.replace(/```json|```/g, "").trim();
