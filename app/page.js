@@ -1,7 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import { supabase } from "../lib/supabase";
-
 /** Parse fetch Response body as JSON; on failure log snippet and return {} */
 async function safeParseFetchJson(res) {
   const text = await res.text();
@@ -4396,89 +4395,65 @@ RESPONSE RULES:
       if (!signedData.signedUrl) {
         throw new Error("Could not access document");
       }
+
       const pdfRes = await fetch(signedData.signedUrl);
       const pdfBlob = await pdfRes.blob();
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const r = String(reader.result || "");
-          const parts = r.split(",");
-          resolve(parts[1] || "");
-        };
-        reader.onerror = () => reject(new Error("Could not read PDF"));
-        reader.readAsDataURL(pdfBlob);
-      });
-      const base64SizeKB = Math.round((base64.length * 0.75) / 1024);
-      console.log("[ContractReview] PDF size:", base64SizeKB, "KB");
-      if (base64SizeKB > 35000) {
+      const sizeKB = Math.round(pdfBlob.size / 1024);
+      console.log("[ContractReview] PDF blob size:", sizeKB, "KB");
+      const maxBytes = 35 * 1024 * 1024;
+      if (pdfBlob.size > maxBytes) {
         setContractReviewError(
-          `This PDF is too large (${Math.round(base64SizeKB / 1024)}MB). ` +
+          `This PDF is too large (${Math.round(sizeKB / 1024)}MB). ` +
             `Please compress the PDF to under 35MB and try again. ` +
             `You can use a free tool like ilovepdf.com to compress it.`
         );
         setContractReviewLoading(false);
         return;
       }
-      const reviewRes = await fetch("/api/chat", {
+
+      const formData = new FormData();
+      formData.append("file", pdfBlob, documentFile.name);
+      formData.append(
+        "matterContext",
+        `Matter for client ${selMatterObj.client_name || selMatterObj.client} ` +
+          `at ${selMatterObj.address} in ${selMatterObj.state || "NSW"}`
+      );
+
+      const reviewRes = await fetch("/api/contract-review", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "document",
-                  source: {
-                    type: "base64",
-                    media_type: "application/pdf",
-                    data: base64,
-                  },
-                },
-                {
-                  type: "text",
-                  text: "You are an expert Australian conveyancer. Review this contract and return JSON.",
-                },
-              ],
-            },
-          ],
-          mattersContext: "Contract review",
-        }),
+        body: formData,
       });
 
       console.log("[ContractReview] Response status:", reviewRes.status);
-      console.log("[ContractReview] Response headers:", Object.fromEntries(reviewRes.headers.entries()));
 
       const reviewText = await reviewRes.text();
-      console.log("[ContractReview] Raw response (first 500 chars):", reviewText.slice(0, 500));
-      let reviewData;
-      try {
-        reviewData = JSON.parse(reviewText);
-      } catch (e) {
-        console.error("[ContractReview] Response parse failed:", reviewText.slice(0, 300));
-        throw new Error("Server returned an invalid response. Please try again.");
-      }
-      if (!reviewRes.ok || reviewData.error) {
-        throw new Error(reviewData.error || "AI review request failed");
-      }
-      if (
-        !reviewData.content ||
-        String(reviewData.content).startsWith("Request") ||
-        String(reviewData.content).startsWith("Error")
-      ) {
-        throw new Error(
-          "AI service error: " + String(reviewData.content || reviewText).slice(0, 150)
-        );
-      }
-      const rawText = reviewData.content;
+      console.log("[ContractReview] Response preview:", reviewText.slice(0, 200));
+
       let parsed;
       try {
-        const clean = rawText.replace(/```json|```/g, "").trim();
-        const jsonMatch = clean.match(/\{[\s\S]*\}/);
-        parsed = JSON.parse(jsonMatch?.[0] || "{}");
+        parsed = JSON.parse(reviewText);
       } catch (e) {
-        throw new Error("Could not parse review results");
+        throw new Error("Invalid response from server. Please try again.");
       }
+
+      if (parsed.error) {
+        console.error("[ContractReview] Server error:", parsed.error);
+        console.error("[ContractReview] Raw AI content:", parsed.rawContent);
+        const errStr =
+          typeof parsed.error === "string"
+            ? parsed.error
+            : JSON.stringify(parsed.error);
+        throw new Error(
+          errStr +
+            (parsed.rawContent
+              ? " | AI said: " + parsed.rawContent.slice(0, 200)
+              : "")
+        );
+      }
+      if (!reviewRes.ok) {
+        throw new Error("Contract review failed. Please try again.");
+      }
+
       setContractReviewResult(parsed);
       setContractReviewTab("summary");
       const { error: wfErr } = await supabase.from("matter_workflow").upsert(
