@@ -1,23 +1,59 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 120;
 
 export async function POST(request) {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const matterContext = formData.get("matterContext") || "";
+    const { storagePath, matterContext } = await request.json();
 
-    if (!file || typeof file === "string") {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!storagePath) {
+      return NextResponse.json({ error: "No storage path provided" }, { status: 400 });
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    console.log("[ContractReview API] Storage path:", storagePath);
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[ContractReview API] Missing Supabase URL or key");
+      return NextResponse.json(
+        { error: "Server is not configured for storage" },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { data: signedData, error: signedError } = await supabase.storage
+      .from("matter-documents")
+      .createSignedUrl(storagePath, 60);
+
+    if (signedError || !signedData?.signedUrl) {
+      console.error("[ContractReview API] Signed URL error:", signedError);
+      return NextResponse.json(
+        { error: "Could not access document in storage" },
+        { status: 500 }
+      );
+    }
+
+    console.log("[ContractReview API] Fetching PDF from storage...");
+
+    const pdfRes = await fetch(signedData.signedUrl);
+    if (!pdfRes.ok) {
+      return NextResponse.json(
+        { error: "Could not download PDF from storage" },
+        { status: 500 }
+      );
+    }
+
+    const pdfBuffer = await pdfRes.arrayBuffer();
+    const base64 = Buffer.from(pdfBuffer).toString("base64");
 
     console.log(
-      "[ContractReview API] File size:",
+      "[ContractReview API] PDF size:",
       Math.round((base64.length * 0.75) / 1024),
       "KB"
     );
@@ -56,7 +92,7 @@ export async function POST(request) {
             {
               type: "text",
               text: `You are an expert Australian conveyancer reviewing a property contract.
-${matterContext}
+${matterContext || ""}
 
 Review this contract thoroughly across all 11 critical areas and return a 
 complete analysis as JSON.
@@ -165,29 +201,22 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
     });
 
     const content = response.content?.[0]?.text || "{}";
+    console.log("[ContractReview API] Response length:", content.length);
 
     let parsed;
     try {
       const clean = content.replace(/```json|```/g, "").trim();
-
-      // First try normal parse
       const jsonMatch = clean.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No JSON found");
+      if (!jsonMatch) throw new Error("No JSON in response");
 
       try {
         parsed = JSON.parse(jsonMatch[0]);
       } catch (truncateErr) {
-        // JSON was truncated — attempt to repair it
-        console.log("[ContractReview API] JSON truncated, attempting repair...");
-
         let truncated = jsonMatch[0];
-
-        // Count open braces/brackets to find how many we need to close
         let braces = 0;
         let brackets = 0;
         let inString = false;
         let escape = false;
-
         for (const ch of truncated) {
           if (escape) {
             escape = false;
@@ -207,40 +236,29 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
           if (ch === "[") brackets++;
           if (ch === "]") brackets--;
         }
-
-        // If we are inside a string value, close it first
         if (inString) truncated += '"';
-        // Close any open arrays
         while (brackets > 0) {
           truncated += "]";
           brackets--;
         }
-        // Close any open objects
         while (braces > 0) {
           truncated += "}";
           braces--;
         }
-
-        console.log("[ContractReview API] Repaired JSON, attempting parse...");
         parsed = JSON.parse(truncated);
-        console.log("[ContractReview API] Repair successful!");
       }
     } catch (e) {
-      console.error("[ContractReview API] JSON parse failed:", e.message);
-      console.error("[ContractReview API] Content length:", content.length);
-      console.error("[ContractReview API] Content preview:", content.slice(0, 500));
+      console.error("[ContractReview API] Parse error:", e.message);
+      console.error("[ContractReview API] Content preview:", content.slice(0, 300));
       return NextResponse.json(
-        {
-          error: "Failed to parse AI response: " + e.message,
-          rawContent: content.slice(0, 500),
-        },
+        { error: "Failed to parse AI response: " + e.message },
         { status: 500 }
       );
     }
 
     return NextResponse.json(parsed);
   } catch (err) {
-    console.error("[ContractReview API] Error:", err?.message || err);
+    console.error("[ContractReview API] Unhandled error:", err?.message || err);
     return NextResponse.json(
       { error: err?.message || "Contract review failed" },
       { status: 500 }

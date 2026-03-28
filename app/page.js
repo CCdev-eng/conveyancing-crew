@@ -4399,45 +4399,18 @@ RESPONSE RULES:
     setContractReviewError("");
     try {
       const matterRef = selMatterObj.matter_ref || selMatterObj.id;
-      const signedRes = await fetch("/api/storage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bucket: "matter-documents",
-          path: `${matterRef}/${documentFile.name.trim()}`,
-        }),
-      });
-      const signedData = await safeParseFetchJson(signedRes);
-      if (!signedData.signedUrl) {
-        throw new Error("Could not access document");
-      }
+      // Only the storage path is sent — server loads the PDF from Supabase (avoids Vercel ~4.5MB body limit)
+      const storagePath = `${matterRef}/${documentFile.name.trim()}`;
 
-      const pdfRes = await fetch(signedData.signedUrl);
-      const pdfBlob = await pdfRes.blob();
-      const sizeKB = Math.round(pdfBlob.size / 1024);
-      console.log("[ContractReview] PDF blob size:", sizeKB, "KB");
-      const maxBytes = 35 * 1024 * 1024;
-      if (pdfBlob.size > maxBytes) {
-        setContractReviewError(
-          `This PDF is too large (${Math.round(sizeKB / 1024)}MB). ` +
-            `Please compress the PDF to under 35MB and try again. ` +
-            `You can use a free tool like ilovepdf.com to compress it.`
-        );
-        setContractReviewLoading(false);
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append("file", pdfBlob, documentFile.name);
-      formData.append(
-        "matterContext",
-        `Matter for client ${selMatterObj.client_name || selMatterObj.client} ` +
-          `at ${selMatterObj.address} in ${selMatterObj.state || "NSW"}`
-      );
+      console.log("[ContractReview] Sending storage path to server:", storagePath);
 
       const reviewRes = await fetch("/api/contract-review", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storagePath,
+          matterContext: `Matter for client ${selMatterObj.client_name || selMatterObj.client} at ${selMatterObj.address} in ${selMatterObj.state || "NSW"}`,
+        }),
       });
 
       console.log("[ContractReview] Response status:", reviewRes.status);
@@ -4453,21 +4426,9 @@ RESPONSE RULES:
       }
 
       if (parsed.error) {
-        console.error("[ContractReview] Server error:", parsed.error);
-        console.error("[ContractReview] Raw AI content:", parsed.rawContent);
-        const errStr =
-          typeof parsed.error === "string"
-            ? parsed.error
-            : JSON.stringify(parsed.error);
         throw new Error(
-          errStr +
-            (parsed.rawContent
-              ? " | AI said: " + parsed.rawContent.slice(0, 200)
-              : "")
+          typeof parsed.error === "string" ? parsed.error : JSON.stringify(parsed.error)
         );
-      }
-      if (!reviewRes.ok) {
-        throw new Error("Contract review failed. Please try again.");
       }
 
       setContractReviewResult(parsed);
