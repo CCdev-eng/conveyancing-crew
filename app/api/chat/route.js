@@ -6,7 +6,7 @@ const client = new Anthropic({
 
 export async function POST(request) {
   try {
-    const { messages, mattersContext, systemOverride } = await request.json();
+    const { messages, mattersContext, systemOverride, maxTokens } = await request.json();
 
     const defaultSystem = `You are an AI assistant for Conveyancing Crew, 
 an Australian conveyancing practice operating in NSW and VIC. 
@@ -31,15 +31,23 @@ CRITICAL RESPONSE FORMAT RULES - always follow these without exception:
 
     const systemPrompt = systemOverride ?? defaultSystem;
 
+    const parsedMax = Number.parseInt(String(maxTokens ?? ""), 10);
+    const max_tokens = Number.isFinite(parsedMax)
+      ? Math.min(Math.max(parsedMax, 1), 8192)
+      : 600;
+
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 600,
+      max_tokens,
       system: systemPrompt,
       messages: messages,
     });
 
-    const textBlock = response.content?.[0];
-    const content = textBlock?.type === "text" ? textBlock.text : (textBlock?.text ?? "");
+    const content =
+      (response.content || [])
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n") || "";
     return Response.json({ content: content || "" });
 
   } catch (error) {

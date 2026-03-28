@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import { supabase } from "../lib/supabase";
 
 // ─── DATA ──────────────────────────────────────────────────────────────────────
@@ -685,6 +685,14 @@ const WORKFLOWS = {
 const STAGE_COLORS = { "Intake":"#94a3b8","Contract Review":"#ca8a04","Contract Sent":"#1d4ed8","Searches Ordered":"#9333ea","PEXA Ready":"#0f766e","Settled":"#16a34a" };
 const CHANNEL_ICONS = { email:"✉️", whatsapp:"💬", sms:"📱" };
 const INTAKE_STEPS = ["Source","AI Extract","Review","Confirm"];
+const INTAKE_TYPE_CARDS = [
+  { id: "Purchase", icon: "🏠", title: "Purchase", desc: "Residential or commercial purchase — full guided workflow", soon: false },
+  { id: "Sale", icon: "📤", title: "Sale", desc: "Acting for vendor / seller", soon: true },
+  { id: "Lease", icon: "📋", title: "Lease", desc: "Lease preparation or review", soon: true },
+  { id: "Contract Review", icon: "📑", title: "Contract Review", desc: "Standalone contract advice", soon: true },
+  { id: "General Enquiry", icon: "💬", title: "General Enquiry", desc: "Initial questions before opening a file", soon: true },
+  { id: "Other", icon: "✳️", title: "Other", desc: "Anything that does not fit above", soon: true },
+];
 const SOURCES = [
   {id:"email",icon:"📧",label:"Email",desc:"Paste or import"},
   {id:"whatsapp",icon:"💬",label:"WhatsApp",desc:"Message thread"},
@@ -694,6 +702,725 @@ const SOURCES = [
   {id:"manual",icon:"✏️",label:"Manual",desc:"Enter by hand"},
 ];
 const fmt = d => d ? new Date(d).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"}) : "—";
+
+function formatDigitsWithCommas(rawDigits) {
+  const d = String(rawDigits || "").replace(/[^0-9]/g, "");
+  if (!d) return "";
+  return d.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function parseIntakeAutofillJson(text) {
+  if (!text || typeof text !== "string") return null;
+  let t = text.trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  try {
+    return JSON.parse(t);
+  } catch {
+    return null;
+  }
+}
+
+const INTAKE_REFERRAL_OPTIONS = [
+  { id: "New Client", icon: "👤" },
+  { id: "Repeat Client", icon: "🔄" },
+  { id: "Client Referral", icon: "🤝" },
+  { id: "Real Estate Agent", icon: "🏠" },
+  { id: "Broker", icon: "💼" },
+  { id: "Accountant", icon: "📊" },
+];
+const INTAKE_REFERRAL_NEEDS_REFEREE = new Set(["Real Estate Agent", "Broker", "Accountant"]);
+
+function mapMatterFromRow(row) {
+  return {
+    id: row.matter_ref,
+    matter_ref: row.matter_ref,
+    client: row.client_name,
+    client_name: row.client_name,
+    email: row.client_email,
+    phone: row.client_phone,
+    type: row.type,
+    address: row.address,
+    state: row.state,
+    opened: row.opened_date,
+    stage: row.stage,
+    status: row.status,
+    urgency: row.urgency,
+    staff: row.staff,
+    notes: row.notes,
+    settlement: row.settlement_date,
+    settlement_date: row.settlement_date,
+    price: row.price ?? row.property_value ?? "",
+    specialConditions: row.special_conditions ?? row.specialConditions ?? "",
+    deposit: row.deposit,
+    depositPaid: row.deposit_paid,
+    lender: row.lender,
+    agent: row.agent,
+    agentPhone: row.agent_phone,
+    searches: row.searches,
+    pexa: row.pexa ? { workspaceId: row.pexa.workspaceId } : undefined,
+  };
+}
+
+function parseMatterNotesObject(notesStr) {
+  if (!notesStr || typeof notesStr !== "string" || !notesStr.trim().startsWith("{")) return {};
+  try {
+    const p = JSON.parse(notesStr);
+    return p && typeof p === "object" && !Array.isArray(p) ? p : {};
+  } catch {
+    return {};
+  }
+}
+
+function getPurchaseWorkflowState(notesStr) {
+  const o = parseMatterNotesObject(notesStr);
+  const pwf = o._purchaseWorkflow;
+  if (pwf && typeof pwf === "object") {
+    return {
+      done: Array.isArray(pwf.done) ? pwf.done : [],
+      stepData: typeof pwf.stepData === "object" && pwf.stepData ? pwf.stepData : {},
+      flags: {
+        depositPct: pwf.flags?.depositPct ?? 10,
+        strata: Boolean(pwf.flags?.strata),
+        tenanted: Boolean(pwf.flags?.tenanted),
+        gst: Boolean(pwf.flags?.gst),
+      },
+    };
+  }
+  return { done: [], stepData: {}, flags: { depositPct: 10, strata: false, tenanted: false, gst: false } };
+}
+
+function mergeNotesWithPurchaseWorkflow(notesStr, pwf) {
+  const o = parseMatterNotesObject(notesStr);
+  o._purchaseWorkflow = pwf;
+  return JSON.stringify(o);
+}
+
+const PW_STEPS = [
+  { n: 1, title: "Initial enquiry & engagement", tier: "Core", desc: "Confirm retainer, ID requirements, and client expectations.", mono: "SLA: respond within 1 business day", milestone: false },
+  { n: 2, title: "Cost agreement & disclosure", tier: "Core", desc: "Issue costs agreement and obtain signed acceptance.", mono: "Fee estimate · scope · disbursements", milestone: false },
+  { n: 3, title: "Contract of sale received", tier: "Core", desc: "Receive contract from agent or vendor solicitor and check parties.", mono: "Conflict check · verify address", milestone: false },
+  { n: 4, title: "Contract review & client advice", tier: "Core", desc: "Review Particulars, conditions, easements, and advise in plain English.", mono: "Risk flags · special conditions", milestone: false },
+  { n: 5, title: "Order core searches", tier: "Core", desc: "Title, council/water, strata (if applicable), and plan checks.", mono: "InfoTrack / manual as required", milestone: false },
+  { n: 6, title: "Exchange readiness — finance", tier: "Core", desc: "Confirm loan approval path, guarantors, and any finance conditions.", mono: "Lender · broker · unconditional path", milestone: true },
+  { n: 7, title: "Exchange readiness — due diligence", tier: "Core", desc: "Building & pest, inspections, and any pre-exchange certificates.", mono: "Reports · requisitions · cooling-off", milestone: true },
+  { n: 8, title: "Exchange of contracts", tier: "Standard", desc: "Secure exchange — digital or physical — and dated contract copies.", mono: "Stakeholders notified", milestone: false },
+  { n: 9, title: "Deposit & stakeholder notices", tier: "Standard", desc: "Confirm deposit paid/receipted and notify agent and lender.", mono: "Trust / stakeholder instructions", milestone: false },
+  { n: 10, title: "PEXA workspace & parties", tier: "Standard", desc: "Create or join workspace, invite parties, verify roles.", mono: "Workspace ID in matter header", milestone: false },
+  { n: 11, title: "Transfer & duty", tier: "Standard", desc: "Prepare transfer, duty assessment, and OSR requirements.", mono: "NSW OSR / VIC SRO as applicable", milestone: false },
+  { n: 12, title: "Certificates & adjustments", tier: "Standard", desc: "Rates, water, strata levies, and other settlement adjustments.", mono: "Figures agreed with counterpart", milestone: false },
+  { n: 13, title: "Statement of adjustments", tier: "Standard", desc: "Finalise settlement figures and client confirmation.", mono: "Balanced · GST consideration", milestone: false },
+  { n: 14, title: "Pre-settlement checklist", tier: "Standard", desc: "Final ID, funds, discharge, and booking confirmation.", mono: "All parties ready to settle", milestone: false },
+  { n: 15, title: "Settlement (PEXA)", tier: "Standard", desc: "Attend settlement, confirm registration, and disburse.", mono: "Lodgment verification", milestone: true },
+  { n: 16, title: "Post-settlement notifications", tier: "Post", desc: "Notify client, agent, and lender; confirm keys/release.", mono: "File evidence of completion", milestone: false },
+  { n: 17, title: "Trust & disbursements", tier: "Post", desc: "Reconcile trust, pay stakeholders, and archive receipts.", mono: "Ledger balanced", milestone: false },
+  { n: 18, title: "File & archive", tier: "Post", desc: "Collate documents, close searches, and archive per policy.", mono: "Retention schedule", milestone: false },
+  { n: 19, title: "Invoice & final letter", tier: "Post", desc: "Issue final invoice and closing letter to client.", mono: "Xero / practice policy", milestone: false },
+  { n: 20, title: "Matter closed", tier: "Post", desc: "Mark matter complete and hand off to accounts if needed.", mono: "Closed · QA spot-check", milestone: false },
+];
+
+const PW_PHASES = [
+  { id: 1, name: "Pipeline", sub: "Pre-Exchange · steps 01–07", range: [1, 7] },
+  { id: 2, name: "Confirmed", sub: "steps 08–14", range: [8, 14] },
+  { id: 3, name: "Settlement", sub: "step 15", range: [15, 15] },
+  { id: 4, name: "Post-Settlement", sub: "steps 16–20", range: [16, 20] },
+];
+
+function tierBadgeStyle(tier) {
+  if (tier === "Core") return { background: "rgba(36,94,176,0.12)", color: "var(--blue)", border: "1px solid rgba(36,94,176,0.25)" };
+  if (tier === "Standard") return { background: "var(--surface)", color: "var(--text-2)", border: "1px solid var(--border)" };
+  return { background: "rgba(22,163,74,0.1)", color: "var(--green)", border: "1px solid rgba(22,163,74,0.25)" };
+}
+
+function MatterWorkflowFlags({ matter }) {
+  const pwf = getPurchaseWorkflowState(matter?.notes);
+  const f = pwf.flags || {};
+  return (
+    <div className="card">
+      <div className="card-hdr"><div className="card-title">Matter flags</div></div>
+      <div style={{ padding: "10px 16px 14px", fontSize: 11, color: "var(--text-2)", display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <span className="tag tag-gray">Deposit {f.depositPct ?? 10}%</span>
+        {f.strata && <span className="tag tag-blue">Strata</span>}
+        {f.tenanted && <span className="tag tag-amber">Tenanted</span>}
+        {f.gst && <span className="tag tag-purple">GST</span>}
+        {!f.strata && !f.tenanted && !f.gst && <span style={{ color: "var(--text-3)" }}>No special flags set — edit in Workflow tab</span>}
+      </div>
+    </div>
+  );
+}
+
+function PurchaseWorkflow({ matter, supabase, isMobile, onMatterNotesSaved, referralForMatter }) {
+  const matterId = matter.matter_ref || matter.id;
+  const phaseAnchorRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
+
+  const [pwf, setPwf] = useState(() => getPurchaseWorkflowState(matter?.notes));
+  const [expanded, setExpanded] = useState(null);
+  const [activePhaseIdx, setActivePhaseIdx] = useState(0);
+  const [maxIdOpen, setMaxIdOpen] = useState(false);
+  const [gstOpen, setGstOpen] = useState(false);
+  const [maxIdDraft, setMaxIdDraft] = useState("");
+  const [gstDraft, setGstDraft] = useState("");
+
+  useEffect(() => {
+    const s = getPurchaseWorkflowState(matter?.notes);
+    setPwf(s);
+    const firstOpen = PW_STEPS.find((st) => !s.done.includes(st.n))?.n ?? 20;
+    setExpanded(firstOpen);
+    const ph = PW_PHASES.findIndex((p) => firstOpen >= p.range[0] && firstOpen <= p.range[1]);
+    setActivePhaseIdx(ph >= 0 ? ph : 0);
+  }, [matter?.notes, matterId]);
+
+  const persist = async (nextPwf) => {
+    setPwf(nextPwf);
+    const merged = mergeNotesWithPurchaseWorkflow(matter?.notes || "{}", nextPwf);
+    await supabase.from("matters").update({ notes: merged }).eq("matter_ref", matterId);
+    onMatterNotesSaved?.(matterId, merged);
+  };
+
+  const doneSet = new Set(pwf.done);
+  const totalSteps = PW_STEPS.length;
+  const doneCount = pwf.done.length;
+  const pct = Math.round((doneCount / totalSteps) * 100);
+
+  const phaseDotStatus = (phaseIdx) => {
+    const [a, b] = PW_PHASES[phaseIdx].range;
+    const stepsIn = PW_STEPS.filter((s) => s.n >= a && s.n <= b);
+    const doneIn = stepsIn.filter((s) => doneSet.has(s.n)).length;
+    if (doneIn === stepsIn.length) return "done";
+    if (phaseIdx === activePhaseIdx) return "active";
+    const anyBefore = PW_STEPS.some((s) => s.n < a && !doneSet.has(s.n));
+    return anyBefore ? "todo" : "active";
+  };
+
+  const phasePct = (phaseIdx) => {
+    const [a, b] = PW_PHASES[phaseIdx].range;
+    const stepsIn = PW_STEPS.filter((s) => s.n >= a && s.n <= b);
+    const doneIn = stepsIn.filter((s) => doneSet.has(s.n)).length;
+    return stepsIn.length ? Math.round((doneIn / stepsIn.length) * 100) : 0;
+  };
+
+  const scrollToPhase = (idx) => {
+    setActivePhaseIdx(idx);
+    phaseAnchorRefs[idx].current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const toggleExpanded = (n) => {
+    setExpanded((prev) => (prev === n ? null : n));
+  };
+
+  const markStepDone = (n) => {
+    const done = [...new Set([...pwf.done, n])].sort((x, y) => x - y);
+    const nextIncomplete = PW_STEPS.find((st) => !done.includes(st.n));
+    setExpanded(nextIncomplete ? nextIncomplete.n : null);
+    persist({ ...pwf, done });
+  };
+
+  const updateFlag = (key, val) => {
+    persist({ ...pwf, flags: { ...pwf.flags, [key]: val } });
+  };
+
+  const nextIncomplete = PW_STEPS.find((st) => !doneSet.has(st.n))?.n ?? null;
+
+  const primaryAction = (step) => {
+    if (step.n === 10) {
+      window.open(matter.pexa?.workspaceId ? `https://www.pexa.com.au/workspaces/${matter.pexa.workspaceId}` : "https://www.pexa.com.au", "_blank");
+      return;
+    }
+    if (step.n === 6) {
+      setMaxIdDraft(pwf.stepData?.maxId || "");
+      setMaxIdOpen(true);
+      return;
+    }
+    if (step.n === 11) {
+      setGstDraft(pwf.stepData?.gstNote || "");
+      setGstOpen(true);
+      return;
+    }
+    markStepDone(step.n);
+  };
+
+  const saveMaxId = () => {
+    persist({ ...pwf, stepData: { ...pwf.stepData, maxId: maxIdDraft } });
+    setMaxIdOpen(false);
+  };
+
+  const saveGst = () => {
+    persist({ ...pwf, stepData: { ...pwf.stepData, gstNote: gstDraft } });
+    setGstOpen(false);
+  };
+
+  const phaseCircleColor = (phaseIdx) => {
+    const st = phaseDotStatus(phaseIdx);
+    if (st === "done") return "var(--green)";
+    if (st === "active") return "var(--blue)";
+    return "#94a3b8";
+  };
+
+  return (
+    <>
+      <div
+        style={{
+          width: "100%",
+          padding: isMobile ? "0 0 8px" : "0 0 4px",
+        }}
+      >
+        <div style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Purchase Workflow</div>
+        <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginBottom: 16 }}>{matter.id} · {matter.client}</div>
+
+        {/* Horizontal phase progress */}
+        <div style={{ position: "relative", width: "100%", marginBottom: 20, paddingTop: 4 }}>
+          <div
+            style={{
+              position: "absolute",
+              left: "12%",
+              right: "12%",
+              top: 21,
+              height: 2,
+              background: "var(--border)",
+              zIndex: 0,
+              pointerEvents: "none",
+            }}
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              width: "100%",
+              gap: 8,
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            {PW_PHASES.map((ph) => {
+              const idx = ph.id - 1;
+              const active = activePhaseIdx === idx;
+              return (
+                <Fragment key={ph.id}>
+                  <button
+                    type="button"
+                    onClick={() => scrollToPhase(idx)}
+                    style={{
+                      flex: "1 1 0",
+                      minWidth: 0,
+                      maxWidth: "25%",
+                      textAlign: "center",
+                      padding: "0 4px 8px",
+                      border: "none",
+                      background: active ? "var(--blue-light)" : "transparent",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      fontFamily: "var(--font-body)",
+                      transition: "background 0.15s",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        margin: "0 auto 8px",
+                        background: phaseCircleColor(idx),
+                        color: "#fff",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        fontFamily: "var(--font-mono)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        boxShadow: active ? "0 0 0 2px rgba(36,94,176,0.35)" : "none",
+                      }}
+                    >
+                      {ph.id}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", lineHeight: 1.25, marginBottom: 4 }}>
+                      Phase {ph.id} · {ph.name}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>{phasePct(idx)}% complete</div>
+                  </button>
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+
+        {(() => {
+          const [pa, pb] = PW_PHASES[activePhaseIdx].range;
+          const stepsInActivePhase = PW_STEPS.filter((s) => s.n >= pa && s.n <= pb);
+          const phaseStepNums = stepsInActivePhase.map((s) => s.n);
+          const doneInPhase = phaseStepNums.filter((n) => doneSet.has(n)).length;
+          const totalInPhase = phaseStepNums.length;
+          const allInPhaseDone = totalInPhase > 0 && doneInPhase === totalInPhase;
+          const toggleSelectAllPhase = (e) => {
+            const checked = e.target.checked;
+            let nextDone = [...pwf.done];
+            if (checked) {
+              phaseStepNums.forEach((n) => {
+                if (!nextDone.includes(n)) nextDone.push(n);
+              });
+            } else {
+              nextDone = nextDone.filter((n) => !phaseStepNums.includes(n));
+            }
+            nextDone.sort((x, y) => x - y);
+            persist({ ...pwf, done: nextDone });
+          };
+          const completePhase = () => {
+            const ph = PW_PHASES[activePhaseIdx];
+            if (!window.confirm(`Mark all Phase ${ph.id} (${ph.name}) steps as complete?`)) return;
+            const nextDone = [...new Set([...pwf.done, ...phaseStepNums])].sort((x, y) => x - y);
+            persist({ ...pwf, done: nextDone });
+          };
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px 16px",
+                marginBottom: 14,
+                padding: "8px 12px",
+                background: "rgba(148, 163, 184, 0.12)",
+                borderRadius: 8,
+                border: "1px solid var(--border-2)",
+              }}
+            >
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "var(--text-2)" }}>
+                <input type="checkbox" checked={allInPhaseDone} onChange={toggleSelectAllPhase} style={{ width: 14, height: 14 }} />
+                Select All Steps
+              </label>
+              <button
+                type="button"
+                onClick={completePhase}
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--white)",
+                  color: "var(--text-2)",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                Complete Phase
+              </button>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
+                {doneInPhase} of {totalInPhase} steps done
+              </span>
+            </div>
+          );
+        })()}
+
+        {/* Overall progress — thin bar */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: "var(--text-2)", marginBottom: 6 }}>
+            {doneCount} of {totalSteps} steps complete
+          </div>
+          <div style={{ height: 4, borderRadius: 99, background: "var(--border-2)", overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, var(--blue), var(--green))", transition: "width 0.3s" }} />
+          </div>
+        </div>
+
+        {/* Matter settings — compact row */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "10px 18px",
+            marginBottom: 20,
+            padding: "10px 14px",
+            background: "var(--surface)",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+          }}
+        >
+          <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.5px", marginRight: 4 }}>Matter settings</span>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-2)" }}>
+            <span>Deposit %</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={pwf.flags.depositPct}
+              onChange={(e) => updateFlag("depositPct", Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)))}
+              style={{ width: 48, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--white)", fontSize: 11 }}
+            />
+          </label>
+          {["strata", "tenanted", "gst"].map((k) => (
+            <label key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "var(--text-2)" }}>
+              <input type="checkbox" checked={!!pwf.flags[k]} onChange={(e) => updateFlag(k, e.target.checked)} style={{ width: 15, height: 15 }} />
+              <span style={{ textTransform: "capitalize" }}>{k === "gst" ? "GST" : k}</span>
+            </label>
+          ))}
+        </div>
+
+        {/* Step list — flows with page scroll */}
+        <div style={{ padding: "8px 0 8px" }}>
+          {PW_STEPS.map((step) => {
+            const isDone = doneSet.has(step.n);
+            const isOpen = expanded === step.n;
+            const isNext = nextIncomplete === step.n;
+            const highlight = isOpen || (isNext && !isDone);
+            const milestone = step.milestone;
+            const showPhaseHeader =
+              step.n === 1 || step.n === 8 || step.n === 15 || step.n === 16;
+            const phaseLabel =
+              step.n === 1
+                ? "── Phase 1 · Pipeline · Pre-Exchange ──"
+                : step.n === 8
+                  ? "── Phase 2 · Confirmed ──"
+                  : step.n === 15
+                    ? "── Phase 3 · Settlement ──"
+                    : "── Phase 4 · Post-Settlement ──";
+
+            const cardInner = (
+              <>
+                {showPhaseHeader && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontFamily: "var(--font-mono)",
+                      color: "var(--text-3)",
+                      textAlign: "center",
+                      margin: step.n === 1 ? "0 0 16px" : "24px 0 16px",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    {phaseLabel}
+                  </div>
+                )}
+
+                <div
+                  ref={step.n === 1 ? phaseAnchorRefs[0] : step.n === 8 ? phaseAnchorRefs[1] : step.n === 15 ? phaseAnchorRefs[2] : step.n === 16 ? phaseAnchorRefs[3] : undefined}
+                  style={{ marginBottom: step.n === 20 ? 8 : 10 }}
+                >
+                  <div
+                    onClick={() => toggleExpanded(step.n)}
+                    style={{
+                      minHeight: isDone && !isOpen ? 38 : 44,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "0 12px",
+                      borderRadius: 10,
+                      border: milestone ? "2px solid #ca8a04" : "1px solid var(--border)",
+                      background: highlight ? "var(--white)" : "var(--white)",
+                      boxShadow: highlight && isOpen ? "0 0 0 2px rgba(36,94,176,0.35)" : "var(--shadow-sm)",
+                      cursor: "pointer",
+                      transition: "box-shadow 0.15s",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isDone}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        if (e.target.checked) markStepDone(step.n);
+                        else persist({ ...pwf, done: pwf.done.filter((x) => x !== step.n) });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ width: 16, height: 16, flexShrink: 0 }}
+                    />
+                    {isDone && !isOpen ? (
+                      <>
+                        <span style={{ color: "var(--green)", fontSize: 12, flexShrink: 0 }}>✓</span>
+                        <span style={{ flex: 1, fontSize: 12, textDecoration: "line-through", color: "var(--text-3)" }}>
+                          {String(step.n).padStart(2, "0")} · {step.title}
+                        </span>
+                        {step.n === 16 &&
+                        referralForMatter &&
+                        Number(referralForMatter.referral_fee) > 0 &&
+                        !referralForMatter.fee_paid ? (
+                          <span
+                            className="tag tag-amber"
+                            style={{
+                              fontSize: 9,
+                              flexShrink: 0,
+                              maxWidth: 200,
+                              whiteSpace: "normal",
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            💰 ${Number(referralForMatter.referral_fee).toLocaleString()} ·{" "}
+                            {referralForMatter.referrers?.name || "referrer"}
+                          </span>
+                        ) : null}
+                        <span style={{ fontSize: 10, color: "var(--text-3)" }}>expand ▼</span>
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: "50%",
+                            background: isNext ? "var(--blue-light)" : "var(--surface)",
+                            border: `1px solid ${isNext ? "var(--blue)" : "var(--border)"}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 10,
+                            fontFamily: "var(--font-mono)",
+                            color: "var(--text)",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {String(step.n).padStart(2, "0")}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{step.title}</div>
+                        </div>
+                        {step.n === 16 &&
+                        referralForMatter &&
+                        Number(referralForMatter.referral_fee) > 0 &&
+                        !referralForMatter.fee_paid ? (
+                          <span
+                            className="tag tag-amber"
+                            style={{
+                              fontSize: 9,
+                              flexShrink: 0,
+                              maxWidth: 220,
+                              whiteSpace: "normal",
+                              lineHeight: 1.25,
+                              textAlign: "left",
+                            }}
+                            title="Referral fee tracked for this matter"
+                          >
+                            💰 Referral fee ${Number(referralForMatter.referral_fee).toLocaleString()} owed to{" "}
+                            {referralForMatter.referrers?.name || "referrer"}
+                          </span>
+                        ) : null}
+                        <span className="tag" style={{ ...tierBadgeStyle(step.tier), fontSize: 9, flexShrink: 0 }}>
+                          {step.tier}
+                        </span>
+                        <span style={{ fontSize: 10, color: "var(--text-3)" }}>▼</span>
+                      </>
+                    )}
+                  </div>
+
+                  {isOpen && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        padding: "12px 14px",
+                        borderRadius: 10,
+                        border: "1px solid var(--border)",
+                        background: "var(--white)",
+                      }}
+                    >
+                      <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.55, marginBottom: 10 }}>{step.desc}</div>
+                      <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginBottom: 12, lineHeight: 1.5 }}>{step.mono}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                        <button type="button" className="btn-primary" style={{ fontSize: 11 }} onClick={() => primaryAction(step)}>
+                          {step.n === 10 ? "Open PEXA" : step.n === 6 ? "Max ID…" : step.n === 11 ? "GST pre-fill…" : "Complete step"}
+                        </button>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 11 }} onClick={() => markStepDone(step.n)}>
+                          ✓ Mark Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {step.n === 6 && (
+                  <div
+                    style={{
+                      margin: "12px 0 14px",
+                      padding: "12px 14px",
+                      borderRadius: 10,
+                      border: "2px dashed rgba(36,94,176,0.45)",
+                      background: "rgba(36,94,176,0.06)",
+                      fontSize: 11,
+                      color: "var(--text-2)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, marginBottom: 4, color: "var(--blue)" }}>Concurrent track</div>
+                    Finance approval and Building & Pest / due diligence often run in parallel with exchange timing — keep both workstreams visible until unconditional.
+                  </div>
+                )}
+
+                {step.n === 7 && (
+                  <div
+                    style={{
+                      margin: "16px 0 20px",
+                      padding: "12px 16px",
+                      borderRadius: 10,
+                      background: "linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)",
+                      border: "1px solid #fde68a",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#92400e",
+                      textAlign: "center",
+                    }}
+                  >
+                    ⛳ Exchange — contracts become binding · confirm deposit and dates
+                  </div>
+                )}
+              </>
+            );
+
+            return <div key={step.n}>{cardInner}</div>;
+          })}
+        </div>
+      </div>
+
+      {maxIdOpen && (
+        <div className="modal-overlay" style={{ zIndex: 1200 }} onClick={() => setMaxIdOpen(false)}>
+          <div className="contact-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="contact-modal-hdr">
+              <div className="contact-modal-title" style={{ fontFamily: "var(--font-display)", fontSize: 16 }}>
+                Max ID reference
+              </div>
+              <button type="button" className="modal-close" onClick={() => setMaxIdOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: 16 }}>
+              <label className="intake-label">Reference / notes</label>
+              <input className="intake-input" value={maxIdDraft} onChange={(e) => setMaxIdDraft(e.target.value)} placeholder="Lender reference, file no…" style={{ width: "100%" }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+                <button type="button" className="btn-ghost" onClick={() => setMaxIdOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-gold" onClick={saveMaxId}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gstOpen && (
+        <div className="modal-overlay" style={{ zIndex: 1200 }} onClick={() => setGstOpen(false)}>
+          <div className="contact-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="contact-modal-hdr">
+              <div className="contact-modal-title" style={{ fontFamily: "var(--font-display)", fontSize: 16 }}>
+                GST pre-fill
+              </div>
+              <button type="button" className="modal-close" onClick={() => setGstOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: 16 }}>
+              <label className="intake-label">Duty / GST notes</label>
+              <textarea className="intake-textarea" value={gstDraft} onChange={(e) => setGstDraft(e.target.value)} placeholder="GST withholding, margin scheme, etc." style={{ minHeight: 100, width: "100%" }} />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+                <button type="button" className="btn-ghost" onClick={() => setGstOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn-gold" onClick={saveGst}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 const SEARCH_TYPES_BY_MATTER = {
   NSW_Purchase: [
@@ -763,6 +1490,8 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes riskPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.5)}50%{box-shadow:0 0 0 10px rgba(220,38,38,0)}}
+.contract-review-risk-critical{animation:riskPulse 2s ease infinite}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
 @keyframes toastFade{0%,70%{opacity:1}100%{opacity:0}}
 .fade-up{animation:fadeUp 0.35s ease both}
@@ -1047,7 +1776,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .stage-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 
 /* ── MATTER WORKSPACE ── */
-.workspace{display:flex;flex-direction:column;height:100%}
+.workspace{display:flex;flex-direction:column;height:100%;min-height:0;flex:1}
 .ws-header{background:var(--white);border-bottom:1px solid var(--border);padding:16px 24px;flex-shrink:0}
 .ws-matter-id{font-size:10px;font-family:var(--font-mono);color:var(--text-3);letter-spacing:1.5px;margin-bottom:4px}
 .ws-client{font-family:var(--font-display);font-size:20px;font-weight:500;color:var(--text);margin-bottom:3px;letter-spacing:-0.3px}
@@ -1056,7 +1785,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .ws-tab{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--text-3);font-family:var(--font-body);border-bottom:2px solid transparent;transition:all 0.15s;margin-right:2px}
 .ws-tab:hover{color:var(--text)}
 .ws-tab.active{color:var(--ink);font-weight:700;border-bottom-color:#245eb0}
-.ws-content{flex:1;overflow-y:auto;padding:20px 24px}
+.ws-content{flex:1;overflow-y:auto;min-height:0;padding:20px 24px;display:flex;flex-direction:column}
 
 /* Timeline */
 .timeline-item{display:flex;gap:14px;margin-bottom:0;position:relative}
@@ -1445,6 +2174,7 @@ export default function App() {
   const [tasks, setTasks] = useState([]);
   const [comms, setComms] = useState([]);
   const [referrers, setReferrers] = useState([]);
+  const [referralsList, setReferralsList] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [modal, setModal] = useState(null);
   const [intakeStep, setIntakeStep] = useState(0);
@@ -1454,6 +2184,12 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [contractReviewLoading, setContractReviewLoading] = useState(false);
+  const [contractReviewResult, setContractReviewResult] = useState(null);
+  const [contractReviewError, setContractReviewError] = useState("");
+  const [contractReviewTab, setContractReviewTab] = useState("summary");
+  const [contractReviewExpanded, setContractReviewExpanded] = useState({});
+  const [contractReviewLoadStage, setContractReviewLoadStage] = useState(0);
   const [matterSearches, setMatterSearches] = useState({});
   const [matterEmails, setMatterEmails] = useState([]);
   const [matterEmailsLoading, setMatterEmailsLoading] = useState(false);
@@ -1476,6 +2212,35 @@ export default function App() {
   const [intakeState, setIntakeState] = useState("NSW");
   const [intakeSuburb, setIntakeSuburb] = useState("");
   const [intakePostcode, setIntakePostcode] = useState("");
+  const [intakeMatterType, setIntakeMatterType] = useState("");
+  const [intakePurchasePrice, setIntakePurchasePrice] = useState("");
+  const [intakeSettlementDate, setIntakeSettlementDate] = useState("");
+  const [intakeReferralSource, setIntakeReferralSource] = useState("");
+  const [intakeReferrerId, setIntakeReferrerId] = useState(null);
+  const [intakeReferrerName, setIntakeReferrerName] = useState("");
+  const [intakeReferralFee, setIntakeReferralFee] = useState("");
+  const [intakeReferralFeeEnabled, setIntakeReferralFeeEnabled] = useState(false);
+  const [intakeReferrerSearch, setIntakeReferrerSearch] = useState("");
+  const [intakeNewReferrerForm, setIntakeNewReferrerForm] = useState({ name: "", phone: "", email: "", company: "" });
+  const [intakeShowNewReferrerForm, setIntakeShowNewReferrerForm] = useState(false);
+  const [intakeClientFirstName, setIntakeClientFirstName] = useState("");
+  const [intakeClientLastName, setIntakeClientLastName] = useState("");
+  const [intakeClientEmail, setIntakeClientEmail] = useState("");
+  const [intakeClientPhone, setIntakeClientPhone] = useState("");
+  const [intakeHasCoPurchaser, setIntakeHasCoPurchaser] = useState(false);
+  const [intakeCoPurchaserFirstName, setIntakeCoPurchaserFirstName] = useState("");
+  const [intakeCoPurchaserLastName, setIntakeCoPurchaserLastName] = useState("");
+  const [intakeEntityType, setIntakeEntityType] = useState("individual");
+  const [intakeEntityName, setIntakeEntityName] = useState("");
+  const [intakeEntityABN, setIntakeEntityABN] = useState("");
+  const [intakeAutoFillLoading, setIntakeAutoFillLoading] = useState(false);
+  const [intakeAutoFillStatus, setIntakeAutoFillStatus] = useState("");
+  const [intakeAutoFillResult, setIntakeAutoFillResult] = useState(null);
+  const [intakeAutoFillError, setIntakeAutoFillError] = useState("");
+  const [intakeAutoFillSubjectsExpanded, setIntakeAutoFillSubjectsExpanded] = useState(false);
+  /** Which client/entity fields were last populated by email auto-fill (for ✦ badges); cleared when user edits. */
+  const [intakeAutoFilledFields, setIntakeAutoFilledFields] = useState({});
+  const [intakeCreating, setIntakeCreating] = useState(false);
   const addressInputRef = useRef(null);
   const autocompleteAttachedRef = useRef(false);
   const [aiMessages, setAiMessages] = useState([
@@ -1792,6 +2557,7 @@ Maximum 300 words.`,
       console.log("Xero connection failed");
       window.history.replaceState({}, "", window.location.pathname);
     }
+    fetchXeroData();
   }, [fetchXeroData]);
 
   useEffect(() => {
@@ -1942,26 +2708,7 @@ Maximum 300 words.`,
       } else {
         console.log("Raw data from Supabase:", data);
         const rows = data || [];
-        const mapped = rows.map((row) => ({
-          id: row.matter_ref,
-          matter_ref: row.matter_ref,
-          client: row.client_name,
-          client_name: row.client_name,
-          email: row.client_email,
-          phone: row.client_phone,
-          type: row.type,
-          address: row.address,
-          state: row.state,
-          opened: row.opened_date,
-          stage: row.stage,
-          status: row.status,
-          urgency: row.urgency,
-          staff: row.staff,
-          notes: row.notes,
-          settlement: row.settlement_date,
-          settlement_date: row.settlement_date,
-          pexa: row.pexa ? { workspaceId: row.pexa.workspaceId } : undefined,
-        }));
+        const mapped = rows.map(mapMatterFromRow);
         console.log("Final MATTERS state after setting:", mapped);
         setMATTERS(mapped);
       }
@@ -1970,7 +2717,6 @@ Maximum 300 words.`,
     };
 
     fetchMatters();
-    fetchXeroData();
   }, []);
 
   useEffect(() => {
@@ -2053,7 +2799,20 @@ Maximum 300 words.`,
       }
       setReferrers(data || []);
     };
+    const fetchReferralsList = async () => {
+      const { data, error } = await supabase
+        .from("referrals")
+        .select("*, referrers(name, type, company)")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("[referrals]", error);
+        setReferralsList([]);
+        return;
+      }
+      setReferralsList(data || []);
+    };
     fetchReferrers();
+    fetchReferralsList();
   }, []);
 
   const contactForAI = viewingContact || selectedContact;
@@ -3273,6 +4032,246 @@ RESPONSE RULES:
     setTimeout(() => { setIntakeExtracting(false); setIntakeStep(2); }, 1600);
   };
 
+  const openNewMatterModal = () => {
+    setIntakeStep(0);
+    setIntakeSource(null);
+    setIntakeText("");
+    setIntakeAddress("");
+    setIntakeState("NSW");
+    setIntakeSuburb("");
+    setIntakePostcode("");
+    setIntakeExtracting(false);
+    setIntakeReferrerId(null);
+    setIntakeReferrerName("");
+    setIntakeReferralFee("");
+    setIntakeReferralFeeEnabled(false);
+    setIntakeReferrerSearch("");
+    setIntakeShowNewReferrerForm(false);
+    setIntakeNewReferrerForm({ name: "", phone: "", email: "", company: "" });
+    setIntakeClientFirstName("");
+    setIntakeClientLastName("");
+    setIntakeClientEmail("");
+    setIntakeClientPhone("");
+    setIntakeHasCoPurchaser(false);
+    setIntakeCoPurchaserFirstName("");
+    setIntakeCoPurchaserLastName("");
+    setIntakePurchasePrice("");
+    setIntakeSettlementDate("");
+    setIntakeReferralSource("");
+    setIntakeMatterType("");
+    setIntakeEntityType("individual");
+    setIntakeEntityName("");
+    setIntakeEntityABN("");
+    setIntakeAutoFillLoading(false);
+    setIntakeAutoFillStatus("");
+    setIntakeAutoFillResult(null);
+    setIntakeAutoFillError("");
+    setIntakeAutoFillSubjectsExpanded(false);
+    setIntakeAutoFilledFields({});
+    setModal("intake");
+  };
+
+  const resetIntakeModal = () => {
+    setIntakeStep(0);
+    setIntakeSource(null);
+    setIntakeText("");
+    setIntakeMatterType("");
+    setIntakePurchasePrice("");
+    setIntakeSettlementDate("");
+    setIntakeReferralSource("");
+    setIntakeReferrerId(null);
+    setIntakeReferrerName("");
+    setIntakeReferralFee("");
+    setIntakeReferralFeeEnabled(false);
+    setIntakeReferrerSearch("");
+    setIntakeNewReferrerForm({ name: "", phone: "", email: "", company: "" });
+    setIntakeShowNewReferrerForm(false);
+    setIntakeClientFirstName("");
+    setIntakeClientLastName("");
+    setIntakeClientEmail("");
+    setIntakeClientPhone("");
+    setIntakeHasCoPurchaser(false);
+    setIntakeCoPurchaserFirstName("");
+    setIntakeCoPurchaserLastName("");
+    setIntakeEntityType("individual");
+    setIntakeEntityName("");
+    setIntakeEntityABN("");
+    setIntakeAutoFillLoading(false);
+    setIntakeAutoFillStatus("");
+    setIntakeAutoFillResult(null);
+    setIntakeAutoFillError("");
+    setIntakeAutoFillSubjectsExpanded(false);
+    setIntakeAutoFilledFields({});
+    setIntakeAddress("");
+    setIntakeState("NSW");
+    setIntakeSuburb("");
+    setIntakePostcode("");
+    setIntakeExtracting(false);
+  };
+
+  const createIntakeMatter = async () => {
+    if (!intakeMatterType) return;
+    setIntakeCreating(true);
+    try {
+      const year = new Date().getFullYear();
+      const prefix = `CC-${year}-`;
+      const nums = MATTERS.map((m) => {
+        const id = String(m.matter_ref || m.id || "");
+        const m2 = id.match(new RegExp(`^CC-${year}-(\\d+)$`));
+        return m2 ? parseInt(m2[1], 10) : 0;
+      });
+      const nextN = Math.max(0, ...nums, 0) + 1;
+      const matter_ref = `${prefix}${String(nextN).padStart(3, "0")}`;
+      const contactPersonName = [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ").trim();
+      const clientName =
+        intakeEntityType === "entity" && String(intakeEntityName || "").trim()
+          ? String(intakeEntityName).trim()
+          : contactPersonName || "New Client";
+      const priceDigitsOnly = String(intakePurchasePrice || "").replace(/[^0-9]/g, "");
+      const priceForDb = priceDigitsOnly ? parseInt(priceDigitsOnly, 10) : null;
+      const notesObj = { referralSource: intakeReferralSource || undefined };
+      if (intakeEntityType === "entity") {
+        notesObj.purchaserKind = "entity";
+        if (intakeEntityName?.trim()) notesObj.entityName = intakeEntityName.trim();
+        if (intakeEntityABN?.trim()) notesObj.entityABN = intakeEntityABN.trim();
+        if (contactPersonName) notesObj.contactPerson = contactPersonName;
+      } else {
+        notesObj.purchaserKind = "individual";
+      }
+      if (intakeReferrerId) {
+        notesObj.referrerId = intakeReferrerId;
+        notesObj.referrerName = intakeReferrerName || undefined;
+      }
+      if (intakeReferralFeeEnabled && intakeReferralFee) {
+        const fd = String(intakeReferralFee).replace(/[^0-9]/g, "");
+        if (fd) notesObj.referralFee = parseInt(fd, 10);
+      }
+      if (intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)) {
+        notesObj.coPurchaser = [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim();
+      }
+      const row = {
+        matter_ref,
+        client_name: clientName,
+        client_email: intakeClientEmail || null,
+        client_phone: intakeClientPhone || null,
+        type: intakeMatterType,
+        address: intakeAddress || "",
+        state: intakeState || "NSW",
+        opened_date: new Date().toISOString().slice(0, 10),
+        stage: "Intake",
+        status: "active",
+        urgency: "medium",
+        staff: user?.email || "—",
+        notes: JSON.stringify(notesObj),
+        settlement_date: intakeSettlementDate || null,
+        price: priceForDb,
+      };
+      let { error } = await supabase.from("matters").insert(row);
+      if (error) {
+        const { price: _omitPrice, ...rest } = row;
+        const r2 = await supabase.from("matters").insert(rest);
+        error = r2.error;
+        if (!error) {
+          Object.assign(row, rest);
+        }
+      }
+      if (error) throw error;
+      if (intakeReferrerId) {
+        const feeAmount = intakeReferralFeeEnabled
+          ? parseFloat(String(intakeReferralFee).replace(/[^0-9.]/g, "")) || 0
+          : 0;
+        const referralClientName =
+          [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ").trim() || clientName;
+        const { error: refInsErr } = await supabase.from("referrals").insert({
+          referrer_id: intakeReferrerId,
+          matter_ref,
+          client_name: referralClientName,
+          referral_fee: feeAmount,
+          fee_paid: false,
+          notes: `Referred at matter creation. Source: ${intakeReferralSource || "—"}`,
+        });
+        if (refInsErr) {
+          console.error("referrals insert:", refInsErr);
+        } else {
+          const { error: rpcError } = await supabase.rpc("increment_referrer_totals", {
+            p_referrer_id: intakeReferrerId,
+            p_fee: feeAmount,
+          });
+          if (rpcError) {
+            const { data: currentReferrer } = await supabase
+              .from("referrers")
+              .select("referrals, fee_owed, total_fees")
+              .eq("id", intakeReferrerId)
+              .single();
+            if (currentReferrer) {
+              await supabase
+                .from("referrers")
+                .update({
+                  referrals: (currentReferrer.referrals || 0) + 1,
+                  fee_owed: (currentReferrer.fee_owed || 0) + feeAmount,
+                  total_fees: (currentReferrer.total_fees || 0) + feeAmount,
+                })
+                .eq("id", intakeReferrerId);
+            }
+          }
+        }
+        try {
+          const { data: rl } = await supabase
+            .from("referrals")
+            .select("*, referrers(name, type, company)")
+            .order("created_at", { ascending: false });
+          if (rl) setReferralsList(rl);
+          const { data: rr } = await supabase.from("referrers").select("*").order("name");
+          if (rr) setReferrers(rr);
+        } catch (_) {}
+      }
+      try {
+        if (intakeClientEmail) {
+          await fetch("/api/email/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: intakeClientEmail,
+              subject: `Your matter ${matter_ref} — Conveyancing Crew`,
+              body: `Hi ${intakeClientFirstName || clientName},\n\nWe've opened your ${intakeMatterType} matter for ${intakeAddress || "your property"}. We'll set up your PEXA workspace link and send a short intro shortly.\n\nConveyancing Crew`,
+              matterId: matter_ref,
+            }),
+          });
+        }
+      } catch (_) {}
+      const feeDigits = String(intakeReferralFee || "").replace(/[^0-9]/g, "");
+      if (intakeReferrerId && feeDigits && intakeReferralFeeEnabled) {
+        const feeLabel = formatDigitsWithCommas(feeDigits);
+        const refName = intakeReferrerName || "referrer";
+        await supabase.from("tasks").insert({
+          matter_ref,
+          client_name: clientName,
+          task: `Pay referral fee of $${feeLabel} to ${refName} — due at settlement`,
+          due_date: intakeSettlementDate || null,
+          urgency: "medium",
+          done: false,
+          notes: "Auto-created: referral fee agreed at matter creation",
+        });
+        try {
+          const { data: taskRows } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
+          if (taskRows) setTasks(taskRows);
+        } catch (_) {}
+      }
+      const mapped = mapMatterFromRow(row);
+      setMATTERS((prev) => [mapped, ...prev]);
+      setSelectedMatter(matter_ref);
+      setModal(null);
+      resetIntakeModal();
+      setPage("matter_workspace");
+      setMatterTab(intakeMatterType === "Purchase" ? "Workflow" : "Overview");
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Could not create matter");
+    } finally {
+      setIntakeCreating(false);
+    }
+  };
+
   const handleDocumentUploadClick = () => {
     fileInputRef.current?.click();
   };
@@ -3365,6 +4364,213 @@ RESPONSE RULES:
     }
   };
 
+  const runContractReview = async (documentFile) => {
+    if (!documentFile || !selMatterObj) return;
+    setContractReviewLoading(true);
+    setContractReviewResult(null);
+    setContractReviewError("");
+    try {
+      const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+      const signedRes = await fetch("/api/storage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: "matter-documents",
+          path: `${matterRef}/${documentFile.name.trim()}`,
+        }),
+      });
+      const signedData = await signedRes.json();
+      if (!signedData.signedUrl) {
+        throw new Error("Could not access document");
+      }
+      const pdfRes = await fetch(signedData.signedUrl);
+      const pdfBlob = await pdfRes.blob();
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const r = String(reader.result || "");
+          const parts = r.split(",");
+          resolve(parts[1] || "");
+        };
+        reader.onerror = () => reject(new Error("Could not read PDF"));
+        reader.readAsDataURL(pdfBlob);
+      });
+      const reviewPrompt = `You are an expert Australian conveyancer reviewing a property 
+contract. The matter is for client ${selMatterObj.client_name || selMatterObj.client || ""} 
+for the property at ${selMatterObj.address} in ${selMatterObj.state || "NSW"}.
+
+Review this contract thoroughly across all 11 critical areas and return a 
+complete analysis as JSON.
+
+Return ONLY this JSON structure (no markdown, no explanation outside JSON):
+
+{
+  "propertyAddress": "",
+  "buyerName": "",
+  "sellerName": "",
+  "purchasePrice": "",
+  "depositAmount": "",
+  "settlementDate": "",
+  "coolingOffPeriod": "",
+  
+  "overallRiskLevel": "LOW|MEDIUM|HIGH|CRITICAL",
+  "overallSummary": "2-3 sentence plain English summary of the contract",
+  
+  "redFlags": [
+    {
+      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "area": "area name",
+      "issue": "clear description of the issue",
+      "recommendation": "what the conveyancer should do",
+      "clauseReference": "clause number if found"
+    }
+  ],
+  
+  "sections": {
+    "contractTerms": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "plain English summary",
+      "details": ["key point 1", "key point 2"],
+      "concerns": ["concern if any"]
+    },
+    "titleOwnership": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "details": [],
+      "concerns": [],
+      "easements": [],
+      "covenants": [],
+      "encumbrances": []
+    },
+    "zoningPlanning": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "details": [],
+      "concerns": [],
+      "zoneType": "",
+      "overlays": []
+    },
+    "councilCertificates": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "details": [],
+      "concerns": []
+    },
+    "specialConditions": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "details": [],
+      "concerns": [],
+      "financeClause": "",
+      "otherClauses": []
+    },
+    "inclusionsExclusions": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "included": [],
+      "excluded": [],
+      "concerns": []
+    },
+    "strataDetails": {
+      "applicable": false,
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "levies": "",
+      "sinkingFund": "",
+      "specialLevies": "",
+      "concerns": []
+    },
+    "adjustments": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "details": [],
+      "concerns": []
+    },
+    "disclosures": {
+      "status": "OK|REVIEW|WARNING|CRITICAL",
+      "summary": "",
+      "details": [],
+      "concerns": []
+    }
+  },
+  
+  "clientLetter": "A complete professional plain-English letter from the conveyancer to the client explaining the contract review findings. Use a friendly but professional tone. Start with Dear [client first name]. Cover the key terms, any concerns, and recommended next steps. Sign off as Gitu Kaur, Conveyancing Crew. Length: 400-600 words.",
+  
+  "negotiationPoints": [
+    "Suggested negotiation point 1",
+    "Suggested negotiation point 2"
+  ],
+  
+  "recommendedActions": [
+    {
+      "priority": "URGENT|HIGH|MEDIUM|LOW",
+      "action": "specific action to take",
+      "deadline": "when this needs to happen"
+    }
+  ]
+}`;
+      const reviewRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "document",
+                  source: {
+                    type: "base64",
+                    media_type: "application/pdf",
+                    data: base64,
+                  },
+                },
+                { type: "text", text: reviewPrompt },
+              ],
+            },
+          ],
+          mattersContext: `Contract review for ${selMatterObj.address || ""}`,
+          systemOverride:
+            "You extract structured contract review data. Respond with ONLY a single valid JSON object. No markdown fences, no explanation, no other text.",
+          maxTokens: 8192,
+        }),
+      });
+      const reviewData = await reviewRes.json();
+      if (!reviewRes.ok || reviewData.error) {
+        throw new Error(reviewData.error || "AI review request failed");
+      }
+      const rawText = reviewData.content || "{}";
+      let parsed;
+      try {
+        const clean = rawText.replace(/```json|```/g, "").trim();
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        parsed = JSON.parse(jsonMatch?.[0] || "{}");
+      } catch (e) {
+        throw new Error("Could not parse review results");
+      }
+      setContractReviewResult(parsed);
+      setContractReviewTab("summary");
+      const { error: wfErr } = await supabase.from("matter_workflow").upsert(
+        {
+          matter_ref: selMatterObj.matter_ref || selMatterObj.id,
+          step_key: "contract_review",
+          notes: JSON.stringify({
+            reviewedAt: new Date().toISOString(),
+            documentName: documentFile.name,
+            riskLevel: parsed.overallRiskLevel,
+            redFlagCount: parsed.redFlags?.length || 0,
+          }),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "matter_ref,step_key" }
+      );
+      if (wfErr) console.warn("[Contract review] matter_workflow upsert:", wfErr);
+    } catch (err) {
+      console.error("Contract review error:", err);
+      setContractReviewError(err.message || "Review failed. Please try again.");
+    }
+    setContractReviewLoading(false);
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError("");
@@ -3387,6 +4593,23 @@ RESPONSE RULES:
   const selMatterObj = MATTERS.find(m => m.id === selectedMatter);
   const selComm = comms.find(c => c.id === selectedCommId);
   const selRef = referrers.find(r => r.id === selectedRef);
+
+  useEffect(() => {
+    setContractReviewResult(null);
+    setContractReviewError("");
+    setContractReviewTab("summary");
+    setContractReviewExpanded({});
+    setContractReviewLoadStage(0);
+  }, [selectedMatter]);
+
+  useEffect(() => {
+    if (!contractReviewLoading) return;
+    setContractReviewLoadStage(0);
+    const t = setInterval(() => {
+      setContractReviewLoadStage((s) => (s + 1) % 5);
+    }, 4000);
+    return () => clearInterval(t);
+  }, [contractReviewLoading]);
 
   useEffect(() => {
     if (page === "communications") fetchAllEmails();
@@ -3826,7 +5049,7 @@ Return only the email body text, no subject line.`;
   }, [selMatterObj]);
 
   useEffect(() => {
-    if (modal !== "intake" || intakeStep !== 2) {
+    if (modal !== "intake" || intakeStep !== 1 || intakeMatterType !== "Purchase") {
       autocompleteAttachedRef.current = false;
       return;
     }
@@ -3871,7 +5094,7 @@ Return only the email body text, no subject line.`;
     script.onload = () => setTimeout(initAutocomplete, 100);
     document.head.appendChild(script);
     return () => { script.remove(); };
-  }, [modal, intakeStep]);
+  }, [modal, intakeStep, intakeMatterType]);
 
   const pageTitle = {
     dashboard:"Dashboard", matters:"Matters", referrals:"Referrals",
@@ -4056,7 +5279,7 @@ Return only the email body text, no subject line.`;
                     <div style={{ width:6,height:6,borderRadius:"50%", background: aiAutoMode ? "var(--blue)" : "var(--text-3)" }}/>
                     {aiAutoMode ? "AI AUTO" : "AI MANUAL"}
                   </div>
-                  <button type="button" className="btn-gold" style={{padding:"6px 12px",fontSize:12}} onClick={()=>setModal("intake")}>＋</button>
+                  <button type="button" className="btn-gold" style={{padding:"6px 12px",fontSize:12}} onClick={openNewMatterModal}>＋</button>
                 </>
               ) : (
               <>
@@ -4220,7 +5443,7 @@ Return only the email body text, no subject line.`;
                   <div style={{ width:6,height:6,borderRadius:"50%", background: aiAutoMode ? "var(--blue)" : "var(--text-3)" }}/>
                   {aiAutoMode ? "AI AUTO" : "AI MANUAL"}
                 </div>
-              <button type="button" className="btn-gold" onClick={() => setModal("intake")}>＋ New Matter</button>
+              <button type="button" className="btn-gold" onClick={openNewMatterModal}>＋ New Matter</button>
               </>
               )}
             </div>
@@ -4554,7 +5777,9 @@ Return only the email body text, no subject line.`;
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 24px" }}>
                       <div>
                         <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Active Pipeline</div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>${(pipelineValue / 1000000).toFixed(1)}M</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--text)" }}>
+                          {"$" + (pipelineValue / 1000000).toFixed(1) + "M"}
+                        </div>
                       </div>
                       <div>
                         <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Income YTD</div>
@@ -4975,7 +6200,7 @@ Return only the email body text, no subject line.`;
                     ))}
                     <div className="filter-sep"/>
                     <button className="btn-ghost" style={{fontSize:12,padding:"6px 14px"}}>↓ Export</button>
-                    <button className="btn-gold" onClick={()=>setModal("intake")}>＋ New Matter</button>
+                    <button className="btn-gold" onClick={openNewMatterModal}>＋ New Matter</button>
                   </div>
                   {isMobile ? (
                     <div className="fade-up-2" style={{ display: "flex", flexDirection: "column", gap: 12, padding: "0 0 20px" }}>
@@ -5192,111 +6417,72 @@ Return only the email body text, no subject line.`;
                           {selMatterObj.specialConditions}
                         </div>
                       </div>
+                      <MatterWorkflowFlags matter={selMatterObj} />
                     </div>
                   </div>
                 )}
 
                 {/* WORKFLOW */}
-                {matterTab==="Workflow" && (() => {
-                  // Map matter type to workflow key
-                  const typeMap = {
-                    "Purchase":"Purchase","Sale":"Sale",
-                    "Lease":"Lease","Contract Review":"Contract Review","General Enquiry":"General Enquiry"
-                  };
-                  const wfKey = typeMap[selMatterObj.type] || "Purchase";
-                  const phases = WORKFLOWS[wfKey] || [];
-                  // Determine current phase index based on stage
-                  const stageToPhaseIdx = {
-                    "Intake":0,"Contract Review":1,"Contract Sent":2,
-                    "Searches Ordered":3,"PEXA Ready":4,"Settled":5
-                  };
-                  const currentPhaseIdx = stageToPhaseIdx[selMatterObj.stage] ?? 0;
-
-                  return (
-                    <div className="wf-container">
-                      <div className="wf-header">
-                        <div className="wf-title">{wfKey} Workflow</div>
-                        <div className="wf-subtitle">{selMatterObj.client} · {selMatterObj.id} · Current stage: {selMatterObj.stage}</div>
+                {matterTab==="Workflow" && (
+  selMatterObj?.type === "Purchase"
+    ? (
+        <PurchaseWorkflow
+          matter={selMatterObj}
+          supabase={supabase}
+          isMobile={isMobile}
+          referralForMatter={referralsList.find(
+            (r) => String(r.matter_ref) === String(selMatterObj?.matter_ref || selMatterObj?.id)
+          )}
+          onMatterNotesSaved={(matterRef, notesStr) => {
+            setMATTERS((prev) => prev.map((m) => (m.id === matterRef ? { ...m, notes: notesStr } : m)));
+          }}
+        />
+      )
+    : (() => {
+        const typeMap = { "Purchase":"Purchase","Sale":"Sale","Lease":"Lease","Contract Review":"Contract Review","General Enquiry":"General Enquiry" };
+        const wfKey = typeMap[selMatterObj.type] || "Purchase";
+        const phases = WORKFLOWS[wfKey] || [];
+        const stageToPhaseIdx = { "Intake":0,"Contract Review":1,"Contract Sent":2,"Searches Ordered":3,"PEXA Ready":4,"Settled":5 };
+        const currentPhaseIdx = stageToPhaseIdx[selMatterObj.stage] ?? 0;
+        return (
+          <div className="wf-container">
+            <div className="wf-header">
+              <div className="wf-title">{wfKey} Workflow</div>
+              <div className="wf-subtitle">{selMatterObj.client} · {selMatterObj.id} · Current stage: {selMatterObj.stage}</div>
+            </div>
+            <div className="wf-progress">
+              {phases.map((p,i)=>(
+                <div key={p.id} className={`wf-prog-step ${i===currentPhaseIdx?"current":i<currentPhaseIdx?"completed":""}`}>
+                  <div className="wf-prog-icon">{p.icon}</div>
+                  <div className="wf-prog-label">{p.phase}</div>
+                </div>
+              ))}
+            </div>
+            {phases.map((phase,phaseIdx)=>(
+              <div key={phase.id} className="wf-phase">
+                <div className="wf-card" style={{borderLeft:`3px solid ${phaseIdx===currentPhaseIdx?phase.color:phaseIdx<currentPhaseIdx?"var(--teal)":"var(--border)"}`}}>
+                  <div className="wf-card-hdr">
+                    <div className="wf-phase-icon" style={{background:phase.colorLight}}>{phase.icon}</div>
+                    <div style={{flex:1}}><div className="wf-phase-name">{phase.phase}</div><div className="wf-phase-meta">⏱ {phase.time} · {phase.channel}</div></div>
+                    <div className="wf-phase-badge">{phaseIdx<currentPhaseIdx?<span className="tag tag-green">✓ Complete</span>:phaseIdx===currentPhaseIdx?<span className="tag tag-gold">◉ In Progress</span>:<span className="tag tag-gray">Pending</span>}</div>
+                  </div>
+                  <div className="wf-steps">
+                    {phase.steps.map((step,si)=>(
+                      <div key={si} className="wf-step">
+                        <div className="wf-step-dot" style={{background:phaseIdx<currentPhaseIdx?"var(--teal)":phaseIdx===currentPhaseIdx?phase.color:"var(--border)"}}/>
+                        <div style={{flex:1}}><div className="wf-step-label">{step.label}</div><div className="wf-step-meta">⏱ {step.time} · 🔧 {step.tool}</div></div>
                       </div>
-
-                      {/* Progress bar */}
-                      <div className="wf-progress">
-                        {phases.map((p,i)=>(
-                          <div key={p.id} className={`wf-prog-step ${i===currentPhaseIdx?"current":i<currentPhaseIdx?"completed":""}`}>
-                            {i<currentPhaseIdx && <div style={{position:"absolute",top:6,right:6,width:8,height:8,borderRadius:"50%",background:"var(--teal)",fontSize:7,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff"}}>✓</div>}
-                            <div className="wf-prog-icon">{p.icon}</div>
-                            <div className="wf-prog-label">{p.phase}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Phase cards */}
-                      {phases.map((phase, phaseIdx) => (
-                        <div key={phase.id} className="wf-phase">
-                          <div className="wf-card" style={{borderLeft:`3px solid ${phaseIdx===currentPhaseIdx?phase.color:phaseIdx<currentPhaseIdx?"var(--teal)":"var(--border)"}`}}>
-                            <div className="wf-card-hdr">
-                              <div className="wf-phase-icon" style={{background:phase.colorLight}}>
-                                {phase.icon}
-                              </div>
-                              <div style={{flex:1}}>
-                                <div className="wf-phase-name">{phase.phase}</div>
-                                <div className="wf-phase-meta">⏱ {phase.time} · {phase.channel}</div>
-                              </div>
-                              <div className="wf-phase-badge">
-                                {phaseIdx < currentPhaseIdx
-                                  ? <span className="tag tag-green">✓ Complete</span>
-                                  : phaseIdx === currentPhaseIdx
-                                  ? <span className="tag tag-gold">◉ In Progress</span>
-                                  : <span className="tag tag-gray">Pending</span>
-                                }
-                              </div>
-                            </div>
-                            <div className="wf-steps">
-                              {phase.steps.map((step,si)=>(
-                                <div key={si} className="wf-step">
-                                  <div className="wf-step-dot" style={{background:phaseIdx<currentPhaseIdx?"var(--teal)":phaseIdx===currentPhaseIdx?phase.color:"var(--border)"}}/>
-                                  <div style={{flex:1}}>
-                                    <div className="wf-step-label">{step.label}</div>
-                                    <div className="wf-step-meta">⏱ {step.time} · 🔧 {step.tool}</div>
-                                  </div>
-                                  {phaseIdx < currentPhaseIdx && <span style={{fontSize:12,color:"var(--teal)"}}>✓</span>}
-                                </div>
-                              ))}
-                              {phase.after && phase.after.map((step,si)=>(
-                                <div key={"a"+si} className="wf-step">
-                                  <div className="wf-step-dot" style={{background:phase.color,opacity:0.6}}/>
-                                  <div style={{flex:1}}>
-                                    <div className="wf-step-label">{step.label}</div>
-                                    <div className="wf-step-meta">⏱ {step.time} · 🔧 {step.tool}</div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                            {phase.branches && (
-                              <div className="wf-branches">
-                                {phase.branches.map((b,bi)=>(
-                                  <div key={bi} className="wf-branch">
-                                    <div className="wf-branch-icon">{b.icon}</div>
-                                    <div>
-                                      <div className="wf-branch-label">{b.label}</div>
-                                      {b.desc && <div className="wf-branch-desc">{b.desc}</div>}
-                                      {b.time && <div className="wf-branch-time">⏱ {b.time}</div>}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          {phaseIdx < phases.length - 1 && (
-                            <div className="wf-connector">
-                              <div className="wf-connector-arrow">▼</div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
+                    ))}
+                  </div>
+                  {phase.branches&&<div className="wf-branches">{phase.branches.map((b,bi)=><div key={bi} className="wf-branch"><div className="wf-branch-icon">{b.icon}</div><div><div className="wf-branch-label">{b.label}</div>{b.desc&&<div className="wf-branch-desc">{b.desc}</div>}</div></div>)}</div>}
+                </div>
+                {phaseIdx<phases.length-1&&<div className="wf-connector"><div className="wf-connector-arrow">▼</div></div>}
+              </div>
+            ))}
+          </div>
+        );
+      })()
+)}
 
                 {/* TIMELINE */}
                 {matterTab==="Timeline" && (
@@ -5320,72 +6506,523 @@ Return only the email body text, no subject line.`;
                 )}
 
                 {/* DOCUMENTS */}
-                {matterTab==="Documents" && (
-                  <div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,alignItems:"center"}}>
-                      <div className="card-title">
-                        Documents {documentsLoading ? "· Loading…" : documents.length ? `· ${documents.length}` : ""}
+                {matterTab==="Documents" && (() => {
+                  const crStages = [
+                    { label: "📄 Reading contract...", pct: 20 },
+                    { label: "🔍 Analysing contract terms...", pct: 40 },
+                    { label: "⚖️ Reviewing special conditions...", pct: 60 },
+                    { label: "🚨 Checking for red flags...", pct: 80 },
+                    { label: "✍️ Drafting client letter...", pct: 100 },
+                  ];
+                  const crSections = [
+                    { key: "contractTerms", label: "Contract Terms", icon: "📋" },
+                    { key: "titleOwnership", label: "Title & Ownership", icon: "📍" },
+                    { key: "zoningPlanning", label: "Zoning & Planning", icon: "🏡" },
+                    { key: "councilCertificates", label: "Council Certificates", icon: "💧" },
+                    { key: "specialConditions", label: "Special Conditions", icon: "⚖️" },
+                    { key: "inclusionsExclusions", label: "Inclusions & Exclusions", icon: "🔒" },
+                    { key: "strataDetails", label: "Strata", icon: "🏢" },
+                    { key: "adjustments", label: "Adjustments", icon: "💰" },
+                    { key: "disclosures", label: "Disclosures", icon: "🚨" },
+                  ];
+                  const statusChip = (st) => {
+                    const s = String(st || "").toUpperCase();
+                    if (s === "OK") return { bg: "var(--green-light)", color: "var(--green)", border: "1px solid rgba(22,163,74,0.35)" };
+                    if (s === "REVIEW") return { bg: "var(--blue-light)", color: "var(--blue)", border: "1px solid rgba(36,94,176,0.35)" };
+                    if (s === "WARNING") return { bg: "var(--amber-light)", color: "var(--amber)", border: "1px solid #fde68a" };
+                    if (s === "CRITICAL") return { bg: "var(--red-light)", color: "var(--red)", border: "1px solid rgba(220,38,38,0.35)" };
+                    return { bg: "var(--surface)", color: "var(--text-3)", border: "1px solid var(--border)" };
+                  };
+                  const riskBadge = (lvl) => {
+                    const L = String(lvl || "").toUpperCase();
+                    if (L === "LOW") return { bg: "var(--green-light)", color: "var(--green)", border: "1px solid rgba(22,163,74,0.35)", pulse: false };
+                    if (L === "MEDIUM") return { bg: "var(--amber-light)", color: "var(--amber)", border: "1px solid #fde68a", pulse: false };
+                    if (L === "HIGH") return { bg: "var(--red-light)", color: "var(--red)", border: "1px solid rgba(220,38,38,0.35)", pulse: false };
+                    if (L === "CRITICAL") return { bg: "#7f1d1d", color: "#fff", border: "1px solid #450a0a", pulse: true };
+                    return { bg: "var(--surface)", color: "var(--text-3)", border: "1px solid var(--border)", pulse: false };
+                  };
+                  const rfOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                  const rfBorder = { CRITICAL: "#dc2626", HIGH: "#ea580c", MEDIUM: "#ca8a04", LOW: "#94a3b8" };
+                  const rfBg = { CRITICAL: "#fef2f2", HIGH: "#fff7ed", MEDIUM: "#fffbeb", LOW: "#f8fafc" };
+                  const R = contractReviewResult;
+                  const sortedFlags = R?.redFlags
+                    ? [...R.redFlags].sort(
+                        (a, b) =>
+                          (rfOrder[String(a.severity).toUpperCase()] ?? 99) -
+                          (rfOrder[String(b.severity).toUpperCase()] ?? 99)
+                      )
+                    : [];
+                  const progressPct = contractReviewLoading
+                    ? ((contractReviewLoadStage + 1) / crStages.length) * 100
+                    : 0;
+                  return (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(260px, 1fr) minmax(300px, 1.15fr)",
+                      gap: 16,
+                      alignItems: "start",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                        <div className="card-title">
+                          Documents {documentsLoading ? "· Loading…" : documents.length ? `· ${documents.length}` : ""}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <button
+                            className="btn-ghost"
+                            style={{ fontSize: 12 }}
+                            type="button"
+                            onClick={handleDocumentUploadClick}
+                            disabled={uploadingDocument}
+                          >
+                            {uploadingDocument ? "Uploading…" : "📎 Upload Document"}
+                          </button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                            style={{ display: "none" }}
+                            onChange={handleDocumentFileChange}
+                          />
+                        </div>
                       </div>
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        <button
-                          className="btn-ghost"
-                          style={{fontSize:12}}
-                          type="button"
-                          onClick={handleDocumentUploadClick}
-                          disabled={uploadingDocument}
-                        >
-                          {uploadingDocument ? "Uploading…" : "📎 Upload Document"}
-                        </button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                          style={{display:"none"}}
-                          onChange={handleDocumentFileChange}
-                        />
-                      </div>
-                    </div>
-                    {documentsLoading ? (
-                      <div style={{fontSize:12,color:"var(--text-3)",padding:"12px 0"}}>Loading documents…</div>
-                    ) : documents.length === 0 ? (
-                      <div style={{fontSize:12,color:"var(--text-3)",padding:"12px 0"}}>
-                        No documents yet — upload your first document
-                      </div>
-                    ) : (
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                        {documents.map((d,i)=>(
-                          <div key={d.name || i} className="doc-item">
-                            <div className="doc-icon" style={{background:"#eff6ff"}}>
-                              📄
-                            </div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div className="doc-name">{d.name}</div>
-                              <div className="doc-meta">
-                                {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Uploaded"}
+                      {documentsLoading ? (
+                        <div style={{ fontSize: 12, color: "var(--text-3)", padding: "12px 0" }}>Loading documents…</div>
+                      ) : documents.length === 0 ? (
+                        <div style={{ fontSize: 12, color: "var(--text-3)", padding: "12px 0" }}>
+                          No documents yet — upload your first document
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          {documents.map((d, i) => (
+                            <div key={d.name || i} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              <div className="doc-item">
+                                <div className="doc-icon" style={{ background: "#eff6ff" }}>📄</div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div className="doc-name">{d.name}</div>
+                                  <div className="doc-meta">
+                                    {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Uploaded"}
+                                  </div>
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  <button
+                                    style={{ fontSize: 11, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}
+                                    type="button"
+                                    onClick={() => handleViewDocument(d)}
+                                  >
+                                    View
+                                  </button>
+                                  <button
+                                    style={{ fontSize: 11, color: "var(--red)", background: "none", border: "none", cursor: "pointer" }}
+                                    type="button"
+                                    onClick={() => handleDeleteDocument(d.name)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
+                              {/\.pdf$/i.test(d.name || "") && (
+                                <div
+                                  style={{
+                                    padding: "10px 12px",
+                                    borderRadius: 8,
+                                    background: "var(--blue-light)",
+                                    border: "1px solid rgba(36,94,176,0.25)",
+                                    fontSize: 11,
+                                    color: "var(--text)",
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 600, marginBottom: 6 }}>✦ AI Contract Review available for this document</div>
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    style={{ fontSize: 11, padding: "6px 12px", width: "100%" }}
+                                    disabled={contractReviewLoading}
+                                    onClick={() => runContractReview(d)}
+                                  >
+                                    Review this Contract →
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                              <button
-                                style={{fontSize:11,color:"var(--text-3)",background:"none",border:"none",cursor:"pointer"}}
-                                type="button"
-                                onClick={()=>handleViewDocument(d)}
-                              >
-                                View
-                              </button>
-                              <button
-                                style={{fontSize:11,color:"var(--red)",background:"none",border:"none",cursor:"pointer"}}
-                                type="button"
-                                onClick={()=>handleDeleteDocument(d.name)}
-                              >
-                                Delete
-                              </button>
-                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      className="card"
+                      style={{
+                        minHeight: 360,
+                        position: "relative",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {contractReviewLoading && (
+                        <div style={{ padding: 24, flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
+                            {crStages[contractReviewLoadStage]?.label || crStages[0].label}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 16 }}>
+                            AI is analysing your contract — this can take a minute.
+                          </div>
+                          <div style={{ height: 8, background: "var(--border-2)", borderRadius: 4, overflow: "hidden" }}>
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${progressPct}%`,
+                                background: "linear-gradient(90deg, var(--blue), var(--teal))",
+                                transition: "width 0.5s ease",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {!contractReviewLoading && contractReviewError && (
+                        <div style={{ padding: 16, fontSize: 12, color: "var(--red)", background: "var(--red-light)", borderRadius: 8, margin: 12 }}>
+                          {contractReviewError}
+                        </div>
+                      )}
+                      {!contractReviewLoading && !contractReviewError && !R && (
+                        <div style={{ padding: 24, textAlign: "center", flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
+                          <div style={{ fontFamily: "var(--font-display)", fontSize: 17, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>
+                            AI Contract Review
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.55, maxWidth: 320, marginBottom: 16 }}>
+                            Upload a contract PDF, then use &apos;Review this Contract&apos; under the file to get an instant AI analysis covering all 11 critical areas
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", maxWidth: 360 }}>
+                            {[
+                              "Contract Terms",
+                              "Title & Ownership",
+                              "Zoning & Planning",
+                              "Council Certificates",
+                              "Building & Pest",
+                              "Strata Report",
+                              "Special Conditions",
+                              "Inclusions & Fixtures",
+                              "Cooling-Off",
+                              "Adjustments",
+                              "Disclosure Documents",
+                            ].map((p) => (
+                              <span
+                                key={p}
+                                style={{
+                                  fontSize: 10,
+                                  padding: "4px 8px",
+                                  borderRadius: 20,
+                                  background: "var(--surface)",
+                                  color: "var(--text-3)",
+                                  border: "1px solid var(--border)",
+                                }}
+                              >
+                                {p}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {!contractReviewLoading && R && (
+                        <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                          <div style={{ display: "flex", gap: 4, padding: "10px 12px 0", borderBottom: "1px solid var(--border-2)", flexWrap: "wrap" }}>
+                            {[
+                              { id: "summary", label: "Summary" },
+                              { id: "redflags", label: "Red Flags" },
+                              { id: "letter", label: "Client Letter" },
+                              { id: "full", label: "Full Report" },
+                            ].map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setContractReviewTab(t.id)}
+                                style={{
+                                  padding: "8px 12px",
+                                  fontSize: 11,
+                                  fontWeight: contractReviewTab === t.id ? 600 : 500,
+                                  border: "none",
+                                  borderBottom: contractReviewTab === t.id ? "2px solid var(--blue)" : "2px solid transparent",
+                                  background: "none",
+                                  color: contractReviewTab === t.id ? "var(--blue)" : "var(--text-2)",
+                                  cursor: "pointer",
+                                  fontFamily: "var(--font-body)",
+                                }}
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ padding: 14, overflowY: "auto", flex: 1 }}>
+                            {contractReviewTab === "summary" && (
+                              <div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                                  {[
+                                    { k: "Buyer", v: R.buyerName },
+                                    { k: "Seller", v: R.sellerName },
+                                    { k: "Price", v: R.purchasePrice },
+                                    { k: "Deposit", v: R.depositAmount },
+                                    { k: "Settlement", v: R.settlementDate },
+                                    { k: "Cooling-off", v: R.coolingOffPeriod },
+                                  ].map((row) => (
+                                    <div
+                                      key={row.k}
+                                      style={{
+                                        flex: "1 1 100px",
+                                        minWidth: 90,
+                                        padding: "8px 10px",
+                                        borderRadius: 8,
+                                        background: "var(--surface)",
+                                        border: "1px solid var(--border)",
+                                      }}
+                                    >
+                                      <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: 0.5 }}>{row.k}</div>
+                                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginTop: 4 }}>{row.v || "—"}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {(() => {
+                                  const rb = riskBadge(R.overallRiskLevel);
+                                  return (
+                                    <div
+                                      className={rb.pulse ? "contract-review-risk-critical" : ""}
+                                      style={{
+                                        display: "inline-block",
+                                        padding: "6px 12px",
+                                        borderRadius: 8,
+                                        marginBottom: 12,
+                                        background: rb.bg,
+                                        color: rb.color,
+                                        border: rb.border,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        fontFamily: "var(--font-mono)",
+                                      }}
+                                    >
+                                      Overall risk: {R.overallRiskLevel || "—"}
+                                    </div>
+                                  );
+                                })()}
+                                <p style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.65, marginBottom: 16 }}>{R.overallSummary || "—"}</p>
+                                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Recommended actions</div>
+                                <ul style={{ margin: 0, paddingLeft: 18, marginBottom: 16 }}>
+                                  {(R.recommendedActions || []).map((a, idx) => (
+                                    <li key={idx} style={{ fontSize: 11, color: "var(--text-2)", marginBottom: 8 }}>
+                                      <span
+                                        className="tag"
+                                        style={{
+                                          fontSize: 9,
+                                          marginRight: 6,
+                                          verticalAlign: "middle",
+                                          background: "var(--amber-light)",
+                                          color: "var(--amber)",
+                                        }}
+                                      >
+                                        {a.priority}
+                                      </span>
+                                      {a.action}
+                                      {a.deadline ? <span style={{ color: "var(--text-3)" }}> — {a.deadline}</span> : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Negotiation points</div>
+                                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                  {(R.negotiationPoints || []).map((pt, idx) => (
+                                    <li key={idx} style={{ fontSize: 11, color: "var(--text-2)", marginBottom: 4 }}>
+                                      {pt}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {contractReviewTab === "redflags" && (
+                              <div>
+                                {(!sortedFlags || sortedFlags.length === 0) && (
+                                  <div style={{ padding: 12, borderRadius: 8, background: "var(--green-light)", color: "var(--green)", fontSize: 12, fontWeight: 600 }}>
+                                    ✓ No major red flags found
+                                  </div>
+                                )}
+                                {sortedFlags.map((f, idx) => {
+                                  const sev = String(f.severity || "LOW").toUpperCase();
+                                  return (
+                                    <div
+                                      key={idx}
+                                      style={{
+                                        marginBottom: 12,
+                                        padding: 12,
+                                        borderRadius: 8,
+                                        borderLeft: `4px solid ${rfBorder[sev] || rfBorder.LOW}`,
+                                        background: rfBg[sev] || rfBg.LOW,
+                                        border: `1px solid ${rfBorder[sev] || rfBorder.LOW}`,
+                                        borderLeftWidth: 4,
+                                      }}
+                                    >
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" }}>{f.area || "—"}</span>
+                                        <span className="tag tag-red" style={{ fontSize: 9 }}>{sev}</span>
+                                      </div>
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{f.issue || "—"}</div>
+                                      <div style={{ padding: 8, borderRadius: 6, background: "var(--blue-light)", fontSize: 11, color: "var(--text-2)", marginBottom: 6 }}>
+                                        {f.recommendation || "—"}
+                                      </div>
+                                      {f.clauseReference ? (
+                                        <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)" }}>Clause: {f.clauseReference}</div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {contractReviewTab === "letter" && (
+                              <div>
+                                <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    style={{ fontSize: 11 }}
+                                    onClick={() => {
+                                      const t = R.clientLetter || "";
+                                      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(t).catch(() => {});
+                                    }}
+                                  >
+                                    Copy Letter
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-gold"
+                                    style={{ fontSize: 11 }}
+                                    onClick={() => {
+                                      setComposeTo(selMatterObj.email || "");
+                                      setComposeSubject(`Contract Review — ${selMatterObj.address || ""}`);
+                                      setComposeBody(R.clientLetter || "");
+                                      setComposeModalMode("new");
+                                      setComposeModal(true);
+                                    }}
+                                  >
+                                    Send to Client
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: 10, color: "var(--text-3)", marginBottom: 8 }}>Download as PDF — coming soon</div>
+                                <div
+                                  style={{
+                                    padding: 16,
+                                    borderRadius: 10,
+                                    background: "var(--white)",
+                                    border: "1px solid var(--border)",
+                                    fontSize: 12,
+                                    lineHeight: 1.75,
+                                    color: "var(--text)",
+                                    whiteSpace: "pre-wrap",
+                                  }}
+                                >
+                                  {R.clientLetter || "—"}
+                                </div>
+                              </div>
+                            )}
+                            {contractReviewTab === "full" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                {crSections.map((sec) => {
+                                  const block = R.sections?.[sec.key];
+                                  if (!block) return null;
+                                  if (sec.key === "strataDetails" && block.applicable === false) return null;
+                                  const open = contractReviewExpanded[sec.key];
+                                  const st = statusChip(block.status);
+                                  return (
+                                    <div key={sec.key} style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setContractReviewExpanded((prev) => ({ ...prev, [sec.key]: !prev[sec.key] }))
+                                        }
+                                        style={{
+                                          width: "100%",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 10,
+                                          padding: "10px 12px",
+                                          border: "none",
+                                          background: "var(--surface)",
+                                          cursor: "pointer",
+                                          textAlign: "left",
+                                        }}
+                                      >
+                                        <span style={{ fontSize: 16 }}>{sec.icon}</span>
+                                        <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{sec.label}</span>
+                                        <span className="tag" style={{ ...st, fontSize: 9 }}>{block.status || "—"}</span>
+                                        <span style={{ color: "var(--text-3)", fontSize: 12 }}>{open ? "▼" : "▶"}</span>
+                                      </button>
+                                      {open && (
+                                        <div style={{ padding: "12px 14px", borderTop: "1px solid var(--border-2)", fontSize: 11, color: "var(--text-2)" }}>
+                                          <div style={{ marginBottom: 8 }}>{block.summary || "—"}</div>
+                                          {Array.isArray(block.details) && block.details.length > 0 && (
+                                            <ul style={{ margin: "0 0 8px 16px", padding: 0 }}>
+                                              {block.details.map((x, i) => (
+                                                <li key={i} style={{ marginBottom: 4 }}>{x}</li>
+                                              ))}
+                                            </ul>
+                                          )}
+                                          {Array.isArray(block.concerns) && block.concerns.length > 0 && (
+                                            <div style={{ padding: 8, borderRadius: 6, background: "var(--amber-light)", marginBottom: 8 }}>
+                                              {block.concerns.map((c, i) => (
+                                                <div key={i}>⚠ {c}</div>
+                                              ))}
+                                            </div>
+                                          )}
+                                          {sec.key === "titleOwnership" && (
+                                            <>
+                                              {Array.isArray(block.easements) && block.easements.length > 0 && (
+                                                <div style={{ marginBottom: 6 }}><strong>Easements:</strong> {block.easements.join("; ")}</div>
+                                              )}
+                                              {Array.isArray(block.covenants) && block.covenants.length > 0 && (
+                                                <div style={{ marginBottom: 6 }}><strong>Covenants:</strong> {block.covenants.join("; ")}</div>
+                                              )}
+                                              {Array.isArray(block.encumbrances) && block.encumbrances.length > 0 && (
+                                                <div style={{ marginBottom: 6 }}><strong>Encumbrances:</strong> {block.encumbrances.join("; ")}</div>
+                                              )}
+                                            </>
+                                          )}
+                                          {sec.key === "strataDetails" && (
+                                            <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                                              <div><strong>Levies:</strong> {block.levies || "—"}</div>
+                                              <div><strong>Sinking fund:</strong> {block.sinkingFund || "—"}</div>
+                                              <div><strong>Special levies:</strong> {block.specialLevies || "—"}</div>
+                                            </div>
+                                          )}
+                                          {sec.key === "zoningPlanning" && (
+                                            <div style={{ marginTop: 6, fontSize: 10, fontFamily: "var(--font-mono)" }}>
+                                              Zone: {block.zoneType || "—"} · Overlays: {(block.overlays || []).join(", ") || "—"}
+                                            </div>
+                                          )}
+                                          {sec.key === "specialConditions" && (
+                                            <div style={{ marginTop: 6, fontSize: 10 }}>
+                                              Finance: {block.financeClause || "—"}
+                                              {Array.isArray(block.otherClauses) && block.otherClauses.length > 0 && (
+                                                <div style={{ marginTop: 4 }}>{block.otherClauses.join("; ")}</div>
+                                              )}
+                                            </div>
+                                          )}
+                                          {sec.key === "inclusionsExclusions" && (
+                                            <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                                              <div><strong>Included:</strong> {(block.included || []).join(", ") || "—"}</div>
+                                              <div><strong>Excluded:</strong> {(block.excluded || []).join(", ") || "—"}</div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* SEARCHES */}
                 {matterTab==="Searches" && (() => {
@@ -5404,10 +7041,17 @@ Return only the email body text, no subject line.`;
                   }
                   if (!statusMap) statusMap = {};
                   const setSearchStatus = (searchId, status) => {
-                    const next = { ...(matterSearches[matterId] || {}), [searchId]: status };
+                    let base = {};
+                    try {
+                      if (selMatterObj.notes && String(selMatterObj.notes).trim().startsWith("{")) {
+                        base = JSON.parse(selMatterObj.notes);
+                      }
+                    } catch (_) {}
+                    const next = { ...base, [searchId]: status };
                     setMatterSearches(prev => ({ ...prev, [matterId]: next }));
                     const notesPayload = JSON.stringify(next);
                     supabase.from("matters").update({ notes: notesPayload }).eq("matter_ref", matterId).then(() => {});
+                    setMATTERS((prev) => prev.map((m) => (m.id === matterId ? { ...m, notes: notesPayload } : m)));
                   };
                   const openInfoTrack = (searchId) => {
                     window.open("https://www.infotrack.com.au", "_blank");
@@ -5563,8 +7207,8 @@ Return only the email body text, no subject line.`;
                     {[
                       {label:"Total Referrers",value:(referrers||[]).length,sub:"partners",cls:""},
                       {label:"Total Referrals",value:(referrers||[]).reduce((s,r)=>s+(r.referrals||0),0),sub:"all time",cls:"stat-accent"},
-                      {label:"Fees Paid",value:"$1,500",sub:"YTD",cls:"stat-gold"},
-                      {label:"Fees Owed",value:"$300",sub:"outstanding",cls:"stat-red"},
+                      {label:"Fees Paid",value:"$"+(referrers||[]).reduce((s,r)=>s+Math.max(0,(r.total_fees||0)-(r.fee_owed||0)),0).toLocaleString(),sub:"net of owed",cls:"stat-gold"},
+                      {label:"Fees Owed",value:"$"+(referrers||[]).reduce((s,r)=>s+(r.fee_owed||0),0).toLocaleString(),sub:"outstanding",cls:"stat-red"},
                     ].map(s=>(
                       <div key={s.label} className={`stat ${s.cls}`}>
                         <div className="stat-label">{s.label}</div>
@@ -5581,11 +7225,11 @@ Return only the email body text, no subject line.`;
                     <div key={r.id} className={`ref-list-item ${selectedRef===r.id?"active":""}`}
                       onClick={()=>setSelectedRef(r.id)}>
                       <div className="rli-name">{r.name}</div>
-                      <div className="rli-type">{r.type} · Partner since {r.since}</div>
+                      <div className="rli-type">{r.type} · Partner since {r.since || "—"}</div>
                       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                        <span className="fee-pill fee-none">{r.referrals} referrals</span>
-                        {r.feeOwed>0 ? <span className="fee-pill fee-owed">⚠ ${r.feeOwed} owed</span> : r.totalFees>0 ? <span className="fee-pill fee-paid">✓ ${r.totalFees} paid</span> : <span style={{fontSize:10,color:"var(--text-3)",fontFamily:"var(--font-mono)"}}>No fee</span>}
-                        {r.formalAgreement && <span className="tag tag-gold">✓ Agreement</span>}
+                        <span className="fee-pill fee-none">{(r.referrals||0)} referrals</span>
+                        {(r.fee_owed||0)>0 ? <span className="fee-pill fee-owed">⚠ ${(r.fee_owed||0)} owed</span> : (r.total_fees||0)>0 ? <span className="fee-pill fee-paid">✓ ${(r.total_fees||0)} total</span> : <span style={{fontSize:10,color:"var(--text-3)",fontFamily:"var(--font-mono)"}}>No fee</span>}
+                        {r.formal_agreement && <span className="tag tag-gold">✓ Agreement</span>}
                       </div>
                     </div>
                   ))}
@@ -5603,15 +7247,15 @@ Return only the email body text, no subject line.`;
                         <div className="rdt-name">{selRef.name}</div>
                         <div className="rdt-meta">{selRef.company} · {selRef.type} · {selRef.phone} · {selRef.email}</div>
                         <div style={{display:"flex",gap:8,marginBottom:4}}>
-                          <span className={`tag ${selRef.formalAgreement?"tag-green":"tag-amber"}`}>{selRef.formalAgreement?"✓ Formal Agreement":"No Agreement"}</span>
-                          <span className="tag tag-gray">Partner since {selRef.since}</span>
+                          <span className={`tag ${selRef.formal_agreement?"tag-green":"tag-amber"}`}>{selRef.formal_agreement?"✓ Formal Agreement":"No Agreement"}</span>
+                          <span className="tag tag-gray">Partner since {selRef.since || "—"}</span>
                         </div>
                         <div className="rdt-summary">
                           {[
-                            {label:"Total Referrals",value:selRef.referrals},
-                            {label:"Total Fees Paid",value:"$"+selRef.totalFees.toLocaleString()},
-                            {label:"Fees Owed",value:selRef.feeOwed>0?"$"+selRef.feeOwed:"—"},
-                            {label:"Avg Value",value:selRef.referrals>0?"$"+(Math.round(selRef.totalFees/selRef.referrals||0)).toLocaleString():"—"},
+                            {label:"Total Referrals",value:(selRef.referrals||0)},
+                            {label:"Total Fees Paid",value:"$"+Math.max(0,(selRef.total_fees||0)-(selRef.fee_owed||0)).toLocaleString()},
+                            {label:"Fees Owed",value:(selRef.fee_owed||0)>0?"$"+(selRef.fee_owed||0):"—"},
+                            {label:"Avg Value",value:(selRef.referrals||0)>0?"$"+(Math.round((selRef.total_fees||0)/(selRef.referrals||1))).toLocaleString():"—"},
                           ].map(s=>(
                             <div key={s.label} className="rdt-sum-card">
                               <div className="rdt-sum-label">{s.label}</div>
@@ -5626,18 +7270,108 @@ Return only the email body text, no subject line.`;
                       <div style={{padding:"14px 22px"}}>
                         <div style={{fontSize:12,fontWeight:700,color:"var(--text)",marginBottom:12}}>Referred Matters</div>
                         <div style={{background:"var(--white)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",overflow:"hidden"}}>
-                          <div style={{display:"grid",gridTemplateColumns:"110px 1fr 110px 90px",padding:"8px 16px",background:"var(--surface)",borderBottom:"1px solid var(--border)",gap:12}}>
-                            {["Matter","Client","Value","Fee"].map(h=><div key={h} style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px"}}>{h}</div>)}
+                          <div style={{display:"grid",gridTemplateColumns:"minmax(72px,0.9fr) minmax(100px,1.2fr) 88px 100px 96px 88px",padding:"8px 16px",background:"var(--surface)",borderBottom:"1px solid var(--border)",gap:10,alignItems:"center"}}>
+                            {["Matter","Client","Fee","Status","Referred","Action"].map((h, i) => (
+                              <div key={i} style={{fontSize:9,fontFamily:"var(--font-mono)",color:"var(--text-3)",textTransform:"uppercase",letterSpacing:"1px"}}>{h}</div>
+                            ))}
                           </div>
-                          {MATTERS.filter(m=>[selRef.id].includes("REF-001")&&m.source==="Referral"||m.agent===selRef.company).slice(0,5).map((m,i)=>(
-                            <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 110px 90px",padding:"10px 16px",borderBottom:"1px solid var(--border-2)",gap:12,alignItems:"center",cursor:"pointer"}}
-                              onClick={()=>{setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
-                              <div style={{fontSize:10,fontFamily:"var(--font-mono)",color:"var(--text-3)"}}>{m.id}</div>
-                              <div style={{fontSize:12,fontWeight:600,color:"var(--text)"}}>{m.client}</div>
-                              <div style={{fontSize:12,fontFamily:"var(--font-mono)",color:"var(--text)"}}>{m.price}</div>
-                              <span className="fee-pill fee-none">$300</span>
-                            </div>
-                          ))}
+                          {referralsList.filter((row) => row.referrer_id === selRef.id).length === 0 ? (
+                            <div style={{padding:"16px",fontSize:12,color:"var(--text-3)"}}>No referral records for this partner yet.</div>
+                          ) : (
+                            referralsList
+                              .filter((row) => row.referrer_id === selRef.id)
+                              .map((row) => (
+                                <div
+                                  key={row.id}
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "minmax(72px,0.9fr) minmax(100px,1.2fr) 88px 100px 96px 88px",
+                                    padding: "10px 16px",
+                                    borderBottom: "1px solid var(--border-2)",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    style={{ fontSize: 11, fontFamily: "var(--font-mono)", padding: "4px 0", justifyContent: "flex-start", textAlign: "left" }}
+                                    onClick={() => {
+                                      setSelectedMatter(row.matter_ref);
+                                      setPage("matter_workspace");
+                                      setMatterTab("Overview");
+                                    }}
+                                  >
+                                    {row.matter_ref}
+                                  </button>
+                                  <div style={{ fontWeight: 600, color: "var(--text)" }}>{row.client_name || "—"}</div>
+                                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                                    {Number(row.referral_fee) > 0 ? `$${Number(row.referral_fee).toLocaleString()}` : "No fee"}
+                                  </div>
+                                  <div>
+                                    {row.fee_paid ? (
+                                      <span className="tag tag-green" style={{ fontSize: 9 }}>
+                                        ✓ Paid
+                                      </span>
+                                    ) : (
+                                      <span className="tag tag-amber" style={{ fontSize: 9 }}>
+                                        ⚠ Unpaid
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "var(--text-2)" }}>
+                                    {row.created_at
+                                      ? new Date(row.created_at).toLocaleDateString("en-AU", {
+                                          day: "numeric",
+                                          month: "short",
+                                          year: "numeric",
+                                        })
+                                      : "—"}
+                                  </div>
+                                  <div>
+                                    {!row.fee_paid && Number(row.referral_fee) > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="btn-ghost"
+                                        style={{ fontSize: 10, padding: "4px 8px" }}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          const amt = Number(row.referral_fee) || 0;
+                                          const today = new Date().toISOString().slice(0, 10);
+                                          await supabase
+                                            .from("referrals")
+                                            .update({ fee_paid: true, fee_paid_date: today })
+                                            .eq("id", row.id);
+                                          const { data: cur } = await supabase
+                                            .from("referrers")
+                                            .select("fee_owed")
+                                            .eq("id", row.referrer_id)
+                                            .single();
+                                          if (cur) {
+                                            await supabase
+                                              .from("referrers")
+                                              .update({ fee_owed: Math.max(0, (cur.fee_owed || 0) - amt) })
+                                              .eq("id", row.referrer_id);
+                                          }
+                                          const { data: rl } = await supabase
+                                            .from("referrals")
+                                            .select("*, referrers(name, type, company)")
+                                            .order("created_at", { ascending: false });
+                                          if (rl) setReferralsList(rl);
+                                          const { data: rr } = await supabase.from("referrers").select("*").order("name");
+                                          if (rr) setReferrers(rr);
+                                        }}
+                                      >
+                                        Mark as Paid
+                                      </button>
+                                    ) : (
+                                      <span style={{ fontSize: 10, color: "var(--text-3)" }}>—</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))
+                          )}
                         </div>
                       </div>
                     </>
@@ -8024,136 +9758,1540 @@ Return only the email body text, no subject line.`;
       {/* ══════════════════════════════════════════════
           NEW MATTER INTAKE MODAL
       ══════════════════════════════════════════════ */}
-      {modal === "intake" && (
-        <div className="modal-overlay" onClick={()=>{setModal(null);setIntakeStep(0);setIntakeSource(null);}}>
-          <div className="intake-modal" onClick={e=>e.stopPropagation()}>
+      {modal === "intake" && (() => {
+        const purchase = intakeMatterType === "Purchase";
+        const maxIdx = purchase ? 3 : 2;
+        const labels = purchase ? ["Type", "Property", "Client", "Review"] : ["Type", "Client", "Review"];
+        const displayIdx = purchase ? intakeStep : intakeStep === 0 ? 0 : intakeStep === 1 ? 1 : 2;
+        const goNext = () => {
+          if (intakeStep === 0) {
+            if (!intakeMatterType) return;
+            setIntakeStep(1);
+            return;
+          }
+          if (purchase) {
+            if (intakeStep < 3) setIntakeStep((s) => s + 1);
+          } else if (intakeStep === 1) setIntakeStep(2);
+        };
+        const goBack = () => {
+          if (intakeStep === 0) return;
+          if (purchase) setIntakeStep((s) => s - 1);
+          else if (intakeStep === 2) setIntakeStep(1);
+          else if (intakeStep === 1) setIntakeStep(0);
+        };
+        const intakeNeedsReferee = INTAKE_REFERRAL_NEEDS_REFEREE.has(intakeReferralSource);
+        const intakeRefereeOk = !intakeNeedsReferee || !!intakeReferrerId;
+        const purchasePropertyOk =
+          !!String(intakeAddress || "").trim() && !!String(intakeReferralSource || "").trim() && intakeRefereeOk;
+        const contactOk =
+          !!(intakeClientFirstName || intakeClientLastName) && !!String(intakeClientEmail || "").trim();
+        const entityNameOk = intakeEntityType !== "entity" || !!String(intakeEntityName || "").trim();
+        const nextValid =
+          intakeStep === 0
+            ? !!intakeMatterType
+            : intakeStep === 1 && purchase
+              ? purchasePropertyOk
+              : intakeStep === 1 && !purchase
+                ? contactOk
+                : intakeStep === 2 && purchase
+                  ? contactOk && entityNameOk
+                  : true;
+        const autofillBadge = (key) =>
+          intakeAutoFilledFields[key] ? (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color: "var(--blue)",
+                marginLeft: 6,
+                whiteSpace: "nowrap",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              ✦ auto-filled
+            </span>
+          ) : null;
+        return (
+        <div className="modal-overlay" style={{ alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => { setModal(null); resetIntakeModal(); }}>
+          <div
+            className="intake-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 680, width: "100%", maxHeight: "min(100dvh - 24px, 92vh)", overflow: "hidden", display: "flex", flexDirection: "column" }}
+          >
             <div className="intake-hdr">
               <div>
-                <div className="intake-title">New Matter</div>
-                <div className="intake-sub">AI will extract and populate fields automatically</div>
+                <div className="intake-title">New matter</div>
+                <div className="intake-sub">
+                  {intakeStep === 0 && "What type of matter?"}
+                  {intakeStep === 1 && purchase && "Property details"}
+                  {intakeStep === 1 && !purchase && "Client details"}
+                  {intakeStep === 2 && purchase && "Client details"}
+                  {intakeStep === 2 && !purchase && "Review & create"}
+                  {intakeStep === 3 && purchase && "Review & create"}
+                </div>
               </div>
-              <button className="modal-close" onClick={()=>{setModal(null);setIntakeStep(0);setIntakeSource(null);}}>✕</button>
+              <button type="button" className="modal-close" onClick={() => { setModal(null); resetIntakeModal(); }}>✕</button>
             </div>
-            <div className="intake-stepper">
-              {INTAKE_STEPS.map((s,i)=>(
-                <div key={s} className="is-step" style={{flex:i<INTAKE_STEPS.length-1?1:"none"}}>
-                  <div className={`is-dot ${i<intakeStep?"done":i===intakeStep?"curr":"todo"}`}>{i<intakeStep?"✓":i+1}</div>
-                  <div className={`is-label ${i===intakeStep?"curr":""}`}>{s}</div>
-                  {i<INTAKE_STEPS.length-1&&<div className={`is-line ${i<intakeStep?"done":""}`} style={{flex:1}}/>}
+            <div className="intake-stepper" style={{ flexShrink: 0 }}>
+              {labels.map((s, i) => (
+                <div key={s} className="is-step" style={{ flex: i < labels.length - 1 ? 1 : "none" }}>
+                  <div className={`is-dot ${i < displayIdx ? "done" : i === displayIdx ? "curr" : "todo"}`}>{i < displayIdx ? "✓" : i + 1}</div>
+                  <div className={`is-label ${i === displayIdx ? "curr" : ""}`}>{s}</div>
+                  {i < labels.length - 1 && <div className={`is-line ${i < displayIdx ? "done" : ""}`} style={{ flex: 1 }} />}
                 </div>
               ))}
             </div>
-            <div className="intake-body">
-              {intakeStep===0&&(
+            <div className="intake-body" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+              {intakeStep === 0 && (
                 <>
-                  <div style={{fontSize:12,color:"var(--text-2)",marginBottom:16}}>How is this matter coming in? Select the source and AI will extract key details.</div>
-                  <div className="intake-source-grid">
-                    {SOURCES.map(s=>(
-                      <div key={s.id} className={`src-card ${intakeSource===s.id?"sel":""}`} onClick={()=>setIntakeSource(s.id)}>
-                        <div className="src-icon">{s.icon}</div>
-                        <div className="src-label">{s.label}</div>
-                        <div className="src-desc">{s.desc}</div>
-                      </div>
+                  <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 14 }}>Choose the matter type. Purchase includes the full checklist; other types are coming soon but can still be created.</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                    {INTAKE_TYPE_CARDS.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setIntakeMatterType(c.id)}
+                        onDoubleClick={() => {
+                          setIntakeMatterType(c.id);
+                          setIntakeStep(1);
+                        }}
+                        style={{
+                          textAlign: "left",
+                          padding: 14,
+                          borderRadius: 12,
+                          border: intakeMatterType === c.id ? "2px solid var(--blue)" : "1px solid var(--border)",
+                          background: intakeMatterType === c.id ? "var(--blue-light)" : "var(--surface)",
+                          cursor: "pointer",
+                          fontFamily: "var(--font-body)",
+                          position: "relative",
+                        }}
+                      >
+                        {c.soon && (
+                          <span className="tag tag-amber" style={{ position: "absolute", top: 8, right: 8, fontSize: 9 }}>
+                            Coming soon
+                          </span>
+                        )}
+                        <div style={{ fontSize: 28, marginBottom: 6 }}>{c.icon}</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>{c.title}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.4 }}>{c.desc}</div>
+                      </button>
                     ))}
                   </div>
-                  {intakeSource&&(
-                    <>
-                      <label className="intake-label">Paste content from {intakeSource}</label>
-                      <textarea className="intake-textarea" placeholder="Paste email, message, or notes here... AI will extract the key details." value={intakeText} onChange={e=>setIntakeText(e.target.value)}/>
-                    </>
-                  )}
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 12, textAlign: "center" }}>Double-click to select and continue</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8, textAlign: "center" }}>We&apos;ll guide you through the full process step by step</div>
                 </>
               )}
-              {intakeStep===1&&(
-                <div style={{textAlign:"center",padding:"32px 0"}}>
-                  {intakeExtracting&&(
-                    <>
-                      <div style={{fontSize:40,marginBottom:16,display:"inline-block",animation:"bounce 1s ease infinite"}}>✦</div>
-                      <div style={{fontFamily:"var(--font-display)",fontSize:18,color:"var(--text)",marginBottom:6}}>Analysing your {intakeSource}...</div>
-                      <div style={{fontSize:12,color:"var(--text-3)",marginBottom:20}}>Extracting client details, property address, key dates, and special conditions.</div>
-                    </>
-                  )}
-                </div>
-              )}
-              {intakeStep===2&&(
+              {intakeStep === 1 && purchase && (
                 <>
-                  <div className="extracted-card">
-                    <span className="ext-badge">✦ AI Extracted · 94% confidence</span>
-                    {[{k:"Client Name",v:"New Client",c:"high"},{k:"Property",v:"[Extracted Address]",c:"high"},{k:"Price",v:"[Extracted Price]",c:"high"},{k:"Settlement",v:"[Extracted Date]",c:"high"},{k:"Lender",v:"[Extracted Lender]",c:"med"}].map(f=>(
-                      <div key={f.k} className="ext-field">
-                        <span className="ext-key">{f.k}</span>
-                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          <span className="ext-val">{f.v}</span>
-                          <span className={`ext-conf ${f.c==="high"?"conf-hi":"conf-med"}`}>{f.c==="high"?"✓ High":"~ Med"}</span>
-                        </div>
-                      </div>
-                    ))}
+                  <label className="intake-label">Full address</label>
+                  <input
+                    ref={addressInputRef}
+                    type="text"
+                    className="intake-input"
+                    placeholder="Start typing address…"
+                    value={intakeAddress}
+                    onChange={(e) => setIntakeAddress(e.target.value)}
+                    autoComplete="off"
+                    style={{ marginBottom: 14 }}
+                  />
+                  <div style={{ marginBottom: 14 }}>
+                    <span className="intake-label">State</span>
+                    <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                      {["NSW", "VIC"].map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setIntakeState(st)}
+                          style={{
+                            flex: 1,
+                            padding: "10px 12px",
+                            borderRadius: 8,
+                            border: intakeState === st ? "2px solid var(--blue)" : "1px solid var(--border)",
+                            background: intakeState === st ? "var(--blue-light)" : "var(--white)",
+                            fontWeight: 600,
+                            fontSize: 13,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{fontSize:10,fontFamily:"var(--font-mono)",color:"var(--amber)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>⚠ Missing — please complete</div>
-                    {["Phone number","Email address","Agent details","Referral source"].map(f=>(
-                      <div key={f} className="missing-alert">⚠ {f} not detected</div>
-                    ))}
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <label className="intake-label">Address</label>
+                  <label className="intake-label">Purchase price</label>
+                  <div style={{ position: "relative", marginBottom: 14 }}>
+                    <span style={{ position: "absolute", left: 12, top: 9, fontSize: 12, color: "var(--text-3)", zIndex: 1 }}>$</span>
                     <input
-                      ref={addressInputRef}
-                      type="text"
                       className="intake-input"
-                      placeholder="Start typing address..."
-                      value={intakeAddress}
-                      onChange={e=>setIntakeAddress(e.target.value)}
-                      autoComplete="off"
+                      style={{ paddingLeft: 28 }}
+                      inputMode="numeric"
+                      value={formatDigitsWithCommas(intakePurchasePrice)}
+                      onChange={(e) => setIntakePurchasePrice(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="0"
                     />
                   </div>
-                  <div className="intake-grid">
-                    {[["Phone",""],["Email",""],["Agent",""],["Source","Website"],["Type","Purchase"],["State",intakeState],["Suburb",intakeSuburb],["Postcode",intakePostcode]].map(([l,d])=>(
-                      <div key={l}>
-                        <label className="intake-label">{l}</label>
-                        {l === "State" || l === "Suburb" || l === "Postcode" ? (
-                          <input
-                            className="intake-input"
-                            placeholder={`Enter ${l.toLowerCase()}...`}
-                            value={d}
-                            onChange={e=>{ if(l==="State")setIntakeState(e.target.value); if(l==="Suburb")setIntakeSuburb(e.target.value); if(l==="Postcode")setIntakePostcode(e.target.value); }}
-                          />
-                        ) : (
-                          <input className="intake-input" defaultValue={d} placeholder={`Enter ${l.toLowerCase()}...`}/>
-                        )}
-                      </div>
-                    ))}
+                  <label className="intake-label">Settlement date (optional)</label>
+                  <input type="date" className="intake-input" value={intakeSettlementDate} onChange={(e) => setIntakeSettlementDate(e.target.value)} style={{ marginBottom: 14 }} />
+                  <label className="intake-label">Referral source</label>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: 8,
+                      marginBottom: intakeNeedsReferee ? 12 : 0,
+                    }}
+                  >
+                    {INTAKE_REFERRAL_OPTIONS.map((o) => {
+                      const sel = intakeReferralSource === o.id;
+                      return (
+                        <button
+                          key={o.id}
+                          type="button"
+                          onClick={() => {
+                            setIntakeReferralSource(o.id);
+                            if (!INTAKE_REFERRAL_NEEDS_REFEREE.has(o.id)) {
+                              setIntakeReferrerId(null);
+                              setIntakeReferrerName("");
+                              setIntakeReferralFee("");
+                              setIntakeReferralFeeEnabled(false);
+                              setIntakeReferrerSearch("");
+                              setIntakeShowNewReferrerForm(false);
+                              setIntakeNewReferrerForm({ name: "", phone: "", email: "", company: "" });
+                            }
+                          }}
+                          style={{
+                            textAlign: "left",
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: sel ? "2px solid var(--blue)" : "1px solid var(--border)",
+                            background: sel ? "var(--blue-light)" : "var(--surface)",
+                            cursor: "pointer",
+                            fontFamily: "var(--font-body)",
+                          }}
+                        >
+                          <div style={{ fontSize: 20, marginBottom: 4 }}>{o.icon}</div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", lineHeight: 1.3 }}>{o.id}</div>
+                        </button>
+                      );
+                    })}
                   </div>
+                  {intakeNeedsReferee && (
+                    <div style={{ marginTop: 4, marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Referee lookup</div>
+                      <input
+                        className="intake-input"
+                        placeholder="Search existing referrers…"
+                        value={intakeReferrerSearch}
+                        onChange={(e) => setIntakeReferrerSearch(e.target.value)}
+                        style={{ marginBottom: 10 }}
+                      />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto", marginBottom: 10 }}>
+                        {(referrers || [])
+                          .filter((r) => {
+                            const q = intakeReferrerSearch.trim().toLowerCase();
+                            if (!q) return true;
+                            return [r.name, r.type, r.company, r.email, r.phone]
+                              .some((f) => String(f || "").toLowerCase().includes(q));
+                          })
+                          .map((r) => {
+                            const active = intakeReferrerId === r.id;
+                            return (
+                              <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => {
+                                  setIntakeReferrerId(r.id);
+                                  setIntakeReferrerName(r.name || "");
+                                }}
+                                style={{
+                                  textAlign: "left",
+                                  padding: "10px 12px",
+                                  borderRadius: 10,
+                                  border: active ? "2px solid var(--blue)" : "1px solid var(--border)",
+                                  background: active ? "var(--blue-light)" : "var(--white)",
+                                  cursor: "pointer",
+                                  fontFamily: "var(--font-body)",
+                                }}
+                              >
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{r.name}</div>
+                                <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                                  {r.type || "—"} · {(r.referrals ?? 0)} past referrals
+                                </div>
+                              </button>
+                            );
+                          })}
+                      </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          style={{ fontSize: 12 }}
+                          onClick={() => setIntakeShowNewReferrerForm((v) => !v)}
+                        >
+                          {intakeShowNewReferrerForm ? "Hide new referrer form" : "+ Add New Referrer"}
+                        </button>
+                      </div>
+                      {intakeShowNewReferrerForm && (
+                        <div
+                          style={{
+                            padding: 12,
+                            borderRadius: 10,
+                            border: "1px solid var(--border)",
+                            background: "var(--surface)",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8 }}>New referrer</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <div>
+                              <label className="intake-label">Name</label>
+                              <input
+                                className="intake-input"
+                                value={intakeNewReferrerForm.name}
+                                onChange={(e) => setIntakeNewReferrerForm((f) => ({ ...f, name: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="intake-label">Phone</label>
+                              <input
+                                className="intake-input"
+                                value={intakeNewReferrerForm.phone}
+                                onChange={(e) => setIntakeNewReferrerForm((f) => ({ ...f, phone: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                            <div>
+                              <label className="intake-label">Email</label>
+                              <input
+                                className="intake-input"
+                                type="email"
+                                value={intakeNewReferrerForm.email}
+                                onChange={(e) => setIntakeNewReferrerForm((f) => ({ ...f, email: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="intake-label">Company</label>
+                              <input
+                                className="intake-input"
+                                value={intakeNewReferrerForm.company}
+                                onChange={(e) => setIntakeNewReferrerForm((f) => ({ ...f, company: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-gold"
+                            style={{ fontSize: 12, padding: "8px 14px" }}
+                            onClick={async () => {
+                              const nm = String(intakeNewReferrerForm.name || "").trim();
+                              if (!nm) {
+                                alert("Name is required");
+                                return;
+                              }
+                              const payload = {
+                                name: nm,
+                                phone: intakeNewReferrerForm.phone?.trim() || null,
+                                email: intakeNewReferrerForm.email?.trim() || null,
+                                company: intakeNewReferrerForm.company?.trim() || null,
+                                type: intakeReferralSource,
+                              };
+                              const { data, error: insErr } = await supabase.from("referrers").insert(payload).select().single();
+                              if (insErr) {
+                                alert(insErr.message || "Could not add referrer");
+                                return;
+                              }
+                              setReferrers((prev) => [...(prev || []), data].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))));
+                              setIntakeReferrerId(data.id);
+                              setIntakeReferrerName(data.name || "");
+                              setIntakeShowNewReferrerForm(false);
+                              setIntakeNewReferrerForm({ name: "", phone: "", email: "", company: "" });
+                            }}
+                          >
+                            Save referrer
+                          </button>
+                        </div>
+                      )}
+                      {!!intakeReferrerId && (
+                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border-2)" }}>
+                          <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Referral fee</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+                            <span style={{ fontSize: 12, color: "var(--text-2)" }}>Referral fee agreed?</span>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIntakeReferralFeeEnabled(true);
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  fontSize: 11,
+                                  borderRadius: 8,
+                                  border: intakeReferralFeeEnabled ? "2px solid var(--blue)" : "1px solid var(--border)",
+                                  background: intakeReferralFeeEnabled ? "var(--blue-light)" : "var(--white)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Yes
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIntakeReferralFeeEnabled(false);
+                                  setIntakeReferralFee("");
+                                }}
+                                style={{
+                                  padding: "6px 12px",
+                                  fontSize: 11,
+                                  borderRadius: 8,
+                                  border: !intakeReferralFeeEnabled ? "2px solid var(--blue)" : "1px solid var(--border)",
+                                  background: !intakeReferralFeeEnabled ? "var(--blue-light)" : "var(--white)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                No
+                              </button>
+                            </div>
+                          </div>
+                          {intakeReferralFeeEnabled && (
+                            <div style={{ position: "relative", marginBottom: 8 }}>
+                              <span style={{ position: "absolute", left: 12, top: 9, fontSize: 12, color: "var(--text-3)", zIndex: 1 }}>$</span>
+                              <input
+                                className="intake-input"
+                                style={{ paddingLeft: 28 }}
+                                inputMode="numeric"
+                                placeholder="Amount"
+                                value={formatDigitsWithCommas(intakeReferralFee)}
+                                onChange={(e) => setIntakeReferralFee(e.target.value.replace(/[^0-9]/g, ""))}
+                              />
+                            </div>
+                          )}
+                          <div style={{ fontSize: 10, color: "var(--text-3)", lineHeight: 1.4 }}>A task will be added to pay this fee at settlement</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
-              {intakeStep===3&&(
-                <div style={{textAlign:"center",padding:"24px 0"}}>
-                  <div style={{fontSize:48,marginBottom:14}}>✅</div>
-                  <div style={{fontFamily:"var(--font-display)",fontSize:20,color:"var(--text)",marginBottom:6}}>Matter Created</div>
-                  <div style={{fontSize:12,color:"var(--text-3)",marginBottom:20}}>New matter has been created and added to your pipeline.</div>
-                  <div style={{background:"var(--gold-light)",borderRadius:12,padding:"14px 20px",border:"1px solid var(--gold-dim)",textAlign:"left"}}>
-                    {[["Matter ID","CC-2025-042"],["Client","New Client"],["Stage","Intake → Assigned to J. Chen"]].map(([k,v])=>(
-                      <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid var(--gold-dim)",fontSize:12,gap:8}}>
-                        <span style={{color:"var(--text-3)"}}>{k}</span>
-                        <span style={{fontWeight:600,color:"var(--text)"}}>{v}</span>
-                      </div>
-                    ))}
+              {intakeStep === 1 && !purchase && (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label className="intake-label">First name</label>
+                      <input className="intake-input" value={intakeClientFirstName} onChange={(e) => setIntakeClientFirstName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="intake-label">Last name</label>
+                      <input className="intake-input" value={intakeClientLastName} onChange={(e) => setIntakeClientLastName(e.target.value)} />
+                    </div>
                   </div>
-                </div>
+                  <label className="intake-label">Email</label>
+                  <input className="intake-input" type="email" value={intakeClientEmail} onChange={(e) => setIntakeClientEmail(e.target.value)} style={{ marginBottom: 12 }} />
+                  <label className="intake-label">Mobile</label>
+                  <input className="intake-input" value={intakeClientPhone} onChange={(e) => setIntakeClientPhone(e.target.value)} style={{ marginBottom: 12 }} />
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text-2)" }}>
+                    <input type="checkbox" checked={intakeHasCoPurchaser} onChange={(e) => setIntakeHasCoPurchaser(e.target.checked)} />
+                    Is there a co-purchaser?
+                  </label>
+                  {intakeHasCoPurchaser && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                      <div>
+                        <label className="intake-label">Co-purchaser first name</label>
+                        <input className="intake-input" value={intakeCoPurchaserFirstName} onChange={(e) => setIntakeCoPurchaserFirstName(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="intake-label">Co-purchaser last name</label>
+                        <input className="intake-input" value={intakeCoPurchaserLastName} onChange={(e) => setIntakeCoPurchaserLastName(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>We&apos;ll send them an intro email automatically once the matter is created</div>
+                </>
               )}
+              {intakeStep === 2 && purchase && (
+                <>
+                  <div
+                    style={{
+                      background: "var(--ink)",
+                      color: "rgba(255,255,255,0.92)",
+                      borderRadius: 12,
+                      padding: "14px 16px",
+                      marginBottom: 18,
+                      border: "1px solid var(--ink-2)",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>✦ Auto-fill from communications</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginBottom: 12, lineHeight: 1.45 }}>
+                      We&apos;ll search your emails for details about this property
+                    </div>
+                    <button
+                      type="button"
+                      disabled={intakeAutoFillLoading || !String(intakeAddress || "").trim()}
+                      onClick={async () => {
+                        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+                        const addr = String(intakeAddress || "").trim();
+                        const asEmailList = (raw) => (Array.isArray(raw) ? raw : raw?.emails || []);
+                        const subjectListFrom = (list) =>
+                          (list || []).map((e) => (e && e.subject ? String(e.subject) : "(No subject)"));
+
+                        setIntakeAutoFillLoading(true);
+                        setIntakeAutoFillError("");
+                        setIntakeAutoFillResult(null);
+                        setIntakeAutoFillSubjectsExpanded(false);
+                        setIntakeAutoFilledFields({});
+                        setIntakeAutoFillStatus("🔍 Searching inbox for emails about this property...");
+                        try {
+                          await sleep(350);
+                          const intakeAddress = addr;
+
+                          const lotMatch = intakeAddress.match(/lot\s*(\d+)/i);
+                          const lotNumber = lotMatch ? lotMatch[1] : null;
+
+                          const allNumbers = (intakeAddress.match(/\d+/g) || []).filter(
+                            (n) => n.length >= 2
+                          );
+
+                          const skipWords = [
+                            "road",
+                            "street",
+                            "avenue",
+                            "drive",
+                            "court",
+                            "place",
+                            "lane",
+                            "north",
+                            "south",
+                            "east",
+                            "west",
+                            "nsw",
+                            "vic",
+                            "qld",
+                            "australia",
+                            "farm",
+                            "farms",
+                            "lot",
+                            "the",
+                          ];
+
+                          const meaningfulWords = intakeAddress
+                            .toLowerCase()
+                            .replace(/[^a-z0-9\s]/g, " ")
+                            .split(/\s+/)
+                            .filter((w) => w.length >= 4 && !skipWords.includes(w));
+
+                          const searchQueries = [];
+
+                          if (lotNumber && meaningfulWords.length > 0) {
+                            searchQueries.push(`lot ${lotNumber} ${meaningfulWords[0]}`);
+                          }
+                          if (meaningfulWords.length >= 2) {
+                            searchQueries.push(meaningfulWords.slice(0, 2).join(" "));
+                          }
+                          if (meaningfulWords.length >= 1) {
+                            searchQueries.push(meaningfulWords[0]);
+                          }
+                          if (lotNumber) {
+                            searchQueries.push(`lot ${lotNumber}`);
+                          }
+                          if (allNumbers.length > 0) {
+                            searchQueries.push(allNumbers[0]);
+                          }
+
+                          const uniqueSearchQueries = [...new Set(searchQueries.filter(Boolean))];
+                          console.log("[AutoFill] Search queries to try:", uniqueSearchQueries);
+
+                          const emailMap = {};
+
+                          for (const query of uniqueSearchQueries) {
+                            try {
+                              const res = await fetch(
+                                `/api/email?query=${encodeURIComponent(query)}&top=20`
+                              ).then((r) => r.json());
+                              const emails = asEmailList(res);
+                              console.log(
+                                `[AutoFill] Query "${query}" returned ${emails.length} emails`
+                              );
+                              emails.forEach((e) => {
+                                if (e.id) emailMap[e.id] = e;
+                              });
+                            } catch (err) {
+                              console.log("[AutoFill] Query failed:", query, err);
+                            }
+                          }
+
+                          try {
+                            const recentRes = await fetch(`/api/email?allEmails=true&top=30`).then(
+                              (r) => r.json()
+                            );
+                            const recentEmails = asEmailList(recentRes);
+                            const cutoff = new Date();
+                            cutoff.setDate(cutoff.getDate() - 7);
+                            recentEmails
+                              .filter((e) => e.receivedDateTime && new Date(e.receivedDateTime) > cutoff)
+                              .forEach((e) => {
+                                if (e.id) emailMap[e.id] = e;
+                              });
+                            console.log("[AutoFill] Recent emails added to pool");
+                          } catch (err) {
+                            console.log("[AutoFill] Recent fetch failed:", err);
+                          }
+
+                          const allEmailsPool = Object.values(emailMap);
+                          console.log("[AutoFill] Total unique emails in pool:", allEmailsPool.length);
+                          console.log("[AutoFill] Address searched:", addr);
+                          console.log("[AutoFill] Suburb searched:", intakeSuburb);
+
+                          if (allEmailsPool.length === 0) {
+                            setIntakeAutoFillError(
+                              `Could not find any emails in your inbox to analyse. ` +
+                                `Try searching manually in Communications.`
+                            );
+                            setIntakeAutoFillLoading(false);
+                            setIntakeAutoFillStatus("");
+                            return;
+                          }
+
+                          setIntakeAutoFillStatus("✦ Finding emails that match this property...");
+                          await sleep(200);
+
+                          const aiMatchPrompt = `You are helping find emails related to a property purchase.
+
+TARGET PROPERTY: ${intakeAddress}
+Lot number: ${lotNumber || "unknown"}
+Street numbers in address: ${allNumbers.join(", ")}
+Suburb: ${intakeSuburb || meaningfulWords.slice(-1)[0] || ""}
+
+IMPORTANT: Address formats vary. These all refer to the same property:
+- "Lot 72/186 MacArthur Rd Spring Farm" 
+- "Lot 72 186-196 MacArthur Road Spring Farm"
+- "Lot 72, 186 MacArthur Road, Spring Farm NSW 2570"
+The lot number (${lotNumber || "?"}) is the most reliable identifier.
+Street number ranges like "186-196" mean the lot is WITHIN that range.
+
+EMAILS IN INBOX (${allEmailsPool.length} total):
+${allEmailsPool
+  .map(
+    (e, i) =>
+      `${i}: Subject="${e.subject || ""}" | From="${e.from?.emailAddress?.name || e.from?.name || ""}" | Date="${e.receivedDateTime ? new Date(e.receivedDateTime).toLocaleDateString("en-AU") : ""}" | Preview="${(e.bodyPreview || "").slice(0, 100)}"`
+  )
+  .join("\n")}
+
+Which of these emails (by index number) are likely about the target property?
+Consider: lot number match, street name similarity, suburb match, 
+developer/agent names common in conveyancing emails.
+
+Return ONLY a JSON array of index numbers, most relevant first. Max 5.
+Example: [2, 7, 14]
+If none match return: []`;
+
+                          const matchRes = await fetch("/api/chat", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              messages: [{ role: "user", content: aiMatchPrompt }],
+                              mattersContext: "Email matching for new matter intake",
+                              systemOverride:
+                                "Respond with ONLY a JSON array of integers (indices), or []. No markdown fences, no explanation, no other text.",
+                            }),
+                          });
+                          const matchData = await matchRes.json();
+                          console.log("[AutoFill] AI match response:", matchData.content);
+
+                          let matchedIndices = [];
+                          if (matchRes.ok && !matchData.error) {
+                            try {
+                              const cleaned = String(matchData.content || "[]")
+                                .replace(/```json|```/g, "")
+                                .trim();
+                              const bracket = cleaned.match(/\[[\s\S]*\]/)?.[0] || "[]";
+                              const parsed = JSON.parse(bracket);
+                              const arr = Array.isArray(parsed) ? parsed : [];
+                              matchedIndices = arr
+                                .map((x) =>
+                                  typeof x === "number" ? x : parseInt(String(x).trim(), 10)
+                                )
+                                .filter(
+                                  (i) =>
+                                    Number.isFinite(i) &&
+                                    i >= 0 &&
+                                    i < allEmailsPool.length &&
+                                    Math.floor(i) === i
+                                );
+                            } catch (e) {
+                              console.log("[AutoFill] Failed to parse matched indices:", e);
+                            }
+                          } else {
+                            console.log("[AutoFill] AI match request failed:", matchData?.error);
+                          }
+
+                          console.log("[AutoFill] AI selected email indices:", matchedIndices);
+
+                          const relevantEmails = matchedIndices.map((i) => allEmailsPool[i]);
+                          console.log(
+                            "[AutoFill] Matched email subjects:",
+                            relevantEmails.map((e) => e.subject)
+                          );
+
+                          if (relevantEmails.length === 0) {
+                            setIntakeAutoFillError(
+                              `Could not find emails for this property in your inbox. ` +
+                                `Searched ${allEmailsPool.length} emails. ` +
+                                `The email may have arrived before the search window or use a very ` +
+                                `different address format. Try searching manually in Communications.`
+                            );
+                            setIntakeAutoFillLoading(false);
+                            setIntakeAutoFillStatus("");
+                            return;
+                          }
+
+                          setIntakeAutoFillStatus(`📧 Found ${relevantEmails.length} relevant emails — reading content...`);
+                          await sleep(400);
+
+                          const relevantEmailsWithBodies = await Promise.all(
+                            relevantEmails.slice(0, 5).map(async (e) => {
+                              try {
+                                const res = await fetch(
+                                  `/api/email?emailId=${encodeURIComponent(e.id)}`
+                                );
+                                const data = await res.json();
+
+                                const bodyText = String(data.body || "")
+                                  .replace(/<[^>]*>/g, " ")
+                                  .replace(/\s+/g, " ")
+                                  .trim()
+                                  .slice(0, 500);
+
+                                const attachments = data.attachments || [];
+                                console.log(
+                                  "[AutoFill] Email attachments:",
+                                  attachments.map((a) => ({
+                                    name: a.name,
+                                    type: a.contentType,
+                                    id: a.id,
+                                  }))
+                                );
+
+                                let pdfText = "";
+
+                                const pdfList = attachments.filter((att) => {
+                                  const isPdf =
+                                    (att.contentType || "").toLowerCase().includes("pdf") ||
+                                    (att.name || "").toLowerCase().endsWith(".pdf");
+                                  return isPdf;
+                                });
+
+                                for (const att of pdfList.slice(0, 3)) {
+                                  console.log("[AutoFill] Fetching PDF attachment:", att.name);
+                                  try {
+                                    const attRes = await fetch(
+                                      `/api/email?emailId=${encodeURIComponent(e.id)}&attachmentId=${encodeURIComponent(att.id || att.attachmentId || "")}`
+                                    );
+
+                                    if (!attRes.ok) {
+                                      console.log("[AutoFill] Attachment fetch failed:", attRes.status);
+                                      continue;
+                                    }
+
+                                    const attData = await attRes.json();
+                                    console.log(
+                                      "[AutoFill] Attachment data keys:",
+                                      Object.keys(attData || {})
+                                    );
+
+                                    if (attData.textContent) {
+                                      pdfText += String(attData.textContent).slice(0, 2000);
+                                      console.log("[AutoFill] Got text content from attachment");
+                                      continue;
+                                    }
+
+                                    const base64Content =
+                                      attData.contentBytes ||
+                                      attData.content ||
+                                      attData.data ||
+                                      "";
+
+                                    if (base64Content) {
+                                      console.log(
+                                        "[AutoFill] Sending PDF base64 to Claude for extraction"
+                                      );
+
+                                      const pdfExtractRes = await fetch("/api/chat", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({
+                                          messages: [
+                                            {
+                                              role: "user",
+                                              content: [
+                                                {
+                                                  type: "document",
+                                                  source: {
+                                                    type: "base64",
+                                                    media_type: "application/pdf",
+                                                    data: base64Content,
+                                                  },
+                                                },
+                                                {
+                                                  type: "text",
+                                                  text: `Extract ALL text from this PDF document. 
+Return just the raw text content, nothing else.
+Focus especially on: names, addresses, phone numbers, email addresses, 
+lot numbers, property addresses, purchaser names, ABN/ACN numbers.`,
+                                                },
+                                              ],
+                                            },
+                                          ],
+                                          mattersContext: "PDF text extraction for new matter intake",
+                                          systemOverride:
+                                            "Extract only the requested text from the document. Output plain text only, no markdown or preamble.",
+                                          maxTokens: 8192,
+                                        }),
+                                      });
+
+                                      if (pdfExtractRes.ok) {
+                                        const pdfData = await pdfExtractRes.json();
+                                        pdfText += String(pdfData.content || "").slice(0, 2000);
+                                        console.log(
+                                          "[AutoFill] PDF text extracted, length:",
+                                          pdfText.length
+                                        );
+                                        console.log(
+                                          "[AutoFill] PDF text preview:",
+                                          pdfText.slice(0, 300)
+                                        );
+                                      }
+                                    }
+                                  } catch (attErr) {
+                                    console.log(
+                                      "[AutoFill] Error reading attachment:",
+                                      att.name,
+                                      attErr
+                                    );
+                                  }
+                                }
+
+                                const lotInPdf = Boolean(
+                                  lotNumber &&
+                                    pdfText &&
+                                    pdfText.toLowerCase().includes(String(lotNumber).toLowerCase())
+                                );
+                                console.log(
+                                  "[AutoFill] Lot",
+                                  lotNumber,
+                                  "found in PDF:",
+                                  lotInPdf
+                                );
+
+                                const pdfNames = pdfList
+                                  .map((a) => a.name)
+                                  .filter(Boolean)
+                                  .join(", ");
+
+                                return {
+                                  ...e,
+                                  fullBody: bodyText,
+                                  pdfText,
+                                  combinedText:
+                                    bodyText + "\n\n[PDF CONTENT]:\n" + pdfText,
+                                  hasAttachments: attachments.length > 0,
+                                  pdfNames,
+                                  lotInPdf,
+                                };
+                              } catch (err) {
+                                console.log("[AutoFill] Error fetching email:", e.id, err);
+                                return {
+                                  ...e,
+                                  fullBody: e.bodyPreview || "",
+                                  pdfText: "",
+                                  lotInPdf: false,
+                                };
+                              }
+                            })
+                          );
+                          console.log(
+                            "[AutoFill] Emails with bodies and PDF text:",
+                            relevantEmailsWithBodies.map((x) => ({
+                              subject: x.subject,
+                              bodyLength: x.fullBody?.length,
+                              pdfLength: x.pdfText?.length,
+                            }))
+                          );
+
+                          const emailsWithBodies = relevantEmailsWithBodies;
+
+                          const confirmedEmails = emailsWithBodies.filter((e) => {
+                            const bodyAndPdf = (
+                              (e.fullBody || "") +
+                              " " +
+                              (e.pdfText || "")
+                            ).toLowerCase();
+
+                            if (lotNumber) {
+                              const lotInContent =
+                                bodyAndPdf.includes(`lot ${lotNumber}`) ||
+                                bodyAndPdf.includes(`lot${lotNumber}`) ||
+                                bodyAndPdf.includes(`/${lotNumber}`) ||
+                                bodyAndPdf.includes(` ${lotNumber} `) ||
+                                bodyAndPdf.includes(`${lotNumber}\n`);
+
+                              console.log("[AutoFill] Email:", e.subject);
+                              console.log("[AutoFill] Lot", lotNumber, "in body/PDF:", lotInContent);
+                              console.log(
+                                "[AutoFill] PDF text preview:",
+                                (e.pdfText || "").slice(0, 200)
+                              );
+
+                              return lotInContent;
+                            }
+
+                            const suburb = String(intakeSuburb || "").toLowerCase();
+                            return suburb && bodyAndPdf.includes(suburb);
+                          });
+
+                          console.log(
+                            "[AutoFill] Confirmed address matches:",
+                            confirmedEmails.length
+                          );
+
+                          if (confirmedEmails.length === 0) {
+                            setIntakeAutoFillError(
+                              lotNumber
+                                ? `Found ${emailsWithBodies.length} email(s) that may be related but ` +
+                                    `could not confirm Lot ${lotNumber} in the email body or PDF text (not subject line alone). ` +
+                                    `This usually means the details are in a PDF we could not read. ` +
+                                    `Please enter client details manually.`
+                                : `Found ${emailsWithBodies.length} email(s) but could not confirm suburb "${intakeSuburb || ""}" in the email body or PDF text. ` +
+                                    `Please enter client details manually.`
+                            );
+                            setIntakeAutoFillLoading(false);
+                            setIntakeAutoFillStatus("");
+                            return;
+                          }
+
+                          setIntakeAutoFillStatus("✦ AI is extracting client details...");
+                          await sleep(300);
+
+                          const prompt = `You are extracting PURCHASER details from email content and PDF attachments.
+
+TARGET PROPERTY: ${intakeAddress}
+LOT NUMBER: ${lotNumber || "(none — match by suburb in body/PDF)"}
+
+${
+  lotNumber
+    ? `The following emails have been CONFIRMED to contain lot ${lotNumber} in their body or PDF attachment (not subject line alone).`
+    : `The following emails have been CONFIRMED to mention the suburb "${intakeSuburb || ""}" in their body or PDF attachment.`
+}
+
+EMAILS AND PDF CONTENT:
+${confirmedEmails
+  .map(
+    (e, i) => `
+Email ${i + 1}:
+Subject: ${e.subject || ""}
+Body: ${e.fullBody || ""}
+${e.pdfText ? `PDF CONTENT:\n${e.pdfText}` : "(no PDF text extracted)"}`
+  )
+  .join("\n---\n")}
+
+Extract the PURCHASER/BUYER name, email and phone from the PDF content above.
+The purchaser is the person BUYING the property, not the developer or agent.
+Look for labels like: "Purchaser:", "Buyer:", "Name:", "Client:", 
+"Acting for:", "Purchase by:"
+
+Do NOT use names from the email subject line.
+Only use names found in the PDF content or email body text.
+
+Return ONLY this JSON (no markdown, no explanation):
+{
+  "entityType": "individual",
+  "firstName": "",
+  "lastName": "",
+  "email": "",
+  "phone": "",
+  "entityName": "",
+  "abn": "",
+  "isJoint": false,
+  "coPurchaserFirstName": "",
+  "coPurchaserLastName": "",
+  "confidence": "high|medium|low",
+  "source": "exact text from PDF that contains the purchaser name"
+}
+
+JOINT PURCHASER RULES:
+- If you see two names connected by "&", "and", "/", "jointly" or "with" — 
+  set isJoint to true
+- Put the FIRST person in firstName/lastName
+- Put the SECOND person in coPurchaserFirstName/coPurchaserLastName
+- Examples that indicate joint: "Vibhakar Singh & Viraine Singh", 
+  "John and Jane Smith", "Tom / Mary Jones"
+- If only one purchaser found, set isJoint to false and leave 
+  coPurchaserFirstName/coPurchaserLastName empty`;
+
+                          const subjectsForUi = subjectListFrom(relevantEmails);
+
+                          const chatRes = await fetch("/api/chat", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              messages: [{ role: "user", content: prompt }],
+                              mattersContext: "None",
+                              systemOverride:
+                                "You extract structured data from the user message. Respond with ONLY a single valid JSON object. No markdown fences, no explanation, no other text.",
+                            }),
+                          });
+                          const chatData = await chatRes.json();
+                          if (!chatRes.ok || chatData.error) {
+                            setIntakeAutoFillError(chatData.error || "AI request failed");
+                            setIntakeAutoFillResult({ low: true, subjects: subjectsForUi, zeroEmails: false });
+                            return;
+                          }
+                          const parsed = parseIntakeAutofillJson(chatData.content || "");
+                          if (!parsed) {
+                            setIntakeAutoFillResult({ low: true, subjects: subjectsForUi, zeroEmails: false, parseFailed: true });
+                            return;
+                          }
+                          if (String(parsed.confidence || "").toLowerCase() === "low") {
+                            setIntakeAutoFillResult({ low: true, subjects: subjectsForUi, zeroEmails: false });
+                            return;
+                          }
+                          const conf = String(parsed.confidence || "").toLowerCase();
+                          if (
+                            conf === "low" ||
+                            (!parsed.firstName && !parsed.lastName && !parsed.email && !parsed.entityName)
+                          ) {
+                            setIntakeAutoFillResult({ low: true, subjects: subjectsForUi, zeroEmails: false });
+                            return;
+                          }
+                          const et =
+                            String(parsed.entityType || "individual").toLowerCase() === "entity" ? "entity" : "individual";
+                          setIntakeEntityType(et);
+                          if (parsed.firstName) setIntakeClientFirstName(String(parsed.firstName));
+                          if (parsed.lastName) setIntakeClientLastName(String(parsed.lastName));
+                          if (parsed.email) setIntakeClientEmail(String(parsed.email));
+                          if (parsed.phone) setIntakeClientPhone(String(parsed.phone));
+                          if (et === "entity") {
+                            if (parsed.entityName) setIntakeEntityName(String(parsed.entityName));
+                            if (parsed.abn) setIntakeEntityABN(String(parsed.abn));
+                          } else {
+                            setIntakeEntityName("");
+                            setIntakeEntityABN("");
+                          }
+                          const isJoint =
+                            et === "individual" && Boolean(parsed.isJoint);
+                          if (
+                            isJoint &&
+                            (parsed.coPurchaserFirstName || parsed.coPurchaserLastName)
+                          ) {
+                            setIntakeHasCoPurchaser(true);
+                            setIntakeCoPurchaserFirstName(String(parsed.coPurchaserFirstName || ""));
+                            setIntakeCoPurchaserLastName(String(parsed.coPurchaserLastName || ""));
+                          }
+                          const nameLine = [parsed.firstName, parsed.lastName].filter(Boolean).join(" ").trim();
+                          const coLine = [parsed.coPurchaserFirstName, parsed.coPurchaserLastName].filter(Boolean).join(" ").trim();
+                          const populatedLines = [];
+                          if (isJoint && (nameLine || coLine)) {
+                            if (nameLine) populatedLines.push(`Purchaser 1: ${nameLine}`);
+                            if (coLine) populatedLines.push(`Purchaser 2: ${coLine} (joint)`);
+                          } else if (!isJoint && nameLine) {
+                            populatedLines.push(`Name: ${nameLine}`);
+                          }
+                          if (parsed.email) populatedLines.push(`Email: ${String(parsed.email)}`);
+                          if (parsed.phone) populatedLines.push(`Phone: ${String(parsed.phone)}`);
+                          if (et === "entity" && parsed.entityName) populatedLines.push(`Entity: ${String(parsed.entityName)}`);
+                          if (et === "entity" && parsed.abn) populatedLines.push(`ABN/ACN: ${String(parsed.abn)}`);
+                          if (parsed.source) populatedLines.push(`Source: ${String(parsed.source)}`);
+                          setIntakeAutoFilledFields({
+                            firstName: Boolean(parsed.firstName),
+                            lastName: Boolean(parsed.lastName),
+                            email: Boolean(parsed.email),
+                            phone: Boolean(parsed.phone),
+                            entityName: et === "entity" && Boolean(parsed.entityName),
+                            abn: et === "entity" && Boolean(parsed.abn),
+                            coPurchaserFirstName: isJoint && Boolean(parsed.coPurchaserFirstName),
+                            coPurchaserLastName: isJoint && Boolean(parsed.coPurchaserLastName),
+                          });
+                          setIntakeAutoFillResult({
+                            success: true,
+                            isJoint,
+                            confidence: parsed.confidence,
+                            source: parsed.source || "",
+                            summary: nameLine || parsed.entityName || "—",
+                            populatedLines,
+                          });
+                        } catch (err) {
+                          setIntakeAutoFillError(err.message || "Something went wrong");
+                          setIntakeAutoFillResult({ low: true, subjects: [], zeroEmails: false });
+                        } finally {
+                          setIntakeAutoFillLoading(false);
+                          setIntakeAutoFillStatus("");
+                        }
+                      }}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontFamily: "var(--font-body)",
+                        border: "1px solid rgba(255,255,255,0.28)",
+                        background: "rgba(255,255,255,0.12)",
+                        color: "rgba(255,255,255,0.95)",
+                        opacity: intakeAutoFillLoading || !String(intakeAddress || "").trim() ? 0.45 : 1,
+                        cursor: intakeAutoFillLoading || !String(intakeAddress || "").trim() ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {intakeAutoFillLoading ? "Please wait…" : "🔍 Search Emails for Client Details"}
+                    </button>
+                    {intakeAutoFillLoading && intakeAutoFillStatus ? (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 11,
+                          color: "rgba(255,255,255,0.88)",
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {intakeAutoFillStatus}
+                      </div>
+                    ) : null}
+                    {intakeAutoFillError ? (
+                      <div style={{ marginTop: 10, fontSize: 11, color: "#fca5a5" }}>{intakeAutoFillError}</div>
+                    ) : null}
+                    {intakeAutoFillResult?.success ? (
+                      <div style={{ marginTop: 12 }}>
+                        <div
+                          style={{
+                            padding: "10px 12px",
+                            background: "rgba(22,163,74,0.2)",
+                            border: "1px solid rgba(34,197,94,0.45)",
+                            borderRadius: 8,
+                            fontSize: 11,
+                            color: "rgba(255,255,255,0.95)",
+                          }}
+                        >
+                          <strong>✓ Found details from emails — please review before continuing</strong>
+                          {(intakeAutoFillResult.populatedLines || []).length > 0 ? (
+                            <ul style={{ margin: "8px 0 0 0", paddingLeft: 18, lineHeight: 1.5, opacity: 0.95 }}>
+                              {intakeAutoFillResult.populatedLines.map((line, i) => (
+                                <li key={i}>{line}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div style={{ marginTop: 6, opacity: 0.9 }}>{intakeAutoFillResult.summary}</div>
+                          )}
+                          {intakeAutoFillResult.isJoint ? (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                fontSize: 10,
+                                color: "rgba(255,255,255,0.75)",
+                                lineHeight: 1.45,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              Joint purchasers detected — both names will appear on the Transfer
+                            </div>
+                          ) : null}
+                        </div>
+                        {String(intakeAutoFillResult.confidence || "").toLowerCase() === "medium" ? (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              padding: "8px 10px",
+                              fontSize: 11,
+                              lineHeight: 1.4,
+                              color: "rgba(255,255,255,0.92)",
+                              background: "rgba(234,179,8,0.22)",
+                              border: "1px solid rgba(234,179,8,0.45)",
+                              borderRadius: 8,
+                            }}
+                          >
+                            ⚠ Medium confidence — please double-check these details
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {intakeAutoFillResult?.low && !intakeAutoFillLoading ? (
+                      <div style={{ marginTop: 12, fontSize: 11, color: "rgba(255,255,255,0.75)", lineHeight: 1.45 }}>
+                        {intakeAutoFillResult.zeroEmails ? (
+                          <div>
+                            No emails found matching &apos;{String(intakeAddress || "").trim()}&apos; — check the address is correct or try
+                            searching manually in Communications.
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ marginBottom: 8 }}>
+                              No client details found in emails for this address. WhatsApp and SMS search coming soon.
+                            </div>
+                            {intakeAutoFillResult.subjects?.length ? (
+                              <div style={{ marginTop: 10 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setIntakeAutoFillSubjectsExpanded((v) => !v)}
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "rgba(255,255,255,0.9)",
+                                    cursor: "pointer",
+                                    fontSize: 11,
+                                    textDecoration: "underline",
+                                    padding: 0,
+                                    textAlign: "left",
+                                    fontFamily: "var(--font-body)",
+                                  }}
+                                >
+                                  {intakeAutoFillSubjectsExpanded
+                                    ? "▼ Hide email list"
+                                    : `▶ We searched your inbox and found these ${intakeAutoFillResult.subjects.length} emails — none contained clear client details`}
+                                </button>
+                                {intakeAutoFillSubjectsExpanded ? (
+                                  <ul
+                                    style={{
+                                      margin: "8px 0 0 0",
+                                      paddingLeft: 18,
+                                      color: "rgba(255,255,255,0.65)",
+                                      listStyle: "disc",
+                                    }}
+                                  >
+                                    {intakeAutoFillResult.subjects.map((s, i) => (
+                                      <li key={i} style={{ marginBottom: 4 }}>
+                                        {s}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+                    <div
+                      style={{
+                        marginTop: 14,
+                        paddingTop: 12,
+                        borderTop: "1px solid rgba(255,255,255,0.12)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>💬 WhatsApp messages — Coming soon</div>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>📱 SMS messages — Coming soon</div>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>🎙️ Voice notes — Coming soon</div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>Who is the purchaser?</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                    <button
+                      type="button"
+                      onClick={() => setIntakeEntityType("individual")}
+                      style={{
+                        textAlign: "left",
+                        padding: 14,
+                        borderRadius: 12,
+                        border: intakeEntityType === "individual" ? "2px solid var(--blue)" : "1px solid var(--border)",
+                        background: intakeEntityType === "individual" ? "var(--blue-light)" : "var(--surface)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-body)",
+                      }}
+                    >
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>👤</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Individual / Joint Purchasers</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.35 }}>One or more people buying in their own name</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIntakeEntityType("entity")}
+                      style={{
+                        textAlign: "left",
+                        padding: 14,
+                        borderRadius: 12,
+                        border: intakeEntityType === "entity" ? "2px solid var(--blue)" : "1px solid var(--border)",
+                        background: intakeEntityType === "entity" ? "var(--blue-light)" : "var(--surface)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-body)",
+                      }}
+                    >
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>🏢</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Company / Trust / SMSF</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.35 }}>Buying through a business entity</div>
+                    </button>
+                  </div>
+
+                  {intakeEntityType === "individual" ? (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                            First name
+                            {autofillBadge("firstName")}
+                          </label>
+                          <input
+                            className="intake-input"
+                            value={intakeClientFirstName}
+                            onChange={(e) => {
+                              setIntakeClientFirstName(e.target.value);
+                              setIntakeAutoFilledFields((f) => ({ ...f, firstName: false }));
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                            Last name
+                            {autofillBadge("lastName")}
+                          </label>
+                          <input
+                            className="intake-input"
+                            value={intakeClientLastName}
+                            onChange={(e) => {
+                              setIntakeClientLastName(e.target.value);
+                              setIntakeAutoFilledFields((f) => ({ ...f, lastName: false }));
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                        Email
+                        {autofillBadge("email")}
+                      </label>
+                      <input
+                        className="intake-input"
+                        type="email"
+                        value={intakeClientEmail}
+                        onChange={(e) => {
+                          setIntakeClientEmail(e.target.value);
+                          setIntakeAutoFilledFields((f) => ({ ...f, email: false }));
+                        }}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                        Mobile
+                        {autofillBadge("phone")}
+                      </label>
+                      <input
+                        className="intake-input"
+                        value={intakeClientPhone}
+                        onChange={(e) => {
+                          setIntakeClientPhone(e.target.value);
+                          setIntakeAutoFilledFields((f) => ({ ...f, phone: false }));
+                        }}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text-2)" }}>
+                        <input type="checkbox" checked={intakeHasCoPurchaser} onChange={(e) => setIntakeHasCoPurchaser(e.target.checked)} />
+                        Add co-purchaser?
+                      </label>
+                      {intakeHasCoPurchaser && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                          <div>
+                            <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                              Co-purchaser first name
+                              {autofillBadge("coPurchaserFirstName")}
+                            </label>
+                            <input
+                              className="intake-input"
+                              value={intakeCoPurchaserFirstName}
+                              onChange={(e) => {
+                                setIntakeCoPurchaserFirstName(e.target.value);
+                                setIntakeAutoFilledFields((f) => ({ ...f, coPurchaserFirstName: false }));
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                              Co-purchaser last name
+                              {autofillBadge("coPurchaserLastName")}
+                            </label>
+                            <input
+                              className="intake-input"
+                              value={intakeCoPurchaserLastName}
+                              onChange={(e) => {
+                                setIntakeCoPurchaserLastName(e.target.value);
+                                setIntakeAutoFilledFields((f) => ({ ...f, coPurchaserLastName: false }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>
+                        Joint purchasers will both be listed on the title
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                        Entity name
+                        {autofillBadge("entityName")}
+                      </label>
+                      <input
+                        className="intake-input"
+                        placeholder="e.g. Smith Family Trust"
+                        value={intakeEntityName}
+                        onChange={(e) => {
+                          setIntakeEntityName(e.target.value);
+                          setIntakeAutoFilledFields((f) => ({ ...f, entityName: false }));
+                        }}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                        ABN / ACN
+                        {autofillBadge("abn")}
+                      </label>
+                      <input
+                        className="intake-input"
+                        value={intakeEntityABN}
+                        onChange={(e) => {
+                          setIntakeEntityABN(e.target.value);
+                          setIntakeAutoFilledFields((f) => ({ ...f, abn: false }));
+                        }}
+                        style={{ marginBottom: 16 }}
+                      />
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>Primary contact person</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                            First name
+                            {autofillBadge("firstName")}
+                          </label>
+                          <input
+                            className="intake-input"
+                            value={intakeClientFirstName}
+                            onChange={(e) => {
+                              setIntakeClientFirstName(e.target.value);
+                              setIntakeAutoFilledFields((f) => ({ ...f, firstName: false }));
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                            Last name
+                            {autofillBadge("lastName")}
+                          </label>
+                          <input
+                            className="intake-input"
+                            value={intakeClientLastName}
+                            onChange={(e) => {
+                              setIntakeClientLastName(e.target.value);
+                              setIntakeAutoFilledFields((f) => ({ ...f, lastName: false }));
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                        Email
+                        {autofillBadge("email")}
+                      </label>
+                      <input
+                        className="intake-input"
+                        type="email"
+                        value={intakeClientEmail}
+                        onChange={(e) => {
+                          setIntakeClientEmail(e.target.value);
+                          setIntakeAutoFilledFields((f) => ({ ...f, email: false }));
+                        }}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <label className="intake-label" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                        Phone
+                        {autofillBadge("phone")}
+                      </label>
+                      <input
+                        className="intake-input"
+                        value={intakeClientPhone}
+                        onChange={(e) => {
+                          setIntakeClientPhone(e.target.value);
+                          setIntakeAutoFilledFields((f) => ({ ...f, phone: false }));
+                        }}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4, lineHeight: 1.45 }}>
+                        The entity name will appear on the Transfer. The contact person receives all correspondence.
+                      </div>
+                    </>
+                  )}
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>We&apos;ll send them an intro email automatically once the matter is created</div>
+                </>
+              )}
+              {(intakeStep === 3 && purchase) || (intakeStep === 2 && !purchase) ? (
+                <div>
+                  <div className="card" style={{ marginBottom: 14 }}>
+                    <div className="card-hdr">
+                      <div className="card-title">Summary</div>
+                    </div>
+                    <div style={{ padding: "10px 16px 14px", fontSize: 12 }}>
+                      {[
+                        ["Type", intakeMatterType],
+                        ["Address", intakeAddress || "—"],
+                        ["State", intakeState],
+                        ["Price", intakePurchasePrice ? `$${formatDigitsWithCommas(intakePurchasePrice)}` : "—"],
+                        ["Settlement", intakeSettlementDate || "—"],
+                        [
+                          "Referral",
+                          [
+                            intakeReferralSource,
+                            intakeReferrerName ? ` · ${intakeReferrerName}` : "",
+                            intakeReferralFeeEnabled && intakeReferralFee ? ` · Fee $${formatDigitsWithCommas(intakeReferralFee)}` : "",
+                          ].join(""),
+                        ],
+                        ...(intakeEntityType === "entity"
+                          ? [
+                              ["Entity name", intakeEntityName || "—"],
+                              ["ABN / ACN", intakeEntityABN || "—"],
+                              [
+                                "Primary contact",
+                                [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—",
+                              ],
+                              ["Contact email", intakeClientEmail || "—"],
+                              ["Contact phone", intakeClientPhone || "—"],
+                            ]
+                          : [
+                              ["Client", [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—"],
+                              ["Email", intakeClientEmail || "—"],
+                              ["Phone", intakeClientPhone || "—"],
+                              intakeHasCoPurchaser
+                                ? [
+                                    "Co-purchaser",
+                                    [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ") || "—",
+                                  ]
+                                : null,
+                            ]),
+                      ]
+                        .filter(Boolean)
+                        .map(([k, v]) => (
+                          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-2)" }}>
+                            <span style={{ color: "var(--text-3)" }}>{k}</span>
+                            <span style={{ fontWeight: 600, color: "var(--text)", textAlign: "right" }}>{v}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 16 }}>
+                    We&apos;ll automatically: <strong>Create your PEXA workspace link</strong> · <strong>Send intro email to client</strong> · <strong>Set up the workflow checklist</strong>
+                  </div>
+                  <button type="button" className="btn-gold" style={{ width: "100%", padding: "12px 16px", fontSize: 14 }} disabled={intakeCreating || !nextValid} onClick={createIntakeMatter}>
+                    {intakeCreating ? "Creating…" : "✓ Create Matter"}
+                  </button>
+                </div>
+              ) : null}
             </div>
-            <div className="intake-footer">
-              <button className="btn-ghost" onClick={()=>{setModal(null);setIntakeStep(0);setIntakeSource(null);}}>Cancel</button>
-              <div style={{display:"flex",gap:8}}>
-                {intakeStep>0&&intakeStep<3&&<button className="btn-ghost" onClick={()=>setIntakeStep(s=>s-1)}>← Back</button>}
-                {intakeStep===0&&<button className="btn-gold" disabled={!intakeSource||!intakeText} onClick={()=>{setIntakeStep(1);runExtract();}}>Extract with AI →</button>}
-                {intakeStep===2&&<button className="btn-gold" onClick={()=>setIntakeStep(3)}>Create Matter →</button>}
-                {intakeStep===3&&<button className="btn-gold" onClick={()=>{setModal(null);setPage("matters");setIntakeStep(0);}}>Open Matters →</button>}
+            <div className="intake-footer" style={{ flexShrink: 0 }}>
+              <button type="button" className="btn-ghost" onClick={() => { setModal(null); resetIntakeModal(); }}>
+                Cancel
+              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                {intakeStep > 0 && <button type="button" className="btn-ghost" onClick={goBack}>← Back</button>}
+                {intakeStep < maxIdx && (
+                  <button type="button" className="btn-gold" disabled={!nextValid} onClick={goNext}>
+                    Next →
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {tooltip && (
         <div style={{

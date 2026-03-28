@@ -75,6 +75,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const emailId = searchParams.get("emailId");
+    const attachmentId = searchParams.get("attachmentId");
     const query = searchParams.get("query");
     const address = searchParams.get("address");
     const sentParam = searchParams.get("sent");
@@ -93,6 +94,24 @@ export async function GET(request) {
       ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`
       : "https://graph.microsoft.com/v1.0/me";
     const headers = { Authorization: `Bearer ${token}` };
+
+    if (emailId && emailId.trim() && attachmentId && attachmentId.trim()) {
+      const url = `${baseUrl}/messages/${encodeURIComponent(emailId.trim())}/attachments/${encodeURIComponent(attachmentId.trim())}`;
+      console.log("[email] fetch attachment:", emailId, attachmentId);
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        console.error("[email] Graph attachment status:", res.status);
+        return Response.json({ error: "Attachment not found" }, { status: 404 });
+      }
+      const a = await res.json();
+      return Response.json({
+        id: a.id,
+        name: a.name || "",
+        contentType: a.contentType || "",
+        contentBytes: a.contentBytes ?? null,
+        textContent: null,
+      });
+    }
 
     if (allEmails && mailbox) {
       const top = Math.min(parseInt(searchParams.get("top") || "50", 10) || 50, 100);
@@ -127,6 +146,25 @@ export async function GET(request) {
       const email = mapSingleMessageWithBody(m);
       const mailboxLower = (mailbox || "").toLowerCase();
       email.isOutgoing = !!mailboxLower && (email.from?.address || "").toLowerCase() === mailboxLower;
+      let attachments = [];
+      try {
+        const attUrl = `${baseUrl}/messages/${encodeURIComponent(emailId.trim())}/attachments`;
+        const attRes = await fetch(attUrl, { headers });
+        if (attRes.ok) {
+          const attData = await attRes.json();
+          attachments = (attData.value || []).map((a) => ({
+            id: a.id,
+            name: a.name || a.filename || "",
+            contentType: a.contentType || "",
+            attachmentId: a.id,
+          }));
+        } else {
+          console.error("[email] Graph attachments list status:", attRes.status);
+        }
+      } catch (attErr) {
+        console.error("[email] attachments list:", attErr);
+      }
+      email.attachments = attachments;
       return Response.json(email);
     }
 
@@ -157,7 +195,8 @@ export async function GET(request) {
     const select = "id,subject,from,receivedDateTime,bodyPreview,isRead,toRecipients";
     const params = new URLSearchParams();
     params.set("$search", `"${searchTerm.replace(/"/g, '\\"')}"`);
-    params.set("$top", "50");
+    const topLimit = Math.min(Math.max(parseInt(searchParams.get("top") || "50", 10) || 50, 1), 100);
+    params.set("$top", String(topLimit));
     params.set("$select", select);
     const url = `${baseUrl}/messages?${params.toString()}`;
 
