@@ -4419,119 +4419,6 @@ RESPONSE RULES:
         setContractReviewLoading(false);
         return;
       }
-      const reviewPrompt = `You are an expert Australian conveyancer reviewing a property 
-contract. The matter is for client ${selMatterObj.client_name || selMatterObj.client || ""} 
-for the property at ${selMatterObj.address} in ${selMatterObj.state || "NSW"}.
-
-Review this contract thoroughly across all 11 critical areas and return a 
-complete analysis as JSON.
-
-Return ONLY this JSON structure (no markdown, no explanation outside JSON):
-
-{
-  "propertyAddress": "",
-  "buyerName": "",
-  "sellerName": "",
-  "purchasePrice": "",
-  "depositAmount": "",
-  "settlementDate": "",
-  "coolingOffPeriod": "",
-  
-  "overallRiskLevel": "LOW|MEDIUM|HIGH|CRITICAL",
-  "overallSummary": "2-3 sentence plain English summary of the contract",
-  
-  "redFlags": [
-    {
-      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
-      "area": "area name",
-      "issue": "clear description of the issue",
-      "recommendation": "what the conveyancer should do",
-      "clauseReference": "clause number if found"
-    }
-  ],
-  
-  "sections": {
-    "contractTerms": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "plain English summary",
-      "details": ["key point 1", "key point 2"],
-      "concerns": ["concern if any"]
-    },
-    "titleOwnership": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "details": [],
-      "concerns": [],
-      "easements": [],
-      "covenants": [],
-      "encumbrances": []
-    },
-    "zoningPlanning": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "details": [],
-      "concerns": [],
-      "zoneType": "",
-      "overlays": []
-    },
-    "councilCertificates": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "details": [],
-      "concerns": []
-    },
-    "specialConditions": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "details": [],
-      "concerns": [],
-      "financeClause": "",
-      "otherClauses": []
-    },
-    "inclusionsExclusions": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "included": [],
-      "excluded": [],
-      "concerns": []
-    },
-    "strataDetails": {
-      "applicable": false,
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "levies": "",
-      "sinkingFund": "",
-      "specialLevies": "",
-      "concerns": []
-    },
-    "adjustments": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "details": [],
-      "concerns": []
-    },
-    "disclosures": {
-      "status": "OK|REVIEW|WARNING|CRITICAL",
-      "summary": "",
-      "details": [],
-      "concerns": []
-    }
-  },
-  
-  "clientLetter": "A complete professional plain-English letter from the conveyancer to the client explaining the contract review findings. Use a friendly but professional tone. Start with Dear [client first name]. Cover the key terms, any concerns, and recommended next steps. Sign off as Gitu Kaur, Conveyancing Crew. Length: 400-600 words.",
-  
-  "negotiationPoints": [
-    "Suggested negotiation point 1",
-    "Suggested negotiation point 2"
-  ],
-  
-  "recommendedActions": [
-    {
-      "priority": "URGENT|HIGH|MEDIUM|LOW",
-      "action": "specific action to take",
-      "deadline": "when this needs to happen"
-    }
-  ]
-}`;
       const reviewRes = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4548,17 +4435,22 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
                     data: base64,
                   },
                 },
-                { type: "text", text: reviewPrompt },
+                {
+                  type: "text",
+                  text: "You are an expert Australian conveyancer. Review this contract and return JSON.",
+                },
               ],
             },
           ],
-          mattersContext: `Contract review for ${selMatterObj.address || ""}`,
-          systemOverride:
-            "You extract structured contract review data. Respond with ONLY a single valid JSON object. No markdown fences, no explanation, no other text.",
-          maxTokens: 8192,
+          mattersContext: "Contract review",
         }),
       });
+
+      console.log("[ContractReview] Response status:", reviewRes.status);
+      console.log("[ContractReview] Response headers:", Object.fromEntries(reviewRes.headers.entries()));
+
       const reviewText = await reviewRes.text();
+      console.log("[ContractReview] Raw response (first 500 chars):", reviewText.slice(0, 500));
       let reviewData;
       try {
         reviewData = JSON.parse(reviewText);
