@@ -2448,7 +2448,6 @@ export default function App() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [bellTab, setBellTab] = useState("notifications");
   const [notifications, setNotifications] = useState([]);
-  const [notifLoading, setNotifLoading] = useState(false);
   const [notifAI, setNotifAI] = useState(null);
   const notifRef = useRef(null);
   const [contractInboxItems, setContractInboxItems] = useState([]);
@@ -2875,8 +2874,7 @@ Maximum 300 words.`,
 
   useEffect(() => {
     fetchMatters();
-    console.log("[ContractInbox] About to call loadContractInbox...");
-    loadContractInbox();
+    /* Contract inbox: loaded once on mount via separate effect + realtime (see loadContractInbox). */
 
     let oauthDelayTimeoutId;
     let xeroPhase2TimeoutId;
@@ -2932,7 +2930,7 @@ Maximum 300 words.`,
       if (oauthDelayTimeoutId) clearTimeout(oauthDelayTimeoutId);
       if (xeroPhase2TimeoutId) clearTimeout(xeroPhase2TimeoutId);
     };
-  }, [fetchMatters, loadContractInbox, xeroConnected]);
+  }, [fetchMatters, xeroConnected]);
 
   useEffect(() => {
     const fetchCalendarEvents = async () => {
@@ -4008,43 +4006,14 @@ If no matches found return: []`
     return notifs;
   };
 
+  /** Toggle bell panel. Notifications are built from tasks / calendar / matters already in memory; contract inbox from Supabase via loadContractInbox (no /api/chat). */
   const openNotifications = async () => {
-    setNotifOpen(true);
+    setNotifOpen((open) => !open);
     setBellTab("notifications");
-    loadContractInbox();
     const notifs = buildNotifications();
     setNotifications(notifs);
-    if (notifs.length > 0 && !notifAI) {
-      setNotifLoading(true);
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [
-              {
-                role: "user",
-                content: `Based on these notifications for a conveyancing practice,
-provide 3-5 specific suggested next actions in plain English.
-Be practical and specific.
-
-Notifications:
-${notifs.map((n) => `${n.urgency.toUpperCase()}: ${n.title} — ${n.body}`).join("\n")}
-
-Format as a simple numbered list of actions.
-No markdown. Plain English only.`
-              }
-            ],
-            mattersContext: "Notification action suggestions"
-          })
-        });
-        const data = await safeParseFetchJson(res);
-        setNotifAI(data.content || null);
-      } catch (err) {
-        console.log("Notif AI error:", err);
-      }
-      setNotifLoading(false);
-    }
+    setNotifAI(null);
+    void loadContractInbox();
   };
 
   const generateMorningBrief = async () => {
@@ -6056,14 +6025,14 @@ Return only the email body text, no subject line.`;
                       >
                         ✦ Suggested Next Actions
                       </div>
-                      {notifLoading ? (
-                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>AI is analysing your notifications...</div>
-                      ) : notifAI ? (
+                      {notifAI ? (
                         <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>
                           {notifAI}
                         </div>
                       ) : (
-                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>No urgent items right now</div>
+                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                          The list below is built from your tasks, calendar, and matters — no server call required.
+                        </div>
                       )}
                     </div>
                 {notifications.length === 0 ? (
@@ -6484,9 +6453,10 @@ Return only the email body text, no subject line.`;
                   onClick={() => {
                     if (bellTab === "notifications") {
                       setNotifAI(null);
-                      openNotifications();
+                      setNotifications(buildNotifications());
+                      void loadContractInbox();
                     } else {
-                      loadContractInbox();
+                      void loadContractInbox();
                     }
                   }}
                 >
@@ -7383,7 +7353,7 @@ Return only the email body text, no subject line.`;
                         <div className="card">
                           <div className="card-hdr"><div className="card-title">Key Details</div></div>
                           <div style={{padding:"8px 18px 14px"}}>
-                            {[["Matter Type",modalMatter.type],["Status",modalMatter.stage],["Settlement",fmt(modalMatter.settlement)],["Property Value",modalMatter.price],["Staff",modalMatter.staff],["State",modalMatter.state]].map(([k,v])=>(
+                            {[["Matter Type",modalMatter.type],["Status",modalMatter.stage],["Settlement",fmt(modalMatter.settlement)],["Property Value",modalMatter.price],["Client email",modalMatter.client_email || modalMatter.email || "—"],["State",modalMatter.state]].map(([k,v])=>(
                               <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border-2)",fontSize:12,gap:8}}>
                                 <span style={{color:"var(--text-3)"}}>{k}</span>
                                 <span style={{fontWeight:600,color:"var(--text)",textAlign:"right"}}>{v}</span>
@@ -7698,7 +7668,7 @@ Return only the email body text, no subject line.`;
                           {[
                             ["Matter Type",selMatterObj.type],["Status",selMatterObj.stage],
                             ["Settlement",fmt(selMatterObj.settlement)],["Property Value",selMatterObj.price],
-                            ["Staff",selMatterObj.staff],["State",selMatterObj.state],
+                            ["Client email",selMatterObj.client_email || selMatterObj.email || "—"],["State",selMatterObj.state],
                             ["Lender",selMatterObj.lender],["Deposit",selMatterObj.deposit+" "+(selMatterObj.depositPaid?"✓ Paid":"⚠ Unpaid")],
                             ["Agent",selMatterObj.agent],["Phone",selMatterObj.agentPhone],
                           ].map(([k,v])=>(
