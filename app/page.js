@@ -2379,10 +2379,16 @@ export default function App() {
   const searchRef = useRef(null);
 
   const [notifOpen, setNotifOpen] = useState(false);
+  const [bellTab, setBellTab] = useState("notifications");
   const [notifications, setNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifAI, setNotifAI] = useState(null);
   const notifRef = useRef(null);
+  const [contractInboxItems, setContractInboxItems] = useState([]);
+  const [contractInboxUnread, setContractInboxUnread] = useState(0);
+  const [linkReviewModal, setLinkReviewModal] = useState(null);
+  const [linkReviewSearch, setLinkReviewSearch] = useState("");
+  const [reviewLinkToast, setReviewLinkToast] = useState(null);
 
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
@@ -2709,6 +2715,75 @@ Maximum 300 words.`,
     setNotifAI(null);
   }, [calendarEvents, tasks]);
 
+  const loadContractInbox = useCallback(async () => {
+    try {
+      console.log("[ContractInbox] Loading...");
+      const { data, error } = await supabase
+        .from("contract_review_inbox")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      console.log("[ContractInbox] Result:", data?.length, "items | Error:", error?.message);
+      console.log(
+        "[ContractInbox] Items:",
+        data?.map((d) => ({
+          id: d.id,
+          subject: d.subject,
+          status: d.status,
+          is_read: d.is_read,
+          created_at: d.created_at,
+        }))
+      );
+
+      if (error) {
+        console.error("[ContractInbox] Query error:", error);
+        setContractInboxItems([]);
+        setContractInboxUnread(0);
+        return;
+      }
+
+      if (data) {
+        setContractInboxItems(data);
+        const unread = data.filter((d) => !d.is_read).length;
+        setContractInboxUnread(unread);
+        console.log("[ContractInbox] Unread count:", unread);
+      }
+    } catch (err) {
+      console.error("[ContractInbox] Load error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadContractInbox();
+
+    const inboxChannel = supabase
+      .channel("contract-inbox-" + Date.now())
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "contract_review_inbox",
+        },
+        (payload) => {
+          console.log(
+            "[ContractInbox] Realtime update:",
+            payload.eventType,
+            payload.new?.subject || payload.old?.subject
+          );
+          loadContractInbox();
+        }
+      )
+      .subscribe((status) => {
+        console.log("[ContractInbox] Subscription status:", status);
+      });
+
+    return () => {
+      supabase.removeChannel(inboxChannel);
+    };
+  }, [loadContractInbox, user?.id]);
+
   useEffect(() => {
     const fetchMatters = async () => {
       console.log("Matters fetch started");
@@ -2732,7 +2807,8 @@ Maximum 300 words.`,
     };
 
     fetchMatters();
-  }, []);
+    loadContractInbox();
+  }, [loadContractInbox]);
 
   useEffect(() => {
     const fetchCalendarEvents = async () => {
@@ -3810,6 +3886,8 @@ If no matches found return: []`
 
   const openNotifications = async () => {
     setNotifOpen(true);
+    setBellTab("notifications");
+    loadContractInbox();
     const notifs = buildNotifications();
     setNotifications(notifs);
     if (notifs.length > 0 && !notifAI) {
@@ -4463,6 +4541,74 @@ RESPONSE RULES:
       setContractReviewError(err.message || "Review failed. Please try again.");
     }
     setContractReviewLoading(false);
+  };
+
+  const prefillFromReview = (item) => {
+    const r = item.review_result || {};
+    const buyerName = r.buyerName || "";
+    const isJoint = /\s+and\s+|\s*&\s*/i.test(buyerName);
+    const nameParts = buyerName.split(/\s+and\s+|\s*&\s*/i);
+    const firstPerson = (nameParts[0] || "").trim().split(" ");
+    const secondPerson = nameParts[1] ? nameParts[1].trim().split(" ") : [];
+    const priceRaw = (r.purchasePrice || "").replace(/[^0-9.]/g, "");
+    const priceFormatted = priceRaw ? Number(priceRaw).toLocaleString("en-AU") : "";
+
+    setIntakeMatterType("Purchase");
+    setIntakeStep(2);
+    setIntakeAddress(r.propertyAddress || "");
+    setIntakeClientFirstName(firstPerson[0] || "");
+    setIntakeClientLastName(firstPerson.slice(1).join(" ") || "");
+    setIntakePurchasePrice(priceFormatted);
+    setIntakeSettlementDate(r.settlementDate || "");
+    setIntakeEntityType("individual");
+
+    if (isJoint && secondPerson.length > 0) {
+      setIntakeHasCoPurchaser(true);
+      setIntakeCoPurchaserFirstName(secondPerson[0] || "");
+      setIntakeCoPurchaserLastName(secondPerson.slice(1).join(" ") || "");
+    } else {
+      setIntakeHasCoPurchaser(false);
+      setIntakeCoPurchaserFirstName("");
+      setIntakeCoPurchaserLastName("");
+    }
+
+    setModal("intake");
+    setNotifOpen(false);
+  };
+
+  const linkReviewToMatter = async (matter) => {
+    if (!linkReviewModal) return;
+    const ref = matter.matter_ref || matter.id;
+    await supabase
+      .from("contract_review_inbox")
+      .update({ matter_ref: ref })
+      .eq("id", linkReviewModal.id);
+    await supabase.from("matter_workflow").upsert(
+      {
+        matter_ref: ref,
+        step_key: "contract_review",
+        completed: true,
+        completed_at: new Date().toISOString(),
+        notes: JSON.stringify({
+          reviewedAt: new Date().toISOString(),
+          documentName: linkReviewModal.document_name,
+          riskLevel: linkReviewModal.review_result?.overallRiskLevel,
+          redFlagCount: linkReviewModal.review_result?.redFlags?.length || 0,
+          fullResult: linkReviewModal.review_result,
+          source: "email_inbox",
+        }),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "matter_ref,step_key" }
+    );
+    setSelectedMatter(matter.id);
+    setPage("matter_workspace");
+    setMatterTab("Documents");
+    setLinkReviewModal(null);
+    setNotifOpen(false);
+    setReviewLinkToast(`✓ Review linked to ${ref}`);
+    setTimeout(() => setReviewLinkToast(null), 3500);
+    await loadContractInbox();
   };
 
   const handleLogin = async (e) => {
@@ -5196,10 +5342,47 @@ Return only the email body text, no subject line.`;
                   <div style={{position:"relative"}} ref={searchRef}>
                     <button type="button" className="icon-btn" style={{width:36,height:36}} onClick={() => setSearchOpen(true)} title="Search">🔍</button>
                   </div>
-                  <div className="icon-btn" style={{ position: "relative", cursor: "pointer" }} onClick={openNotifications}>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Notifications & contract reviews"
+                    onClick={openNotifications}
+                    style={{
+                      position: "relative",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 18,
+                      padding: 4,
+                      lineHeight: 1,
+                    }}
+                  >
                     🔔
-                    {(() => { const notifCount = buildNotifications().length; return notifCount > 0 ? <div className="dot" style={{ background: "var(--red)" }}>{notifCount > 9 ? "9+" : notifCount}</div> : null; })()}
-                  </div>
+                    {contractInboxUnread > 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          background: "#dc2626",
+                          color: "white",
+                          borderRadius: "50%",
+                          minWidth: 16,
+                          height: 16,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "0 3px",
+                          fontFamily: "monospace",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
+                      </span>
+                    )}
+                  </button>
                   <div
                     style={{
                       display:"flex",alignItems:"center",gap:6,
@@ -5349,21 +5532,47 @@ Return only the email body text, no subject line.`;
                   </div>
                 )}
               </div>
-              <div
+              <button
+                type="button"
                 className="icon-btn"
+                title="Notifications & contract reviews"
                 onClick={openNotifications}
-                style={{ position: "relative", cursor: "pointer" }}
+                style={{
+                  position: "relative",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 18,
+                  padding: 4,
+                  lineHeight: 1,
+                }}
               >
                 🔔
-                {(() => {
-                  const notifCount = buildNotifications().length;
-                  return notifCount > 0 ? (
-                    <div className="dot" style={{ background: "var(--red)" }}>
-                      {notifCount > 9 ? "9+" : notifCount}
-                    </div>
-                  ) : null;
-                })()}
-              </div>
+                {contractInboxUnread > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -6,
+                      background: "#dc2626",
+                      color: "white",
+                      borderRadius: "50%",
+                      minWidth: 16,
+                      height: 16,
+                      fontSize: 9,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 3px",
+                      fontFamily: "monospace",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
+                  </span>
+                )}
+              </button>
                 <div
                   style={{
                     display:"flex",alignItems:"center",gap:6,
@@ -5396,13 +5605,13 @@ Return only the email body text, no subject line.`;
                 top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 58px)" : 64,
                 right: isMobile ? "max(8px, env(safe-area-inset-right, 0px))" : 16,
                 left: isMobile ? "max(8px, env(safe-area-inset-left, 0px))" : "auto",
-                width: isMobile ? "auto" : 380,
-                maxWidth: isMobile ? "calc(100vw - 16px)" : 380,
-                maxHeight: isMobile ? "min(75dvh, 520px)" : "80vh",
-                background: "var(--white)",
-                borderRadius: "var(--radius-lg)",
-                border: "1px solid var(--border)",
-                boxShadow: "var(--shadow-xl)",
+                width: isMobile ? "auto" : 420,
+                maxWidth: isMobile ? "calc(100vw - 16px)" : 420,
+                maxHeight: isMobile ? "min(75dvh, 600px)" : "min(90vh, 680px)",
+                background: "white",
+                borderRadius: 12,
+                border: "1px solid #dce3f0",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
                 zIndex: 1000,
                 display: "flex",
                 flexDirection: "column",
@@ -5412,131 +5621,509 @@ Return only the email body text, no subject line.`;
             >
               <div
                 style={{
-                  padding: "14px 18px",
-                  borderBottom: "1px solid var(--border)",
                   display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexShrink: 0
+                  borderBottom: "1px solid #dce3f0",
+                  background: "#f8fafc",
+                  flexShrink: 0,
+                  alignItems: "stretch",
                 }}
               >
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 16, fontWeight: 500, color: "var(--text)" }}>
-                  Notifications
+                <button
+                  type="button"
+                  onClick={() => setBellTab("notifications")}
+                  style={{
+                    flex: 1,
+                    padding: "12px 16px",
+                    fontSize: 12,
+                    fontWeight: bellTab === "notifications" ? 700 : 400,
+                    color: bellTab === "notifications" ? "#245eb0" : "#6b7a99",
+                    background: "none",
+                    border: "none",
+                    borderBottom: bellTab === "notifications" ? "2px solid #245eb0" : "2px solid transparent",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-body)",
+                  }}
+                >
+                  🔔 Notifications
                   {notifications.length > 0 && (
                     <span
                       style={{
                         marginLeft: 8,
-                        background: "var(--red)",
+                        background: "#dc2626",
                         color: "white",
-                        borderRadius: 20,
-                        padding: "1px 8px",
-                        fontSize: 11,
-                        fontFamily: "var(--font-mono)"
+                        borderRadius: 10,
+                        padding: "1px 6px",
+                        fontSize: 9,
+                        fontWeight: 700,
                       }}
                     >
                       {notifications.length}
                     </span>
                   )}
-                </div>
-                <button className="modal-close" onClick={() => setNotifOpen(false)}>✕</button>
-              </div>
-              <div
-                style={{
-                  padding: "12px 16px",
-                  background: "var(--gold-light)",
-                  borderBottom: "1px solid var(--gold-dim)",
-                  flexShrink: 0,
-                  maxHeight: "200px",
-                  overflowY: "auto"
-                }}
-              >
-                <div
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBellTab("reviews");
+                    loadContractInbox();
+                  }}
                   style={{
-                    fontSize: 9,
-                    fontFamily: "var(--font-mono)",
-                    color: "var(--text-3)",
-                    textTransform: "uppercase",
-                    letterSpacing: "1.5px",
-                    marginBottom: 8
+                    flex: 1,
+                    padding: "12px 16px",
+                    fontSize: 12,
+                    fontWeight: bellTab === "reviews" ? 700 : 400,
+                    color: bellTab === "reviews" ? "#245eb0" : "#6b7a99",
+                    background: "none",
+                    border: "none",
+                    borderBottom: bellTab === "reviews" ? "2px solid #245eb0" : "2px solid transparent",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    justifyContent: "center",
+                    fontFamily: "var(--font-body)",
                   }}
                 >
-                  ✦ Suggested Next Actions
-                </div>
-                {notifLoading ? (
-                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>AI is analysing your notifications...</div>
-                ) : notifAI ? (
-                  <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>
-                    {notifAI}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>No urgent items right now</div>
-                )}
-              </div>
-              <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-                {notifications.length === 0 ? (
-                  <div style={{ padding: 24, textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
-                    <div style={{ fontSize: 24, marginBottom: 8 }}>🎉</div>
-                    All caught up — no urgent notifications
-                  </div>
-                ) : (
-                  notifications.map((n) => (
-                    <div
-                      key={n.id}
+                  ✦ Contract Reviews
+                  {contractInboxUnread > 0 && (
+                    <span
                       style={{
-                        padding: "12px 16px",
-                        borderBottom: "1px solid var(--border-2)",
-                        cursor: "pointer",
-                        transition: "background 0.12s",
-                        borderLeft:
-                          "3px solid " +
-                          (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)")
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
-                      onClick={() => {
-                        if (n.matter_ref) {
-                          setSelectedMatter(n.matter_ref);
-                          setPage("matter_workspace");
-                          setMatterTab("Overview");
-                          setNotifOpen(false);
-                        }
+                        background: "#dc2626",
+                        color: "white",
+                        borderRadius: 10,
+                        padding: "1px 6px",
+                        fontSize: 9,
+                        fontWeight: 700,
                       }}
                     >
-                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        <span style={{ fontSize: 18, flexShrink: 0 }}>{n.icon}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                            <span
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 700,
-                                color:
-                                  n.urgency === "critical"
-                                    ? "var(--red)"
-                                    : n.urgency === "high"
-                                      ? "var(--amber)"
-                                      : "var(--text)"
-                              }}
-                            >
-                              {n.title}
-                            </span>
-                            <span
-                              className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
-                              style={{ fontSize: 9 }}
-                            >
-                              {n.urgency}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>{n.body}</div>
-                          {n.matter_ref && (
-                            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 3 }}>
-                              {n.matter_ref}
+                      {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="modal-close"
+                  onClick={() => setNotifOpen(false)}
+                  style={{ padding: "8px 12px", alignSelf: "center" }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ overflow: "auto", flex: 1, minHeight: 0, maxHeight: isMobile ? "min(52dvh, 480px)" : 520 }}>
+                {bellTab === "notifications" && (
+                  <div>
+                    <div
+                      style={{
+                        padding: "12px 16px",
+                        background: "var(--gold-light)",
+                        borderBottom: "1px solid var(--gold-dim)",
+                        maxHeight: 200,
+                        overflowY: "auto",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 9,
+                          fontFamily: "var(--font-mono)",
+                          color: "var(--text-3)",
+                          textTransform: "uppercase",
+                          letterSpacing: "1.5px",
+                          marginBottom: 8,
+                        }}
+                      >
+                        ✦ Suggested Next Actions
+                      </div>
+                      {notifLoading ? (
+                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>AI is analysing your notifications...</div>
+                      ) : notifAI ? (
+                        <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>
+                          {notifAI}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>No urgent items right now</div>
+                      )}
+                    </div>
+                {notifications.length === 0 ? (
+                    <div style={{ padding: 24, textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
+                      <div style={{ fontSize: 24, marginBottom: 8 }}>🎉</div>
+                      All caught up — no urgent notifications
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <div
+                        key={n.id}
+                        style={{
+                          padding: "12px 16px",
+                          borderBottom: "1px solid var(--border-2)",
+                          cursor: "pointer",
+                          transition: "background 0.12s",
+                          borderLeft:
+                            "3px solid " +
+                            (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)"),
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
+                        onClick={() => {
+                          if (n.matter_ref) {
+                            setSelectedMatter(n.matter_ref);
+                            setPage("matter_workspace");
+                            setMatterTab("Overview");
+                            setNotifOpen(false);
+                          }
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <span style={{ fontSize: 18, flexShrink: 0 }}>{n.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color:
+                                    n.urgency === "critical"
+                                      ? "var(--red)"
+                                      : n.urgency === "high"
+                                        ? "var(--amber)"
+                                        : "var(--text)",
+                                }}
+                              >
+                                {n.title}
+                              </span>
+                              <span
+                                className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
+                                style={{ fontSize: 9 }}
+                              >
+                                {n.urgency}
+                              </span>
                             </div>
-                          )}
+                            <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>{n.body}</div>
+                            {n.matter_ref && (
+                              <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 3 }}>
+                                {n.matter_ref}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    ))
+                  )}
+                  </div>
+                )}
+                {bellTab === "reviews" && (
+                  <>
+                    {contractInboxItems.filter((i) => !i.is_read && i.status === "complete").length > 1 && (
+                      <div
+                        style={{
+                          padding: "10px 16px",
+                          background: "#fffbeb",
+                          borderBottom: "1px solid #fde68a",
+                          fontSize: 12,
+                          color: "#92400e",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <span>⚡</span>
+                        <span>
+                          <strong>
+                            {contractInboxItems.filter((i) => !i.is_read && i.status === "complete").length} new
+                            contract reviews
+                          </strong>{" "}
+                          ready for action
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await supabase.from("contract_review_inbox").update({ is_read: true }).eq("is_read", false);
+                            loadContractInbox();
+                          }}
+                          style={{
+                            marginLeft: "auto",
+                            fontSize: 11,
+                            padding: "3px 8px",
+                            borderRadius: 4,
+                            border: "1px solid #fde68a",
+                            background: "white",
+                            cursor: "pointer",
+                            color: "#92400e",
+                          }}
+                        >
+                          Mark all read
+                        </button>
+                      </div>
+                    )}
+                    {contractInboxItems.length === 0 ? (
+                      <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
+                        <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>No contract reviews yet</div>
+                        <div style={{ fontSize: 11, marginTop: 4 }}>
+                          Forward a contract to contractreview@conveyancingcrew.com.au
+                        </div>
+                      </div>
+                    ) : (
+                      contractInboxItems.map((item) => {
+                      const r = item.review_result || {};
+                      const riskColors = {
+                        LOW: "#16a34a",
+                        MEDIUM: "#ca8a04",
+                        HIGH: "#dc2626",
+                        CRITICAL: "#7f1d1d",
+                      };
+                      const riskBg = {
+                        LOW: "#f0fdf4",
+                        MEDIUM: "#fffbeb",
+                        HIGH: "#fef2f2",
+                        CRITICAL: "#fff1f2",
+                      };
+                      const RL = String(r.overallRiskLevel || "").toUpperCase();
+                      const st = item.status;
+                      const borderColor =
+                        st === "complete"
+                          ? riskColors[RL] || "#dce3f0"
+                          : st === "processing"
+                            ? "#245eb0"
+                            : st === "failed"
+                              ? "#94a3b8"
+                              : "#dce3f0";
+                      const docTypeLabel = (item.document_type || "PDF").toUpperCase();
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={async () => {
+                            if (!item.is_read) {
+                              await supabase.from("contract_review_inbox").update({ is_read: true }).eq("id", item.id);
+                              loadContractInbox();
+                            }
+                          }}
+                          style={{
+                            borderLeft: `4px solid ${borderColor}`,
+                            padding: "14px 16px",
+                            borderBottom: "1px solid #f0f0f0",
+                            background: item.is_read ? "white" : "#f8faff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "flex-start",
+                              justifyContent: "space-between",
+                              marginBottom: 6,
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: "#1a2744",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {item.document_name || "Contract"}
+                                <span
+                                  style={{
+                                    fontSize: 9,
+                                    fontFamily: "monospace",
+                                    background: "#eef0f5",
+                                    color: "#6b7a99",
+                                    padding: "1px 5px",
+                                    borderRadius: 3,
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  {docTypeLabel}
+                                </span>
+                                {!item.is_read && (
+                                  <span
+                                    style={{
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: "50%",
+                                      background: "#245eb0",
+                                      display: "inline-block",
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: 9,
+                                fontFamily: "monospace",
+                                fontWeight: 700,
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                background:
+                                  st === "complete"
+                                    ? "#f0fdf4"
+                                    : st === "processing"
+                                      ? "#e8f0fb"
+                                      : st === "failed"
+                                        ? "#fef2f2"
+                                        : "#f8fafc",
+                                color:
+                                  st === "complete"
+                                    ? "#16a34a"
+                                    : st === "processing"
+                                      ? "#245eb0"
+                                      : st === "failed"
+                                        ? "#dc2626"
+                                        : "#94a3b8",
+                              }}
+                            >
+                              {st === "complete"
+                                ? "✓ Complete"
+                                : st === "processing"
+                                  ? "⟳ Reviewing..."
+                                  : st === "failed"
+                                    ? "✗ Failed"
+                                    : "Pending"}
+                            </span>
+                          </div>
+
+                          {r.propertyAddress && (
+                            <div style={{ fontSize: 11, color: "#1a2744", marginBottom: 2 }}>📍 {r.propertyAddress}</div>
+                          )}
+                          {r.buyerName && (
+                            <div style={{ fontSize: 11, color: "#6b7a99", marginBottom: 2 }}>👤 {r.buyerName}</div>
+                          )}
+                          {r.purchasePrice && (
+                            <div style={{ fontSize: 11, color: "#6b7a99", marginBottom: 2 }}>💰 {r.purchasePrice}</div>
+                          )}
+
+                          {st === "complete" && RL && (
+                            <div style={{ marginBottom: 6 }}>
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                  background: riskBg[RL] || "#f8fafc",
+                                  color: riskColors[RL] || "#6b7a99",
+                                }}
+                              >
+                                {RL === "LOW" ? "🟢" : RL === "MEDIUM" ? "🟡" : RL === "HIGH" ? "🔴" : "🚨"} {RL} RISK
+                                {r.redFlags?.length > 0 && ` · ${r.redFlags.length} red flags`}
+                              </span>
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "#94a3b8",
+                              marginBottom: st === "complete" ? 10 : 0,
+                            }}
+                          >
+                            From: {item.from_name || item.from_email} ·{" "}
+                            {item.received_at
+                              ? new Date(item.received_at).toLocaleDateString("en-AU", {
+                                  day: "numeric",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : ""}
+                            {item.matter_ref && (
+                              <span
+                                style={{
+                                  marginLeft: 8,
+                                  background: "#f0fdf4",
+                                  color: "#16a34a",
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                ✓ Linked: {item.matter_ref}
+                              </span>
+                            )}
+                          </div>
+
+                          {st === "complete" && !item.matter_ref && (
+                            <div style={{ display: "flex", gap: 6, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLinkReviewModal(item);
+                                  setLinkReviewSearch("");
+                                  setNotifOpen(false);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  fontSize: 11,
+                                  padding: "6px 10px",
+                                  borderRadius: 6,
+                                  border: "1.5px solid #245eb0",
+                                  background: "white",
+                                  color: "#245eb0",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                🔗 Link to Matter
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  prefillFromReview(item);
+                                  setNotifOpen(false);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  fontSize: 11,
+                                  padding: "6px 10px",
+                                  borderRadius: 6,
+                                  border: "none",
+                                  background: "#245eb0",
+                                  color: "white",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                ➕ Create Matter
+                              </button>
+                            </div>
+                          )}
+
+                          {st === "complete" && item.matter_ref && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedMatter(item.matter_ref);
+                                setPage("matter_workspace");
+                                setMatterTab("Documents");
+                                setNotifOpen(false);
+                              }}
+                              style={{
+                                marginTop: 8,
+                                width: "100%",
+                                fontSize: 11,
+                                padding: "6px 10px",
+                                borderRadius: 6,
+                                border: "1.5px solid #dce3f0",
+                                background: "white",
+                                color: "#6b7a99",
+                                cursor: "pointer",
+                              }}
+                            >
+                              📂 View in Matter
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                    )}
+                  </>
                 )}
               </div>
               <div
@@ -5547,7 +6134,7 @@ Return only the email body text, no subject line.`;
                   flexShrink: 0,
                   display: "flex",
                   justifyContent: "space-between",
-                  alignItems: "center"
+                  alignItems: "center",
                 }}
               >
                 <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
@@ -5556,9 +6143,14 @@ Return only the email body text, no subject line.`;
                 <button
                   className="btn-ghost"
                   style={{ fontSize: 11 }}
+                  type="button"
                   onClick={() => {
-                    setNotifAI(null);
-                    openNotifications();
+                    if (bellTab === "notifications") {
+                      setNotifAI(null);
+                      openNotifications();
+                    } else {
+                      loadContractInbox();
+                    }
                   }}
                 >
                   ↺ Refresh
@@ -5693,7 +6285,27 @@ Return only the email body text, no subject line.`;
                     <div><div className="dash-hero-stat-val">{activeMatters.length}</div><div className="dash-hero-stat-label">Active Matters</div></div>
                     <div><div className="dash-hero-stat-val">{settlementsThisWeek}</div><div className="dash-hero-stat-label">Settlements This Week</div></div>
                     <div><div className="dash-hero-stat-val">{tasksDueTodayCount}</div><div className="dash-hero-stat-label">Tasks Due Today</div></div>
-                    <div><div className="dash-hero-stat-val">0</div><div className="dash-hero-stat-label">Unread Emails</div></div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBellTab("reviews");
+                        setNotifOpen(true);
+                        loadContractInbox();
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        font: "inherit",
+                        color: "inherit",
+                      }}
+                      title="Open contract reviews"
+                    >
+                      <div className="dash-hero-stat-val">{contractInboxUnread}</div>
+                      <div className="dash-hero-stat-label">Contract Reviews</div>
+                    </button>
                   </div>
                 </div>
 
@@ -9768,6 +10380,157 @@ Return only the email body text, no subject line.`;
       {/* Success toast */}
       {sendSuccessToast && (
         <div style={{position:"fixed",bottom:24,right:24,zIndex:1001,background:"var(--green)",color:"var(--white)",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"var(--shadow-lg)",animation:"toastFade 3s ease forwards"}}>Email sent ✓</div>
+      )}
+      {reviewLinkToast && (
+        <div style={{position:"fixed",bottom:24,right:24,zIndex:1001,background:"var(--green)",color:"var(--white)",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"var(--shadow-lg)",animation:"toastFade 3.5s ease forwards",maxWidth:360}}>{reviewLinkToast}</div>
+      )}
+
+      {linkReviewModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => {
+            setLinkReviewModal(null);
+            setLinkReviewSearch("");
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: 14,
+              width: 520,
+              maxWidth: "100%",
+              maxHeight: "80vh",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "var(--shadow-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: "18px 20px",
+                borderBottom: "1px solid #dce3f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#1a2744" }}>🔗 Link Contract Review to Matter</div>
+                <div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginTop: 2 }}>
+                  {linkReviewModal.document_name}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setLinkReviewModal(null);
+                  setLinkReviewSearch("");
+                }}
+                style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#94a3b8" }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: "12px 20px", borderBottom: "1px solid #f0f0f0" }}>
+              <input
+                autoFocus
+                placeholder="Search by address or client name..."
+                value={linkReviewSearch}
+                onChange={(e) => setLinkReviewSearch(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  border: "1.5px solid #dce3f0",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  outline: "none",
+                  fontFamily: "inherit",
+                }}
+              />
+            </div>
+            <div style={{ overflow: "auto", flex: 1 }}>
+              {MATTERS.filter((m) => {
+                if (!linkReviewSearch) return true;
+                const q = linkReviewSearch.toLowerCase();
+                return (
+                  (m.address || "").toLowerCase().includes(q) ||
+                  String(m.client_name || m.client || "").toLowerCase().includes(q) ||
+                  String(m.matter_ref || "").toLowerCase().includes(q)
+                );
+              })
+                .slice(0, 20)
+                .map((m) => (
+                  <div
+                    key={m.matter_ref || m.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => linkReviewToMatter(m)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") linkReviewToMatter(m);
+                    }}
+                    style={{
+                      padding: "12px 20px",
+                      borderBottom: "1px solid #f0f0f0",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#f8faff";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "white";
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        background: "#e8f0fb",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 16,
+                        flexShrink: 0,
+                      }}
+                    >
+                      🏠
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#1a2744" }}>{m.client_name || m.client}</div>
+                      <div style={{ fontSize: 11, color: "#6b7a99" }}>{m.address}</div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        color: "#94a3b8",
+                        background: "#f8fafc",
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      {m.matter_ref}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ══════════════════════════════════════════════

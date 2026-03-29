@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/contract-inbox",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "functions": {
+    "app/api/cron/contract-inbox/route.js": {
+      "maxDuration": 300
+    },
+    "app/api/contract-review/route.js": {
+      "maxDuration": 300
+    }
+  }
+}
