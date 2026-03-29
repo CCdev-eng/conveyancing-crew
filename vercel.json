@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/contract-inbox",
-      "schedule": "0 * * * *"
+      "schedule": "*/5 * * * *"
     }
   ],
   "functions": {
