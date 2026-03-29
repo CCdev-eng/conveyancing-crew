@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createClient } from "@supabase/supabase-js";
+import { createXeroSupabaseClient } from "@/lib/xero-supabase-admin";
 
 async function getValidToken() {
   // Try file first (local dev)
@@ -21,15 +21,16 @@ async function getValidToken() {
 
   // Try Supabase (production)
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    );
-    const { data } = await supabase
+    const supabase = createXeroSupabaseClient();
+    if (!supabase) {
+      console.warn("[Xero] Missing Supabase config for xero_tokens");
+    } else {
+    const { data, error: readErr } = await supabase
       .from('xero_tokens')
       .select('*')
       .eq('id', 1)
       .single();
+    if (readErr) console.error("[Xero] xero_tokens read:", readErr.message);
 
     if (data) {
       const expiresAt = new Date(data.expires_at);
@@ -54,8 +55,9 @@ async function getValidToken() {
         return refreshed;
       }
     }
+    }
   } catch(e) {
-    console.log('Supabase token fetch error:', e.message);
+    console.error('Supabase token fetch error:', e.message);
   }
 
   return null;
@@ -78,7 +80,11 @@ async function refreshToken(tokenData) {
         refresh_token: tokenData.refresh_token
       })
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error("[Xero] refresh failed:", res.status, t.slice(0, 300));
+      return null;
+    }
     const newTokenSet = await res.json();
     return {
       tenant_id: tokenData.tenant_id,

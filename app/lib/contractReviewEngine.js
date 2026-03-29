@@ -187,6 +187,29 @@ function getAnthropicClient() {
   });
 }
 
+/** Claude Opus 4 pricing (USD) + rough AUD conversion for client billing visibility */
+const INPUT_COST_PER_MILLION = 15.0;
+const OUTPUT_COST_PER_MILLION = 75.0;
+const USD_TO_AUD = 1.55;
+
+function buildReviewCost(totalUsage, pagesReviewed, chunksProcessed) {
+  const inputCostUSD = (totalUsage.input_tokens / 1000000) * INPUT_COST_PER_MILLION;
+  const outputCostUSD = (totalUsage.output_tokens / 1000000) * OUTPUT_COST_PER_MILLION;
+  const totalCostUSD = inputCostUSD + outputCostUSD;
+  const totalCostAUD = totalCostUSD * USD_TO_AUD;
+  return {
+    input_tokens: totalUsage.input_tokens,
+    output_tokens: totalUsage.output_tokens,
+    total_tokens: totalUsage.input_tokens + totalUsage.output_tokens,
+    cost_usd: parseFloat(totalCostUSD.toFixed(4)),
+    cost_aud: parseFloat(totalCostAUD.toFixed(4)),
+    pages_reviewed: pagesReviewed,
+    chunks_processed: chunksProcessed,
+    model: "claude-opus-4-5",
+    reviewed_at: new Date().toISOString(),
+  };
+}
+
 /**
  * Single-pass review for Word contracts (no PDF chunking).
  * @param {Buffer|ArrayBuffer} docxBuffer
@@ -218,6 +241,8 @@ ${matterContext || ""}
 
 Review this contract thoroughly across all 11 critical areas and return a 
 complete analysis as JSON.
+
+settlementDate: The settlement date in DD/MM/YYYY format if a specific date is stated. If settlement is calculated from contract date (e.g. '42 days after contract'), write the formula as plain text but prefix with FORMULA: so it can be identified. If unknown write empty string.
 
 Return ONLY this JSON structure (no markdown, no explanation outside JSON):
 
@@ -322,8 +347,20 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
     ],
   });
 
+  const usage = response.usage || {};
+  const totalUsage = {
+    input_tokens: usage.input_tokens || 0,
+    output_tokens: usage.output_tokens || 0,
+  };
+  console.log("[ReviewEngine] Docx review tokens:", totalUsage);
+
   const content = response.content?.[0]?.text || "{}";
-  return parseJsonFromModelText(content);
+  const parsed = parseJsonFromModelText(content);
+  parsed._reviewCost = buildReviewCost(totalUsage, 0, 1);
+  console.log("[ReviewEngine] Token usage:", totalUsage);
+  console.log("[ReviewEngine] Cost USD:", parsed._reviewCost.cost_usd);
+  console.log("[ReviewEngine] Cost AUD:", parsed._reviewCost.cost_aud);
+  return parsed;
 }
 
 /**
@@ -336,6 +373,7 @@ export async function runContractReviewEngine(pdfBuffer, matterContext) {
   const chunks = await splitPdfIntoChunks(pdfBuffer, 80);
   console.log("[ReviewEngine] Processing", chunks.length, "chunks");
 
+  let totalUsage = { input_tokens: 0, output_tokens: 0 };
   const chunkResults = [];
 
   for (let i = 0; i < chunks.length; i++) {
@@ -375,6 +413,8 @@ export async function runContractReviewEngine(pdfBuffer, matterContext) {
 ${matterContext || ""}${chunkNote}
 
 Review this contract thoroughly and return analysis as JSON.
+
+settlementDate: The settlement date in DD/MM/YYYY format if a specific date is stated. If settlement is calculated from contract date (e.g. '42 days after contract'), write the formula as plain text but prefix with FORMULA: so it can be identified. If unknown write empty string.
 
 Return ONLY this JSON (no markdown, no explanation outside JSON):
 
@@ -420,6 +460,14 @@ clientLetter rule: ${clientLetterRule}`,
       ],
     });
 
+    const chunkUsage = {
+      input_tokens: response.usage?.input_tokens || 0,
+      output_tokens: response.usage?.output_tokens || 0,
+    };
+    console.log(`[ReviewEngine] Chunk ${i + 1} tokens:`, chunkUsage);
+    totalUsage.input_tokens += chunkUsage.input_tokens;
+    totalUsage.output_tokens += chunkUsage.output_tokens;
+
     const rawText = response.content?.[0]?.text || "{}";
 
     let chunkResult;
@@ -452,6 +500,22 @@ clientLetter rule: ${clientLetterRule}`,
   }
 
   const merged = mergeChunkResults(chunkResults, chunks[0]?.totalPages || 0);
+
+  const inputCostUSD = (totalUsage.input_tokens / 1000000) * INPUT_COST_PER_MILLION;
+  const outputCostUSD = (totalUsage.output_tokens / 1000000) * OUTPUT_COST_PER_MILLION;
+  const totalCostUSD = inputCostUSD + outputCostUSD;
+  const totalCostAUD = totalCostUSD * USD_TO_AUD;
+
+  console.log("[ReviewEngine] Token usage:", totalUsage);
+  console.log("[ReviewEngine] Cost USD:", totalCostUSD.toFixed(4));
+  console.log("[ReviewEngine] Cost AUD:", totalCostAUD.toFixed(4));
+
+  merged._reviewCost = buildReviewCost(
+    totalUsage,
+    chunks[0]?.totalPages || 0,
+    chunkResults.length
+  );
+
   console.log(
     "[ReviewEngine] Complete. Risk:",
     merged.overallRiskLevel,

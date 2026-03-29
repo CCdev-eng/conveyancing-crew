@@ -733,6 +733,52 @@ function parseIntakeAutofillJson(text) {
   }
 }
 
+/**
+ * Split buyer / purchaser name for intake (contract review prefill + email autofill).
+ * Mirrors joint purchaser logic: co-purchaser only when delimiter matches and p2First is non-empty.
+ */
+function parseJointBuyerNameForIntake(buyerNameRaw) {
+  const jointPattern = /\s+and\s+|\s*&\s*|\s*\/\s*/i;
+  const s = String(buyerNameRaw || "").trim();
+  if (!s) {
+    return {
+      p1First: "",
+      p1Last: "",
+      p2First: "",
+      p2Last: "",
+      isJoint: false,
+    };
+  }
+  const isJointPurchase = jointPattern.test(s);
+  const nameParts2 = s.split(jointPattern).map((p) => p.trim()).filter(Boolean);
+
+  const p1Words = (nameParts2[0] || "").split(/\s+/).filter(Boolean);
+  const p2Words = (nameParts2[1] || "").split(/\s+/).filter(Boolean);
+
+  const p1First = p1Words[0] || "";
+  const p1Last = p1Words.slice(1).join(" ") || "";
+
+  let p2First = "";
+  let p2Last = "";
+  if (p2Words.length === 1) {
+    p2First = p2Words[0];
+    p2Last = p1Last;
+  } else if (p2Words.length > 1) {
+    p2First = p2Words[0];
+    p2Last = p2Words.slice(1).join(" ");
+  }
+
+  const hasCoPurchaser = isJointPurchase && !!p2First;
+
+  return {
+    p1First,
+    p1Last,
+    p2First: hasCoPurchaser ? p2First : "",
+    p2Last: hasCoPurchaser ? p2Last : "",
+    isJoint: hasCoPurchaser,
+  };
+}
+
 const INTAKE_REFERRAL_OPTIONS = [
   { id: "New Client", icon: "👤" },
   { id: "Repeat Client", icon: "🔄" },
@@ -749,8 +795,13 @@ function mapMatterFromRow(row) {
     matter_ref: row.matter_ref,
     client: row.client_name,
     client_name: row.client_name,
+    client_first_name: row.client_first_name ?? "",
+    client_last_name: row.client_last_name ?? "",
     email: row.client_email,
     phone: row.client_phone,
+    client_email: row.client_email,
+    client_phone: row.client_phone,
+    co_purchaser_name: row.co_purchaser_name ?? null,
     type: row.type,
     address: row.address,
     state: row.state,
@@ -1779,6 +1830,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .mt-thead{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);gap:12px}
 .mt-th{font-size:9px;font-family:var(--font-mono);color:var(--text-3);text-transform:uppercase;letter-spacing:1px}
 .mt-row{display:grid;grid-template-columns:120px 1fr 130px 140px 90px 90px;padding:13px 20px;border-bottom:1px solid var(--border-2);gap:12px;align-items:center;cursor:pointer;transition:all 0.1s}
+.matters-bulk-table .mt-thead,.matters-bulk-table .mt-row{grid-template-columns:36px 120px 1fr 130px 140px 90px 90px}
 .mt-row:last-child{border-bottom:none}
 .mt-row:hover{background:#fafaf9}
 .mt-id{font-size:10px;font-family:var(--font-mono);color:var(--text-3)}
@@ -2179,6 +2231,8 @@ export default function App() {
   const [selectedMatter, setSelectedMatter] = useState(null);
   const [mFilter, setMFilter] = useState("all");
   const [MATTERS, setMATTERS] = useState([]);
+  const [selectedMatters, setSelectedMatters] = useState(() => new Set());
+  const [matterDeleteMode, setMatterDeleteMode] = useState(false);
   const [mattersLoading, setMattersLoading] = useState(true);
   const [selectedRef, setSelectedRef] = useState(null);
   const [selectedCommId, setSelectedCommId] = useState(1);
@@ -2205,6 +2259,10 @@ export default function App() {
   const [lastReviewedAt, setLastReviewedAt] = useState("");
   const [lastReviewedDoc, setLastReviewedDoc] = useState("");
   const [reviewLoadedFromStorage, setReviewLoadedFromStorage] = useState(false);
+  const [pendingReviewLink, setPendingReviewLink] = useState(null);
+  const [contractReviewHistory, setContractReviewHistory] = useState([]);
+  const [editingClient, setEditingClient] = useState(false);
+  const [editClientForm, setEditClientForm] = useState({});
   const [matterSearches, setMatterSearches] = useState({});
   const [matterEmails, setMatterEmails] = useState([]);
   const [matterEmailsLoading, setMatterEmailsLoading] = useState(false);
@@ -2361,13 +2419,22 @@ export default function App() {
   const [insightsAutoError, setInsightsAutoError] = useState(null);
 
   const [xeroData, setXeroData] = useState(null);
-  const [xeroLoading, setXeroLoading] = useState(true);
+  const [xeroLoading, setXeroLoading] = useState(false);
   const [xeroConnected, setXeroConnected] = useState(false);
   const [xeroPeriod, setXeroPeriod] = useState("monthly");
   const [xeroChartHoverIdx, setXeroChartHoverIdx] = useState(null);
   const [xeroAIReport, setXeroAIReport] = useState(null);
   const [xeroAIReportLoading, setXeroAIReportLoading] = useState(false);
   const [xeroAccBarHover, setXeroAccBarHover] = useState(null);
+  const [xeroError, setXeroError] = useState(null);
+  /** After OAuth with ?delay=true, ms to wait before first /api/xero/invoices call (one-shot). */
+  const xeroOAuthFetchDelayMsRef = useRef(0);
+
+  /** Xero OAuth start URL — use only from explicit "Connect Xero" button handlers, never from useEffect. */
+  const connectToXeroOAuth = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.location.assign("/api/xero/auth");
+  }, []);
   const [txAccountName, setTxAccountName] = useState("");
   const [txModal, setTxModal] = useState(false);
   const [txLoading, setTxLoading] = useState(false);
@@ -2414,33 +2481,6 @@ export default function App() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-
-  const fetchXeroData = useCallback(async () => {
-    setXeroLoading(true);
-    try {
-      const res = await fetch(`/api/xero/invoices?period=${encodeURIComponent(xeroPeriod)}`);
-      if (res.status === 401) {
-        setXeroConnected(false);
-        setXeroData(null);
-        return;
-      }
-      const data = await safeParseFetchJson(res);
-      if (data.error) {
-        setXeroConnected(false);
-        setXeroData(null);
-      } else {
-        setXeroConnected(true);
-        setXeroData(data);
-        console.log("Xero full data:", data);
-        console.log("xeroData.currentMonth (after load):", data.currentMonth);
-      }
-    } catch (e) {
-      console.log("Xero fetch error:", e);
-      setXeroConnected(false);
-    } finally {
-      setXeroLoading(false);
-    }
-  }, [xeroPeriod]);
 
   const fetchTransactions = useCallback(
     async (_accountId, accountName, fromDate, toDate) => {
@@ -2569,17 +2609,20 @@ Maximum 300 words.`,
   }, [aiAutoMode, xeroConnected, xeroData, xeroAIReport, xeroAIReportLoading, generateXeroAIReport]);
 
   useEffect(() => {
+    // Handle OAuth callback query only (/?xero=connected|error). Do not navigate to /api/xero/auth here.
     if (typeof window === "undefined") return;
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("xero") === "connected") {
       setXeroConnected(true);
+      if (urlParams.get("delay") === "true") {
+        xeroOAuthFetchDelayMsRef.current = 5000;
+      }
       window.history.replaceState({}, "", window.location.pathname);
     } else if (urlParams.get("xero") === "error") {
       console.log("Xero connection failed");
       window.history.replaceState({}, "", window.location.pathname);
     }
-    fetchXeroData();
-  }, [fetchXeroData]);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -2668,6 +2711,11 @@ Maximum 300 words.`,
         return;
       }
 
+      if (selectedMatters.size > 0) {
+        setSelectedMatters(new Set());
+        return;
+      }
+
       if (page === "matter_workspace") {
         setPage("matters");
         setSelectedMatter(null);
@@ -2691,6 +2739,7 @@ Maximum 300 words.`,
     addEventModal,
     tooltip,
     page,
+    selectedMatters.size,
   ]);
 
   useEffect(() => {
@@ -2705,6 +2754,26 @@ Maximum 300 words.`,
   }, [page]);
 
   useEffect(() => {
+    setMatterDeleteMode(selectedMatters.size > 0);
+  }, [selectedMatters.size]);
+
+  useEffect(() => {
+    if (page !== "matters") {
+      setSelectedMatters(new Set());
+    }
+  }, [page]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && selectedMatters.size > 0) {
+        setSelectedMatters(new Set());
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedMatters.size]);
+
+  useEffect(() => {
     if (page === "insights") {
       fetchMarketIntelligence();
       if (aiAutoMode) generateInsightsSummary();
@@ -2717,29 +2786,22 @@ Maximum 300 words.`,
 
   const loadContractInbox = useCallback(async () => {
     try {
-      console.log("[ContractInbox] Loading...");
+      console.log("[ContractInbox] Starting load...");
+      console.log("[ContractInbox] Supabase client:", !!supabase);
+
       const { data, error } = await supabase
         .from("contract_review_inbox")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(20);
 
-      console.log("[ContractInbox] Result:", data?.length, "items | Error:", error?.message);
-      console.log(
-        "[ContractInbox] Items:",
-        data?.map((d) => ({
-          id: d.id,
-          subject: d.subject,
-          status: d.status,
-          is_read: d.is_read,
-          created_at: d.created_at,
-        }))
-      );
+      console.log("[ContractInbox] Query complete");
+      console.log("[ContractInbox] Error:", error);
+      console.log("[ContractInbox] Data count:", data?.length);
+      console.log("[ContractInbox] Raw data:", JSON.stringify(data?.slice(0, 3)));
 
       if (error) {
-        console.error("[ContractInbox] Query error:", error);
-        setContractInboxItems([]);
-        setContractInboxUnread(0);
+        console.error("[ContractInbox] Supabase error:", error.message, error.code);
         return;
       }
 
@@ -2747,14 +2809,41 @@ Maximum 300 words.`,
         setContractInboxItems(data);
         const unread = data.filter((d) => !d.is_read).length;
         setContractInboxUnread(unread);
-        console.log("[ContractInbox] Unread count:", unread);
+        console.log("[ContractInbox] Set", data.length, "items,", unread, "unread");
+      } else {
+        console.log("[ContractInbox] No data returned");
       }
     } catch (err) {
-      console.error("[ContractInbox] Load error:", err);
+      console.error("[ContractInbox] Catch error:", err.message, err);
+    }
+  }, []);
+
+  const fetchMatters = useCallback(async () => {
+    try {
+      console.log("Matters fetch started");
+      setMattersLoading(true);
+      const { data, error } = await supabase
+        .from("matters")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      console.log("Raw data from Supabase:", data);
+      if (error) throw error;
+      const rows = data || [];
+      const mapped = rows.map(mapMatterFromRow);
+      setMATTERS(mapped);
+      console.log("Final MATTERS state after setting:", mapped);
+      console.log("[Matters] Refreshed:", mapped.length, "matters");
+    } catch (err) {
+      console.error("[Matters] Fetch error:", err.message);
+      setMATTERS([]);
+    } finally {
+      setMattersLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    console.log("[ContractInbox] About to call loadContractInbox...");
     loadContractInbox();
 
     const inboxChannel = supabase
@@ -2785,30 +2874,65 @@ Maximum 300 words.`,
   }, [loadContractInbox, user?.id]);
 
   useEffect(() => {
-    const fetchMatters = async () => {
-      console.log("Matters fetch started");
-      setMattersLoading(true);
-      const { data, error } = await supabase
-        .from("matters")
-        .select("*");
-
-      if (error) {
-        console.error("Supabase error fetching matters:", error);
-        setMATTERS([]);
-      } else {
-        console.log("Raw data from Supabase:", data);
-        const rows = data || [];
-        const mapped = rows.map(mapMatterFromRow);
-        console.log("Final MATTERS state after setting:", mapped);
-        setMATTERS(mapped);
-      }
-
-      setMattersLoading(false);
-    };
-
     fetchMatters();
+    console.log("[ContractInbox] About to call loadContractInbox...");
     loadContractInbox();
-  }, [loadContractInbox]);
+
+    let oauthDelayTimeoutId;
+    let xeroPhase2TimeoutId;
+    if (xeroConnected) {
+      const runXeroFetch = () => {
+        setXeroLoading(true);
+        fetch("/api/xero/invoices?period=monthly&minimal=true")
+          .then(async (r) => {
+            if (r.status === 429) {
+              console.log("[Xero] Rate limited on minimal load");
+              setXeroLoading(false);
+              setXeroData({ rateLimited: true });
+              return;
+            }
+            const data = await r.json();
+            if (data && !data.error) {
+              setXeroData(data);
+              setXeroLoading(false);
+              console.log("Xero data (minimal):", data);
+              console.log("xeroData.currentMonth (after load):", data.currentMonth);
+              xeroPhase2TimeoutId = setTimeout(() => {
+                fetch("/api/xero/invoices?period=monthly")
+                  .then((r2) => r2.json())
+                  .then((data2) => {
+                    if (data2 && !data2.error && !data2.rateLimited) {
+                      setXeroData(data2);
+                      console.log("Xero full data (background):", data2);
+                    }
+                  })
+                  .catch(() => {});
+              }, 3000);
+            } else {
+              setXeroLoading(false);
+            }
+          })
+          .catch((err) => {
+            console.error("[Xero] Error:", err.message);
+            setXeroLoading(false);
+          });
+      };
+
+      const delayMs = xeroOAuthFetchDelayMsRef.current;
+      xeroOAuthFetchDelayMsRef.current = 0;
+      if (delayMs > 0) {
+        console.log("[Xero] Waiting after OAuth before first API call:", delayMs, "ms");
+        oauthDelayTimeoutId = setTimeout(runXeroFetch, delayMs);
+      } else {
+        runXeroFetch();
+      }
+    }
+
+    return () => {
+      if (oauthDelayTimeoutId) clearTimeout(oauthDelayTimeoutId);
+      if (xeroPhase2TimeoutId) clearTimeout(xeroPhase2TimeoutId);
+    };
+  }, [fetchMatters, loadContractInbox, xeroConnected]);
 
   useEffect(() => {
     const fetchCalendarEvents = async () => {
@@ -4161,6 +4285,8 @@ RESPONSE RULES:
     setIntakeAutoFillError("");
     setIntakeAutoFillSubjectsExpanded(false);
     setIntakeAutoFilledFields({});
+    setPendingReviewLink(null);
+    setContractReviewHistory([]);
     setModal("intake");
   };
 
@@ -4205,6 +4331,7 @@ RESPONSE RULES:
   const createIntakeMatter = async () => {
     if (!intakeMatterType) return;
     setIntakeCreating(true);
+    const pendingFromReview = pendingReviewLink;
     try {
       const year = new Date().getFullYear();
       const prefix = `CC-${year}-`;
@@ -4242,11 +4369,25 @@ RESPONSE RULES:
       if (intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)) {
         notesObj.coPurchaser = [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim();
       }
+
+      const settlementDateValue = intakeSettlementDate ? intakeSettlementDate.trim() : null;
+      const isValidDate =
+        settlementDateValue &&
+        /^\d{4}-\d{2}-\d{2}$/.test(settlementDateValue) &&
+        !isNaN(new Date(settlementDateValue).getTime());
+      const sanitizedSettlementDate = isValidDate ? settlementDateValue : null;
+
       const row = {
         matter_ref,
         client_name: clientName,
         client_email: intakeClientEmail || null,
         client_phone: intakeClientPhone || null,
+        client_first_name: intakeClientFirstName?.trim() || null,
+        client_last_name: intakeClientLastName?.trim() || null,
+        co_purchaser_name:
+          intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)
+            ? [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim() || null
+            : null,
         type: intakeMatterType,
         address: intakeAddress || "",
         state: intakeState || "NSW",
@@ -4256,7 +4397,7 @@ RESPONSE RULES:
         urgency: "medium",
         staff: user?.email || "—",
         notes: JSON.stringify(notesObj),
-        settlement_date: intakeSettlementDate || null,
+        settlement_date: sanitizedSettlementDate,
         price: priceForDb,
       };
       let { error } = await supabase.from("matters").insert(row);
@@ -4269,6 +4410,40 @@ RESPONSE RULES:
         }
       }
       if (error) throw error;
+
+      if (pendingFromReview && pendingFromReview.review_result) {
+        const reviewItem = pendingFromReview;
+        try {
+          await supabase.from("matter_workflow").upsert(
+            {
+              matter_ref,
+              step_key: "contract_review",
+              completed: true,
+              completed_at: new Date().toISOString(),
+              notes: JSON.stringify({
+                reviewedAt: reviewItem.received_at || new Date().toISOString(),
+                documentName: reviewItem.document_name,
+                riskLevel: reviewItem.review_result.overallRiskLevel,
+                redFlagCount: reviewItem.review_result.redFlags?.length || 0,
+                fullResult: reviewItem.review_result,
+                source: "email_inbox",
+              }),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "matter_ref,step_key" }
+          );
+          await supabase
+            .from("contract_review_inbox")
+            .update({ matter_ref })
+            .eq("id", reviewItem.id);
+          await loadContractInbox();
+          setPendingReviewLink(null);
+          console.log("[NewMatter] Contract review linked to:", matter_ref);
+        } catch (wfErr) {
+          console.error("[NewMatter] Failed to save contract review to workflow:", wfErr);
+        }
+      }
+
       if (intakeReferrerId) {
         const feeAmount = intakeReferralFeeEnabled
           ? parseFloat(String(intakeReferralFee).replace(/[^0-9.]/g, "")) || 0
@@ -4340,7 +4515,7 @@ RESPONSE RULES:
           matter_ref,
           client_name: clientName,
           task: `Pay referral fee of $${feeLabel} to ${refName} — due at settlement`,
-          due_date: intakeSettlementDate || null,
+          due_date: sanitizedSettlementDate,
           urgency: "medium",
           done: false,
           notes: "Auto-created: referral fee agreed at matter creation",
@@ -4546,34 +4721,70 @@ RESPONSE RULES:
   const prefillFromReview = (item) => {
     const r = item.review_result || {};
     const buyerName = r.buyerName || "";
-    const isJoint = /\s+and\s+|\s*&\s*/i.test(buyerName);
-    const nameParts = buyerName.split(/\s+and\s+|\s*&\s*/i);
-    const firstPerson = (nameParts[0] || "").trim().split(" ");
-    const secondPerson = nameParts[1] ? nameParts[1].trim().split(" ") : [];
+    const buyerNameRaw = r?.buyerName || buyerName || "";
+    console.log("[PrefillFromReview] Raw buyer name:", buyerNameRaw);
+
+    const jointPattern = /\s+and\s+|\s*&\s*|\s*\/\s*/i;
+    const p = parseJointBuyerNameForIntake(buyerNameRaw);
+    if (p.isJoint) {
+      const nameParts2 = buyerNameRaw.split(jointPattern).map((x) => x.trim()).filter(Boolean);
+      console.log("[PrefillFromReview] Joint: person1=", nameParts2[0], "person2=", nameParts2[1]);
+      console.log("[PrefillFromReview] P1:", p.p1First, p.p1Last);
+      console.log("[PrefillFromReview] P2:", p.p2First, p.p2Last);
+      setIntakeHasCoPurchaser(true);
+      setIntakeCoPurchaserFirstName(p.p2First);
+      setIntakeCoPurchaserLastName(p.p2Last);
+    } else {
+      setIntakeHasCoPurchaser(false);
+      setIntakeCoPurchaserFirstName("");
+      setIntakeCoPurchaserLastName("");
+    }
+    setIntakeClientFirstName(p.p1First);
+    setIntakeClientLastName(p.p1Last);
+
     const priceRaw = (r.purchasePrice || "").replace(/[^0-9.]/g, "");
     const priceFormatted = priceRaw ? Number(priceRaw).toLocaleString("en-AU") : "";
 
     setIntakeMatterType("Purchase");
     setIntakeStep(2);
     setIntakeAddress(r.propertyAddress || "");
-    setIntakeClientFirstName(firstPerson[0] || "");
-    setIntakeClientLastName(firstPerson.slice(1).join(" ") || "");
     setIntakePurchasePrice(priceFormatted);
-    setIntakeSettlementDate(r.settlementDate || "");
-    setIntakeEntityType("individual");
 
-    if (isJoint && secondPerson.length > 0) {
-      setIntakeHasCoPurchaser(true);
-      setIntakeCoPurchaserFirstName(secondPerson[0] || "");
-      setIntakeCoPurchaserLastName(secondPerson.slice(1).join(" ") || "");
+    const rawSettlementDate = r.settlementDate || "";
+    const datePatterns = [
+      /\d{1,2}\/\d{1,2}\/\d{4}/,
+      /\d{4}-\d{2}-\d{2}/,
+      /\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+      /\d{1,2}(st|nd|rd|th)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+    ];
+    const isRealDate = datePatterns.some((p) => p.test(rawSettlementDate));
+
+    if (isRealDate) {
+      try {
+        const parsed = new Date(
+          rawSettlementDate.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/, "$3-$2-$1")
+        );
+        if (!isNaN(parsed.getTime())) {
+          setIntakeSettlementDate(parsed.toISOString().split("T")[0]);
+        } else {
+          setIntakeSettlementDate("");
+        }
+      } catch (e) {
+        setIntakeSettlementDate("");
+      }
     } else {
-      setIntakeHasCoPurchaser(false);
-      setIntakeCoPurchaserFirstName("");
-      setIntakeCoPurchaserLastName("");
+      console.log(
+        "[PrefillFromReview] Settlement date is descriptive, not a real date:",
+        rawSettlementDate
+      );
+      setIntakeSettlementDate("");
     }
+
+    setIntakeEntityType("individual");
 
     setModal("intake");
     setNotifOpen(false);
+    setPendingReviewLink(item);
   };
 
   const linkReviewToMatter = async (matter) => {
@@ -4630,9 +4841,71 @@ RESPONSE RULES:
 
   const activeM = MATTERS.filter(m => m.status === "active");
   const closedM = MATTERS.filter(m => m.status === "closed");
+  const mattersListFiltered = mFilter === "all" ? MATTERS : mFilter === "active" ? activeM : closedM;
   const selMatterObj = MATTERS.find(m => m.id === selectedMatter);
   const selComm = comms.find(c => c.id === selectedCommId);
   const selRef = referrers.find(r => r.id === selectedRef);
+
+  const saveClientDetails = useCallback(async () => {
+    if (!selMatterObj?.matter_ref) return;
+    const ref = selMatterObj.matter_ref;
+    const fullName = [editClientForm.firstName, editClientForm.lastName].filter(Boolean).join(" ").trim();
+    const coName = editClientForm.hasCoPurchaser
+      ? [editClientForm.coPurchaserFirstName, editClientForm.coPurchaserLastName].filter(Boolean).join(" ").trim() || null
+      : null;
+    const { error } = await supabase
+      .from("matters")
+      .update({
+        client_name: fullName || selMatterObj.client_name || selMatterObj.client || "New Client",
+        client_first_name: editClientForm.firstName || null,
+        client_last_name: editClientForm.lastName || null,
+        client_email: editClientForm.email || null,
+        client_phone: editClientForm.phone || null,
+        co_purchaser_name: coName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("matter_ref", ref);
+    if (error) {
+      alert("Failed to save: " + error.message);
+      return;
+    }
+    setMATTERS((prev) =>
+      prev.map((m) =>
+        (m.matter_ref || m.id) === ref
+          ? {
+              ...m,
+              client_name: fullName || m.client_name,
+              client: fullName || m.client,
+              client_first_name: editClientForm.firstName || "",
+              client_last_name: editClientForm.lastName || "",
+              email: editClientForm.email || "",
+              client_email: editClientForm.email || "",
+              phone: editClientForm.phone || "",
+              client_phone: editClientForm.phone || "",
+              co_purchaser_name: coName,
+            }
+          : m
+      )
+    );
+    setEditingClient(false);
+  }, [selMatterObj, editClientForm, supabase]);
+
+  useEffect(() => {
+    if (!editingClient || !selMatterObj) return;
+    const full = String(selMatterObj.client_name || selMatterObj.client || "").trim();
+    const parts = full ? full.split(/\s+/) : [];
+    const coFull = String(selMatterObj.co_purchaser_name || "").trim();
+    const coParts = coFull ? coFull.split(/\s+/) : [];
+    setEditClientForm({
+      firstName: selMatterObj.client_first_name || parts[0] || "",
+      lastName: selMatterObj.client_last_name || parts.slice(1).join(" ") || "",
+      email: selMatterObj.client_email || selMatterObj.email || "",
+      phone: selMatterObj.client_phone || selMatterObj.phone || "",
+      hasCoPurchaser: !!selMatterObj.co_purchaser_name,
+      coPurchaserFirstName: coParts[0] || "",
+      coPurchaserLastName: coParts.slice(1).join(" ") || "",
+    });
+  }, [editingClient, selMatterObj?.matter_ref, selMatterObj?.id]);
 
   useEffect(() => {
     setContractReviewResult(null);
@@ -4643,6 +4916,8 @@ RESPONSE RULES:
     setLastReviewedAt("");
     setLastReviewedDoc("");
     setReviewLoadedFromStorage(false);
+    setContractReviewHistory([]);
+    setEditingClient(false);
   }, [selectedMatter]);
 
   useEffect(() => {
@@ -4650,6 +4925,7 @@ RESPONSE RULES:
     if (matterTab !== "Documents" || !matterRef) return;
 
     const loadPreviousReview = async () => {
+
       const { data } = await supabase
         .from("matter_workflow")
         .select("notes, completed_at, updated_at")
@@ -4666,11 +4942,39 @@ RESPONSE RULES:
             setLastReviewedAt(saved.reviewedAt || "");
             setLastReviewedDoc(saved.documentName || "");
             setReviewLoadedFromStorage(true);
-            console.log("[ContractReview] Loaded previous review from:", saved.reviewedAt);
+            console.log("[Documents] Loaded contract review from matter_workflow");
           }
         } catch (e) {
-          console.log("[ContractReview] No previous review found");
+          console.log("[Documents] No contract review found");
         }
+      }
+
+      const { data: inboxReviews } = await supabase
+        .from("contract_review_inbox")
+        .select("*")
+        .eq("matter_ref", matterRef)
+        .eq("status", "complete")
+        .order("created_at", { ascending: false });
+
+      if (inboxReviews && inboxReviews.length > 0) {
+        setContractReviewHistory(inboxReviews);
+        console.log("[Documents] Found", inboxReviews.length, "linked contract reviews");
+
+        const riskOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+        const sorted = [...inboxReviews].sort(
+          (a, b) =>
+            (riskOrder[a.review_result?.overallRiskLevel] ?? 9) -
+            (riskOrder[b.review_result?.overallRiskLevel] ?? 9)
+        );
+
+        if (sorted[0]?.review_result && !data?.notes) {
+          setContractReviewResult(sorted[0].review_result);
+          setContractReviewTab("summary");
+          setLastReviewedAt(sorted[0].received_at);
+          setLastReviewedDoc(sorted[0].document_name);
+        }
+      } else {
+        setContractReviewHistory([]);
       }
     };
 
@@ -5283,7 +5587,22 @@ Return only the email body text, no subject line.`;
           <div className="sb-brand">
             <div className="sb-logo">
               <div className="sb-logo-mark">
-                <img src="https://mhdyxhxybcbowhcszxct.supabase.co/storage/v1/object/public/public-assets/logo-jpg%20new.jpg" alt="Conveyancing Crew" style={{height:"32px",width:"auto",objectFit:"contain"}}/>
+                <img
+                  src="/logo.jpg"
+                  alt="Conveyancing Crew"
+                  style={{
+                    height: 36,
+                    width: "auto",
+                    objectFit: "contain",
+                  }}
+                  onError={(e) => {
+                    e.target.style.display = "none";
+                    e.target.insertAdjacentHTML(
+                      "afterend",
+                      '<div style="font-size:15px;font-weight:800;color:white;">Conveyancing Crew</div>'
+                    );
+                  }}
+                />
               </div>
               <div>
                 <div className="sb-logo-sub">Practice OS · NSW & VIC</div>
@@ -5295,7 +5614,11 @@ Return only the email body text, no subject line.`;
             {NAV.map(n => (
               <button key={n.id}
                 className={`sb-item ${page===n.id || (page==="matter_workspace" && n.id==="matters") ? "active" : ""}`}
-                onClick={() => { setPage(n.id); if (n.id !== "matters") setSelectedMatter(null); }}>
+                onClick={() => {
+                  setPage(n.id);
+                  if (n.id !== "matters") setSelectedMatter(null);
+                  else void fetchMatters();
+                }}>
                 <span className="sb-icon">{n.icon}</span>
                 {n.label}
                 {n.badge ? <span className="sb-badge">{n.badge}</span> : null}
@@ -5323,7 +5646,7 @@ Return only the email body text, no subject line.`;
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               {page==="matter_workspace" && (
                 <button className="btn-ghost" style={{padding:"5px 10px",fontSize:11}}
-                  onClick={() => { setPage("matters"); setSelectedMatter(null); }}>← Matters</button>
+                  onClick={() => { setPage("matters"); setSelectedMatter(null); void fetchMatters(); }}>← Matters</button>
               )}
               <div>
                 <div className="tb-page" style={isMobile ? { fontSize: 16 } : undefined}>
@@ -5986,6 +6309,20 @@ Return only the email body text, no subject line.`;
                                     ? "✗ Failed"
                                     : "Pending"}
                             </span>
+                            {item.review_cost_aud != null && item.review_cost_aud !== "" && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  color: "#15803d",
+                                  background: "#f0fdf4",
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  fontFamily: "monospace",
+                                }}
+                              >
+                                💰 AUD ${Number(item.review_cost_aud).toFixed(2)}
+                              </span>
+                            )}
                           </div>
 
                           {r.propertyAddress && (
@@ -6273,6 +6610,26 @@ Return only the email body text, no subject line.`;
             const topReferrers = (contacts || []).filter((c) => c.is_referrer).slice(0, 3);
             const referrersToShow = topReferrers.length > 0 ? topReferrers : (referrers || []).slice(0, 3);
 
+            const nowDash = new Date();
+            const totalCostThisMonth = (contractInboxItems || []).reduce((sum, i) => {
+              const d = new Date(i.created_at);
+              if (d.getMonth() !== nowDash.getMonth() || d.getFullYear() !== nowDash.getFullYear()) return sum;
+              return sum + (Number(i.review_cost_aud) || 0);
+            }, 0);
+            const thisMonthWithCost = (contractInboxItems || []).filter((i) => {
+              const d = new Date(i.created_at);
+              return (
+                d.getMonth() === nowDash.getMonth() &&
+                d.getFullYear() === nowDash.getFullYear() &&
+                i.review_cost_aud != null &&
+                i.review_cost_aud !== ""
+              );
+            });
+            const avgCostPerReview =
+              thisMonthWithCost.length > 0 ? totalCostThisMonth / thisMonthWithCost.length : 0;
+            const reviewsDoneCount =
+              (contractInboxItems || []).filter((i) => i.status === "complete").length || 0;
+
             return (
               <div className="content">
                 <div className="dash-hero fade-up" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 20 }}>
@@ -6339,7 +6696,7 @@ Return only the email body text, no subject line.`;
                         ) : xeroData ? (
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--green)" }}>{incomeYtd}</div>
                         ) : (
-                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={connectToXeroOAuth}>Connect Xero</button>
                         )}
                       </div>
                       <div>
@@ -6349,7 +6706,7 @@ Return only the email body text, no subject line.`;
                         ) : xeroData ? (
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--red)" }}>{expensesYtd}</div>
                         ) : (
-                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={connectToXeroOAuth}>Connect Xero</button>
                         )}
                       </div>
                       <div>
@@ -6359,7 +6716,7 @@ Return only the email body text, no subject line.`;
                         ) : xeroData ? (
                           <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 500, color: "var(--blue)" }}>{netProfitYtd}</div>
                         ) : (
-                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={() => { window.location.href = "/api/xero/auth"; }}>Connect Xero</button>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: "2px 0", color: "var(--blue)" }} onClick={connectToXeroOAuth}>Connect Xero</button>
                         )}
                       </div>
                     </div>
@@ -6403,6 +6760,40 @@ Return only the email body text, no subject line.`;
                         );
                       })}
                       {referrersToShow.length === 0 && <div style={{ fontSize: 11, color: "var(--text-3)" }}>No referrers</div>}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="card fade-up-1"
+                  style={{
+                    background: "var(--white)",
+                    borderRadius: "var(--radius-lg)",
+                    border: "1px solid var(--border)",
+                    padding: "14px 18px",
+                    marginBottom: 20,
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 10 }}>
+                    AI Contract Reviews This Month
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "16px 28px", fontSize: 13, color: "var(--text)" }}>
+                    <div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Total Cost</div>
+                      <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 600, color: "#15803d" }}>
+                        AUD ${totalCostThisMonth.toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Avg per Review</div>
+                      <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 500, color: "var(--text)" }}>
+                        AUD ${avgCostPerReview.toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-3)", marginBottom: 2 }}>Reviews Done</div>
+                      <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 500, color: "var(--text)" }}>{reviewsDoneCount}</div>
                     </div>
                   </div>
                 </div>
@@ -6753,28 +7144,188 @@ Return only the email body text, no subject line.`;
                     <button className="btn-ghost" style={{fontSize:12,padding:"6px 14px"}}>↓ Export</button>
                     <button className="btn-gold" onClick={openNewMatterModal}>＋ New Matter</button>
                   </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 16px",
+                      borderBottom: "1px solid #dce3f0",
+                      background: "#f8fafc",
+                      minHeight: 44,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedMatters.size > 0 && selectedMatters.size === mattersListFiltered.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selectedMatters.size > 0 && selectedMatters.size < mattersListFiltered.length;
+                      }}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedMatters(new Set(mattersListFiltered.map((m) => m.matter_ref || m.id)));
+                        } else {
+                          setSelectedMatters(new Set());
+                        }
+                      }}
+                      style={{ cursor: "pointer", width: 15, height: 15 }}
+                    />
+                    {!matterDeleteMode ? (
+                      <span style={{ fontSize: 12, color: "#6b7a99", flex: 1 }}>{mattersListFiltered.length} matters</span>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 12, color: "#245eb0", fontWeight: 600, flex: 1 }}>{selectedMatters.size} selected</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Delete ${selectedMatters.size} matter${selectedMatters.size > 1 ? "s" : ""}?\n\n` +
+                                  `This will permanently delete all selected matters and their ` +
+                                  `workflow data. This cannot be undone.`
+                              )
+                            )
+                              return;
+                            try {
+                              const refsToDelete = [...selectedMatters].filter(Boolean);
+                              for (const ref of refsToDelete) {
+                                await supabase.from("tasks").delete().eq("matter_ref", ref);
+                                await supabase.from("matter_workflow").delete().eq("matter_ref", ref);
+                                await supabase.from("referrals").delete().eq("matter_ref", ref);
+                                await supabase.from("contract_review_inbox").update({ matter_ref: null }).eq("matter_ref", ref);
+                              }
+                              const { error } = await supabase.from("matters").delete().in("matter_ref", refsToDelete);
+                              if (error) throw error;
+                              setMATTERS((prev) => prev.filter((m) => !refsToDelete.includes(m.matter_ref || m.id)));
+                              setSelectedMatters(new Set());
+                              if (selectedMatter && refsToDelete.includes(selectedMatter)) {
+                                setSelectedMatter(null);
+                              }
+                              console.log("[BulkDelete] Deleted:", refsToDelete.length, "matters");
+                            } catch (err) {
+                              alert("Failed to delete: " + err.message);
+                            }
+                          }}
+                          style={{
+                            fontSize: 12,
+                            padding: "5px 14px",
+                            borderRadius: 6,
+                            border: "none",
+                            background: "#dc2626",
+                            color: "white",
+                            cursor: "pointer",
+                            fontWeight: 700,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                          }}
+                        >
+                          🗑 Delete {selectedMatters.size} matter{selectedMatters.size > 1 ? "s" : ""}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMatters(new Set())}
+                          style={{
+                            fontSize: 12,
+                            padding: "5px 10px",
+                            borderRadius: 6,
+                            border: "1.5px solid #dce3f0",
+                            background: "white",
+                            color: "#6b7a99",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                  </div>
                   {isMobile ? (
                     <div className="fade-up-2" style={{ display: "flex", flexDirection: "column", gap: 12, padding: "0 0 20px" }}>
-                      {(mFilter==="all"?MATTERS:mFilter==="active"?activeM:closedM).map(m=>(
-                        <div key={m.id} className="card" style={{ cursor: "pointer", padding: 14 }} onClick={()=>{ setSelectedMatter(m.id); setPage("matter_workspace"); setMatterTab("Overview"); }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{m.client_name || m.client}</div>
-                          <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8 }}>{m.address}</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-                            <span className={`tag ${m.type==="Purchase"?"tag-teal":m.type==="Sale"?"tag-amber":m.type==="Lease"?"tag-purple":m.type==="Contract Review"?"tag-blue":"tag-gray"}`} style={{ fontSize: 10 }}>{m.type}</span>
-                            <span className={`tag ${m.state==="NSW"?"tag-blue":"tag-purple"}`} style={{ fontSize: 10 }}>{m.stage}</span>
+                      {mattersListFiltered.map((m) => (
+                        <div
+                          key={m.id}
+                          className="card"
+                          style={{
+                            cursor: "pointer",
+                            padding: 14,
+                            display: "flex",
+                            gap: 10,
+                            alignItems: "flex-start",
+                            background: selectedMatters.has(m.matter_ref || m.id)
+                              ? "#eff6ff"
+                              : selectedMatter === (m.matter_ref || m.id)
+                                ? "var(--blue-light)"
+                                : "white",
+                            borderLeft: selectedMatters.has(m.matter_ref || m.id) ? "3px solid #245eb0" : "3px solid transparent",
+                          }}
+                          onClick={() => {
+                            setSelectedMatter(m.id);
+                            setPage("matter_workspace");
+                            setMatterTab("Overview");
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedMatters.has(m.matter_ref || m.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const ref = m.matter_ref || m.id;
+                              const next = new Set(selectedMatters);
+                              if (e.target.checked) next.add(ref);
+                              else next.delete(ref);
+                              setSelectedMatters(next);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ cursor: "pointer", marginRight: 8, width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{m.client_name || m.client}</div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8 }}>{m.address}</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                              <span className={`tag ${m.type==="Purchase"?"tag-teal":m.type==="Sale"?"tag-amber":m.type==="Lease"?"tag-purple":m.type==="Contract Review"?"tag-blue":"tag-gray"}`} style={{ fontSize: 10 }}>{m.type}</span>
+                              <span className={`tag ${m.state==="NSW"?"tag-blue":"tag-purple"}`} style={{ fontSize: 10 }}>{m.stage}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>Settlement: {fmt(m.settlement_date || m.settlement)} · {m.price}</div>
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--text-2)", fontFamily: "var(--font-mono)" }}>Settlement: {fmt(m.settlement_date || m.settlement)} · {m.price}</div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                  <div className="matter-table fade-up-2">
+                  <div className="matter-table matters-bulk-table fade-up-2">
                     <div className="mt-thead">
-                      {["Matter ID","Client / Address","Type","Stage","Value","Staff"].map(h=><div key={h} className="mt-th">{h}</div>)}
+                      <div className="mt-th" aria-hidden style={{ minWidth: 0 }} />
+                      {["Matter ID","Client / Address","Type","Stage","Value","Client email"].map(h=><div key={h} className="mt-th">{h}</div>)}
                     </div>
-                    {(mFilter==="all"?MATTERS:mFilter==="active"?activeM:closedM).map(m=>(
-                      <div key={m.id} className="mt-row" style={{cursor:"pointer"}}
-                        onClick={()=>{setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}>
+                    {mattersListFiltered.map((m) => (
+                      <div
+                        key={m.id}
+                        className="mt-row"
+                        style={{
+                          cursor: "pointer",
+                          background: selectedMatters.has(m.matter_ref || m.id)
+                            ? "#eff6ff"
+                            : selectedMatter === (m.matter_ref || m.id)
+                              ? "var(--blue-light)"
+                              : "white",
+                          borderLeft: selectedMatters.has(m.matter_ref || m.id) ? "3px solid #245eb0" : "3px solid transparent",
+                        }}
+                        onClick={()=>{setSelectedMatter(m.id);setPage("matter_workspace");setMatterTab("Overview");}}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedMatters.has(m.matter_ref || m.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const ref = m.matter_ref || m.id;
+                            const next = new Set(selectedMatters);
+                            if (e.target.checked) next.add(ref);
+                            else next.delete(ref);
+                            setSelectedMatters(next);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ cursor: "pointer", marginRight: 8, width: 14, height: 14, flexShrink: 0 }}
+                        />
                         <div className="mt-id">{m.id}</div>
                         <div>
                           <div className="mt-client">{m.client}</div>
@@ -6788,8 +7339,15 @@ Return only the email body text, no subject line.`;
                           <div className="stage-dot" style={{background:STAGE_COLORS[m.stage]||"#94a3b8"}}/>
                           {m.stage}
                         </div>
-                        <div style={{fontSize:12,fontWeight:700,color:"var(--text)",fontFamily:"var(--font-mono)"}}>{m.price}</div>
-                        <div style={{fontSize:12,color:"var(--text-2)"}}>{m.staff}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:"var(--text)",fontFamily:"var(--font-mono)"}}>
+                          {m.purchase_price || m.price || m.value
+                            ? "$" +
+                              Number(
+                                String(m.purchase_price || m.price || m.value || 0).replace(/[^0-9.]/g, "")
+                              ).toLocaleString("en-AU")
+                            : "—"}
+                        </div>
+                        <div style={{fontSize:12,color:"var(--text-2)",wordBreak:"break-word",minWidth:0}}>{m.client_email || m.email || "—"}</div>
                       </div>
                     ))}
                   </div>
@@ -6874,9 +7432,60 @@ Return only the email body text, no subject line.`;
                     <div className="ws-address">📍 {selMatterObj.address}</div>
                   </div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-start"}}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ref = selMatterObj?.matter_ref;
+                        if (!ref) return;
+                        if (
+                          !window.confirm(
+                            `Delete matter ${ref}?\n\n` +
+                              `This will permanently delete the matter and all associated ` +
+                              `workflow steps. This cannot be undone.`
+                          )
+                        )
+                          return;
+                        try {
+                          await supabase.from("matter_workflow").delete().eq("matter_ref", ref);
+                          await supabase.from("referrals").delete().eq("matter_ref", ref);
+                          await supabase.from("tasks").delete().eq("matter_ref", ref);
+                          await supabase.from("contract_review_inbox").update({ matter_ref: null }).eq("matter_ref", ref);
+                          const { error } = await supabase.from("matters").delete().eq("matter_ref", ref);
+                          if (error) throw error;
+                          setMATTERS((prev) => prev.filter((m) => (m.matter_ref || m.id) !== ref));
+                          setSelectedMatter(null);
+                          setPage("matters");
+                          console.log("[DeleteMatter] Deleted:", ref);
+                        } catch (err) {
+                          alert("Failed to delete matter: " + err.message);
+                        }
+                      }}
+                      style={{
+                        fontSize: 11,
+                        padding: "5px 12px",
+                        borderRadius: 6,
+                        border: "1.5px solid #fca5a5",
+                        background: "white",
+                        color: "#dc2626",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        marginRight: 8,
+                      }}
+                    >
+                      🗑 Delete
+                    </button>
                     <span className={`tag ${selMatterObj.type==="Purchase"?"tag-teal":selMatterObj.type==="Sale"?"tag-amber":selMatterObj.type==="Lease"?"tag-purple":selMatterObj.type==="Contract Review"?"tag-blue":"tag-gray"}`}>{selMatterObj.type}</span>
                     <span className="tag" style={{background:(STAGE_COLORS[selMatterObj.stage]||"#94a3b8")+"22",color:STAGE_COLORS[selMatterObj.stage]||"#94a3b8"}}>{selMatterObj.stage}</span>
-                    <span className="tag tag-gray">{selMatterObj.price}</span>
+                    {selMatterObj?.purchase_price || selMatterObj?.price || selMatterObj?.value ? (
+                      <span className="tag tag-gray">
+                        {"$" +
+                          Number(
+                            String(
+                              selMatterObj?.purchase_price || selMatterObj?.price || selMatterObj?.value || 0
+                            ).replace(/[^0-9.]/g, "")
+                          ).toLocaleString("en-AU")}
+                      </span>
+                    ) : null}
                     {selMatterObj.urgency==="high"&&<span className="tag tag-red">⚡ High Priority</span>}
                     <button
                       type="button"
@@ -6910,21 +7519,195 @@ Return only the email body text, no subject line.`;
                 {/* OVERVIEW */}
                 {matterTab==="Overview" && (
                   <div style={{display:"grid",gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",gap: isMobile ? 12 : 16}}>
-                    <div className="card">
-                      <div className="card-hdr"><div className="card-title">Key Details</div></div>
-                      <div style={{padding:"8px 18px 14px"}}>
-                        {[
-                          ["Matter Type",selMatterObj.type],["Status",selMatterObj.stage],
-                          ["Settlement",fmt(selMatterObj.settlement)],["Property Value",selMatterObj.price],
-                          ["Staff",selMatterObj.staff],["State",selMatterObj.state],
-                          ["Lender",selMatterObj.lender],["Deposit",selMatterObj.deposit+" "+(selMatterObj.depositPaid?"✓ Paid":"⚠ Unpaid")],
-                          ["Agent",selMatterObj.agent],["Phone",selMatterObj.agentPhone],
-                        ].map(([k,v])=>(
-                          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border-2)",fontSize:12,gap:8}}>
-                            <span style={{color:"var(--text-3)"}}>{k}</span>
-                            <span style={{fontWeight:600,color:"var(--text)",textAlign:"right"}}>{v}</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                      <div className="card">
+                        <div
+                          className="card-hdr"
+                          style={{ display: "flex", alignItems: "center", width: "100%", gap: 8, flexWrap: "wrap" }}
+                        >
+                          <div className="card-title" style={{ flex: 1, minWidth: 120 }}>
+                            Client details
                           </div>
-                        ))}
+                          {!editingClient && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingClient(true)}
+                              style={{
+                                fontSize: 11,
+                                padding: "3px 10px",
+                                borderRadius: 5,
+                                border: "1.5px solid #dce3f0",
+                                background: "white",
+                                color: "#245eb0",
+                                cursor: "pointer",
+                                marginLeft: "auto",
+                              }}
+                            >
+                              ✏️ Edit
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ padding: "8px 18px 14px" }}>
+                          {editingClient ? (
+                            <>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                <div>
+                                  <label className="intake-label">First name</label>
+                                  <input
+                                    className="intake-input"
+                                    value={editClientForm.firstName || ""}
+                                    onChange={(e) => setEditClientForm((f) => ({ ...f, firstName: e.target.value }))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="intake-label">Last name</label>
+                                  <input
+                                    className="intake-input"
+                                    value={editClientForm.lastName || ""}
+                                    onChange={(e) => setEditClientForm((f) => ({ ...f, lastName: e.target.value }))}
+                                  />
+                                </div>
+                              </div>
+                              <label className="intake-label">Email</label>
+                              <input
+                                className="intake-input"
+                                type="email"
+                                value={editClientForm.email || ""}
+                                onChange={(e) => setEditClientForm((f) => ({ ...f, email: e.target.value }))}
+                                style={{ marginBottom: 12 }}
+                              />
+                              <label className="intake-label">Mobile</label>
+                              <input
+                                className="intake-input"
+                                type="tel"
+                                value={editClientForm.phone || ""}
+                                onChange={(e) => setEditClientForm((f) => ({ ...f, phone: e.target.value }))}
+                                style={{ marginBottom: 12 }}
+                              />
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  cursor: "pointer",
+                                  fontSize: 12,
+                                  color: "var(--text-2)",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!editClientForm.hasCoPurchaser}
+                                  onChange={(e) =>
+                                    setEditClientForm((f) => ({ ...f, hasCoPurchaser: e.target.checked }))
+                                  }
+                                />
+                                Is there a co-purchaser?
+                              </label>
+                              {editClientForm.hasCoPurchaser && (
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                                  <div>
+                                    <label className="intake-label">Co-purchaser first name</label>
+                                    <input
+                                      className="intake-input"
+                                      value={editClientForm.coPurchaserFirstName || ""}
+                                      onChange={(e) =>
+                                        setEditClientForm((f) => ({ ...f, coPurchaserFirstName: e.target.value }))
+                                      }
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="intake-label">Co-purchaser last name</label>
+                                    <input
+                                      className="intake-input"
+                                      value={editClientForm.coPurchaserLastName || ""}
+                                      onChange={(e) =>
+                                        setEditClientForm((f) => ({ ...f, coPurchaserLastName: e.target.value }))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                                <button
+                                  type="button"
+                                  onClick={saveClientDetails}
+                                  style={{
+                                    flex: 1,
+                                    padding: "8px",
+                                    borderRadius: 7,
+                                    border: "none",
+                                    background: "#245eb0",
+                                    color: "white",
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  Save Changes
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingClient(false)}
+                                  style={{
+                                    padding: "8px 16px",
+                                    borderRadius: 7,
+                                    border: "1.5px solid #dce3f0",
+                                    background: "white",
+                                    color: "#6b7a99",
+                                    cursor: "pointer",
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {[
+                                ["Name", selMatterObj.client_name || selMatterObj.client || "—"],
+                                ["Email", selMatterObj.client_email || selMatterObj.email || "—"],
+                                ["Mobile", selMatterObj.client_phone || selMatterObj.phone || "—"],
+                                ...(selMatterObj.co_purchaser_name
+                                  ? [["Co-purchaser", selMatterObj.co_purchaser_name]]
+                                  : []),
+                              ].map(([k, v]) => (
+                                <div
+                                  key={k}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    padding: "6px 0",
+                                    borderBottom: "1px solid var(--border-2)",
+                                    fontSize: 12,
+                                    gap: 8,
+                                  }}
+                                >
+                                  <span style={{ color: "var(--text-3)" }}>{k}</span>
+                                  <span style={{ fontWeight: 600, color: "var(--text)", textAlign: "right" }}>{v}</span>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="card">
+                        <div className="card-hdr"><div className="card-title">Key Details</div></div>
+                        <div style={{padding:"8px 18px 14px"}}>
+                          {[
+                            ["Matter Type",selMatterObj.type],["Status",selMatterObj.stage],
+                            ["Settlement",fmt(selMatterObj.settlement)],["Property Value",selMatterObj.price],
+                            ["Staff",selMatterObj.staff],["State",selMatterObj.state],
+                            ["Lender",selMatterObj.lender],["Deposit",selMatterObj.deposit+" "+(selMatterObj.depositPaid?"✓ Paid":"⚠ Unpaid")],
+                            ["Agent",selMatterObj.agent],["Phone",selMatterObj.agentPhone],
+                          ].map(([k,v])=>(
+                            <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border-2)",fontSize:12,gap:8}}>
+                              <span style={{color:"var(--text-3)"}}>{k}</span>
+                              <span style={{fontWeight:600,color:"var(--text)",textAlign:"right"}}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -7297,6 +8080,72 @@ Return only the email body text, no subject line.`;
                       )}
                       {!contractReviewLoading && R && (
                         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                          {contractReviewHistory.length > 1 && (
+                            <div
+                              style={{
+                                padding: "8px 16px",
+                                background: "#f8fafc",
+                                borderBottom: "1px solid #dce3f0",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                fontSize: 12,
+                              }}
+                            >
+                              <span style={{ color: "#6b7a99", flexShrink: 0 }}>
+                                📋 {contractReviewHistory.length} contract reviews:
+                              </span>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                {contractReviewHistory.map((review, i) => {
+                                  const riskColors = {
+                                    LOW: "#16a34a",
+                                    MEDIUM: "#ca8a04",
+                                    HIGH: "#dc2626",
+                                    CRITICAL: "#7f1d1d",
+                                  };
+                                  const risk = review.review_result?.overallRiskLevel;
+                                  const isActive = lastReviewedDoc === review.document_name;
+                                  return (
+                                    <button
+                                      key={review.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setContractReviewResult(review.review_result);
+                                        setContractReviewTab("summary");
+                                        setLastReviewedAt(review.received_at);
+                                        setLastReviewedDoc(review.document_name);
+                                      }}
+                                      style={{
+                                        fontSize: 10,
+                                        padding: "3px 10px",
+                                        borderRadius: 5,
+                                        border: `1.5px solid ${isActive ? riskColors[risk] || "#245eb0" : "#dce3f0"}`,
+                                        background: isActive ? "#f8faff" : "white",
+                                        color: isActive ? riskColors[risk] || "#245eb0" : "#6b7a99",
+                                        cursor: "pointer",
+                                        fontWeight: isActive ? 700 : 400,
+                                        maxWidth: 200,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                      title={review.document_name}
+                                    >
+                                      {risk === "CRITICAL"
+                                        ? "🚨"
+                                        : risk === "HIGH"
+                                          ? "🔴"
+                                          : risk === "MEDIUM"
+                                            ? "🟡"
+                                            : "🟢"}{" "}
+                                      {review.document_name?.split(".")[0]?.slice(0, 25) ||
+                                        `Review ${i + 1}`}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                           {reviewLoadedFromStorage && lastReviewedAt ? (
                             <div
                               style={{
@@ -7385,6 +8234,46 @@ Return only the email body text, no subject line.`;
                           <div style={{ padding: 14, overflowY: "auto", flex: 1 }}>
                             {contractReviewTab === "summary" && (
                               <div>
+                                {contractReviewResult?._reviewCost && (
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      padding: "8px 14px",
+                                      background: "#f0fdf4",
+                                      border: "1px solid #bbf7d0",
+                                      borderRadius: 8,
+                                      marginBottom: 12,
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 16 }}>💰</span>
+                                    <div style={{ flex: 1 }}>
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>
+                                        AI Review Cost: ${contractReviewResult._reviewCost.cost_aud.toFixed(2)} AUD
+                                      </span>
+                                      <span style={{ fontSize: 11, color: "#6b7a99", marginLeft: 10 }}>
+                                        ({contractReviewResult._reviewCost.total_tokens?.toLocaleString()} tokens ·{" "}
+                                        {contractReviewResult._reviewCost.pages_reviewed} pages ·{" "}
+                                        {contractReviewResult._reviewCost.chunks_processed} chunk
+                                        {contractReviewResult._reviewCost.chunks_processed !== 1 ? "s" : ""})
+                                      </span>
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: 10,
+                                        color: "#15803d",
+                                        fontFamily: "monospace",
+                                        background: "#dcfce7",
+                                        padding: "2px 8px",
+                                        borderRadius: 4,
+                                      }}
+                                    >
+                                      USD ${contractReviewResult._reviewCost.cost_usd.toFixed(4)}
+                                    </div>
+                                  </div>
+                                )}
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
                                   {[
                                     { k: "Buyer", v: R.buyerName },
@@ -8914,6 +9803,84 @@ Return only the email body text, no subject line.`;
           ══════════════════════════════════════════════ */}
           {page === "accounting" && (
             <div className="content">
+              {xeroError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: 16,
+                    padding: "12px 16px",
+                    borderRadius: 8,
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    color: "#991b1b",
+                    fontSize: 13,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ flex: 1, minWidth: 200 }}>{xeroError}</span>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!xeroConnected) return;
+                        setXeroLoading(true);
+                        fetch("/api/xero/invoices?period=monthly")
+                          .then(async (r) => {
+                            if (r.status === 429) {
+                              console.log("[Xero] Rate limited — using cached data, not retrying");
+                              setXeroLoading(false);
+                              return null;
+                            }
+                            return r.json();
+                          })
+                          .then((data) => {
+                            if (data == null) return;
+                            console.log("Xero full data:", data);
+                            setXeroData(data);
+                            console.log("xeroData.currentMonth (after load):", data.currentMonth);
+                            setXeroLoading(false);
+                            setXeroError(null);
+                          })
+                          .catch((err) => {
+                            console.error("[Xero] Error:", err);
+                            setXeroLoading(false);
+                          });
+                      }}
+                      style={{
+                        fontSize: 12,
+                        padding: "6px 14px",
+                        borderRadius: 6,
+                        border: "none",
+                        background: "#dc2626",
+                        color: "white",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Retry
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setXeroError(null)}
+                      style={{
+                        fontSize: 12,
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #fecaca",
+                        background: "white",
+                        color: "#64748b",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
               {!xeroConnected && !xeroLoading && (
                 <div
                   style={{
@@ -8939,13 +9906,29 @@ Return only the email body text, no subject line.`;
                   <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 20 }}>
                     Connect your Xero account to see Profit &amp; Loss, bank/revenue accounts, and activity
                   </div>
-                  <button type="button" className="btn-gold" onClick={() => { window.location.href = "/api/xero/auth"; }}>
+                  <button type="button" className="btn-gold" onClick={connectToXeroOAuth}>
                     Connect Xero →
                   </button>
                 </div>
               )}
 
-              {xeroLoading && !xeroData && (
+              {xeroData?.rateLimited ? (
+                <div
+                  style={{
+                    padding: 40,
+                    textAlign: "center",
+                    color: "#6b7a99",
+                  }}
+                >
+                  <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: "#1a2744" }}>
+                    Xero is temporarily rate limited
+                  </div>
+                  <div style={{ fontSize: 13, marginTop: 8, color: "#94a3b8" }}>
+                    Too many requests were made. Data will refresh automatically in about 60 seconds.
+                  </div>
+                </div>
+              ) : xeroLoading && !xeroData ? (
                 <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
                   <div className="ai-typing">
                     <div className="typing-dot" />
@@ -8954,9 +9937,7 @@ Return only the email body text, no subject line.`;
                   </div>
                   Loading Xero data…
                 </div>
-              )}
-
-              {xeroConnected && xeroData && (() => {
+              ) : xeroConnected && xeroData && !xeroData.rateLimited ? (() => {
                 const fyPl = parseXeroProfitAndLoss(xeroData.financialYear?.report);
                 const cmPl = parseXeroProfitAndLoss(xeroData.currentMonth?.report);
                 const cqPl = parseXeroProfitAndLoss(xeroData.currentQuarter?.report);
@@ -9132,9 +10113,6 @@ Return only the email body text, no subject line.`;
                           onClick={() => window.open("https://go.xero.com", "_blank", "noopener,noreferrer")}
                         >
                           View in Xero
-                        </button>
-                        <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => fetchXeroData()}>
-                          ↺ Refresh
                         </button>
                       </div>
                     </div>
@@ -9407,7 +10385,7 @@ Return only the email body text, no subject line.`;
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        {xeroLoading ? (
+                        {xeroLoading && !xeroData ? (
                           <div
                             style={{
                               padding: 40,
@@ -9447,7 +10425,7 @@ Return only the email body text, no subject line.`;
                         )}
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        {xeroLoading ? (
+                        {xeroLoading && !xeroData ? (
                           <div
                             style={{
                               padding: 40,
@@ -9654,7 +10632,7 @@ Return only the email body text, no subject line.`;
                     </div>
                   </>
                 );
-              })()}
+              })() : null}
             </div>
           )}
 
@@ -10184,7 +11162,11 @@ Return only the email body text, no subject line.`;
                 aria-selected={active}
                 className="mobile-tab-btn"
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: "6px 10px", flex: "0 0 auto", minWidth: 52, opacity: active ? 1 : 0.45, transition: "opacity 0.15s", WebkitTapHighlightColor: "transparent" }}
-                onClick={() => { setPage(n.id); if (n.id !== "matters") setSelectedMatter(null); }}
+                onClick={() => {
+                  setPage(n.id);
+                  if (n.id !== "matters") setSelectedMatter(null);
+                  else void fetchMatters();
+                }}
               >
                 <span style={{ fontSize: 18, lineHeight: 1 }}>{n.icon}</span>
                 <span style={{ fontSize: 8, fontFamily: "var(--font-mono)", color: "white", textTransform: "uppercase", letterSpacing: "0.3px", textAlign: "center", lineHeight: 1.15, maxWidth: 64, whiteSpace: "normal", wordBreak: "break-word" }}>{n.label}</span>
@@ -10561,8 +11543,6 @@ Return only the email body text, no subject line.`;
         const intakeRefereeOk = !intakeNeedsReferee || !!intakeReferrerId;
         const purchasePropertyOk =
           !!String(intakeAddress || "").trim() && !!String(intakeReferralSource || "").trim() && intakeRefereeOk;
-        const contactOk =
-          !!(intakeClientFirstName || intakeClientLastName) && !!String(intakeClientEmail || "").trim();
         const entityNameOk = intakeEntityType !== "entity" || !!String(intakeEntityName || "").trim();
         const nextValid =
           intakeStep === 0
@@ -10570,9 +11550,9 @@ Return only the email body text, no subject line.`;
             : intakeStep === 1 && purchase
               ? purchasePropertyOk
               : intakeStep === 1 && !purchase
-                ? contactOk
+                ? true
                 : intakeStep === 2 && purchase
-                  ? contactOk && entityNameOk
+                  ? entityNameOk
                   : true;
         const autofillBadge = (key) =>
           intakeAutoFilledFields[key] ? (
@@ -10953,6 +11933,9 @@ Return only the email body text, no subject line.`;
               )}
               {intakeStep === 1 && !purchase && (
                 <>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 16 }}>
+                    All fields optional — you can update client details later from the matter overview
+                  </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                     <div>
                       <label className="intake-label">First name</label>
@@ -10988,6 +11971,9 @@ Return only the email body text, no subject line.`;
               )}
               {intakeStep === 2 && purchase && (
                 <>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 16 }}>
+                    All fields optional — you can update client details later from the matter overview
+                  </div>
                   <div
                     style={{
                       background: "var(--ink)",
@@ -11543,29 +12529,72 @@ JOINT PURCHASER RULES:
                           const et =
                             String(parsed.entityType || "individual").toLowerCase() === "entity" ? "entity" : "individual";
                           setIntakeEntityType(et);
-                          if (parsed.firstName) setIntakeClientFirstName(String(parsed.firstName));
-                          if (parsed.lastName) setIntakeClientLastName(String(parsed.lastName));
                           if (parsed.email) setIntakeClientEmail(String(parsed.email));
                           if (parsed.phone) setIntakeClientPhone(String(parsed.phone));
+
+                          const jointPat = /\s+and\s+|\s*&\s*|\s*\/\s*/i;
+                          let isJoint = false;
+                          let nameLine = "";
+                          let coLine = "";
+                          let usedJointLineParse = false;
+
                           if (et === "entity") {
                             if (parsed.entityName) setIntakeEntityName(String(parsed.entityName));
                             if (parsed.abn) setIntakeEntityABN(String(parsed.abn));
+                            if (parsed.firstName) setIntakeClientFirstName(String(parsed.firstName));
+                            if (parsed.lastName) setIntakeClientLastName(String(parsed.lastName));
+                            setIntakeHasCoPurchaser(false);
+                            setIntakeCoPurchaserFirstName("");
+                            setIntakeCoPurchaserLastName("");
+                            nameLine = [parsed.firstName, parsed.lastName].filter(Boolean).join(" ").trim();
                           } else {
                             setIntakeEntityName("");
                             setIntakeEntityABN("");
+                            const primaryLine = [parsed.firstName, parsed.lastName]
+                              .filter(Boolean)
+                              .map((s) => String(s).trim())
+                              .join(" ")
+                              .trim();
+                            if (primaryLine && jointPat.test(primaryLine)) {
+                              console.log("[IntakeAutofill] Joint purchaser line, parsing:", primaryLine);
+                              usedJointLineParse = true;
+                              const p = parseJointBuyerNameForIntake(primaryLine);
+                              setIntakeClientFirstName(p.p1First);
+                              setIntakeClientLastName(p.p1Last);
+                              isJoint = p.isJoint;
+                              if (p.isJoint) {
+                                setIntakeHasCoPurchaser(true);
+                                setIntakeCoPurchaserFirstName(p.p2First);
+                                setIntakeCoPurchaserLastName(p.p2Last);
+                              } else {
+                                setIntakeHasCoPurchaser(false);
+                                setIntakeCoPurchaserFirstName("");
+                                setIntakeCoPurchaserLastName("");
+                              }
+                              nameLine = [p.p1First, p.p1Last].filter(Boolean).join(" ").trim();
+                              coLine = [p.p2First, p.p2Last].filter(Boolean).join(" ").trim();
+                            } else {
+                              if (parsed.firstName) setIntakeClientFirstName(String(parsed.firstName));
+                              if (parsed.lastName) setIntakeClientLastName(String(parsed.lastName));
+                              isJoint =
+                                Boolean(parsed.isJoint) &&
+                                !!(parsed.coPurchaserFirstName || parsed.coPurchaserLastName);
+                              if (isJoint && (parsed.coPurchaserFirstName || parsed.coPurchaserLastName)) {
+                                setIntakeHasCoPurchaser(true);
+                                setIntakeCoPurchaserFirstName(String(parsed.coPurchaserFirstName || ""));
+                                setIntakeCoPurchaserLastName(String(parsed.coPurchaserLastName || ""));
+                              } else {
+                                setIntakeHasCoPurchaser(false);
+                                setIntakeCoPurchaserFirstName("");
+                                setIntakeCoPurchaserLastName("");
+                              }
+                              nameLine = [parsed.firstName, parsed.lastName].filter(Boolean).join(" ").trim();
+                              coLine = [parsed.coPurchaserFirstName, parsed.coPurchaserLastName]
+                                .filter(Boolean)
+                                .join(" ")
+                                .trim();
+                            }
                           }
-                          const isJoint =
-                            et === "individual" && Boolean(parsed.isJoint);
-                          if (
-                            isJoint &&
-                            (parsed.coPurchaserFirstName || parsed.coPurchaserLastName)
-                          ) {
-                            setIntakeHasCoPurchaser(true);
-                            setIntakeCoPurchaserFirstName(String(parsed.coPurchaserFirstName || ""));
-                            setIntakeCoPurchaserLastName(String(parsed.coPurchaserLastName || ""));
-                          }
-                          const nameLine = [parsed.firstName, parsed.lastName].filter(Boolean).join(" ").trim();
-                          const coLine = [parsed.coPurchaserFirstName, parsed.coPurchaserLastName].filter(Boolean).join(" ").trim();
                           const populatedLines = [];
                           if (isJoint && (nameLine || coLine)) {
                             if (nameLine) populatedLines.push(`Purchaser 1: ${nameLine}`);
@@ -11579,14 +12608,16 @@ JOINT PURCHASER RULES:
                           if (et === "entity" && parsed.abn) populatedLines.push(`ABN/ACN: ${String(parsed.abn)}`);
                           if (parsed.source) populatedLines.push(`Source: ${String(parsed.source)}`);
                           setIntakeAutoFilledFields({
-                            firstName: Boolean(parsed.firstName),
-                            lastName: Boolean(parsed.lastName),
+                            firstName: Boolean(parsed.firstName) || usedJointLineParse,
+                            lastName: Boolean(parsed.lastName) || usedJointLineParse,
                             email: Boolean(parsed.email),
                             phone: Boolean(parsed.phone),
                             entityName: et === "entity" && Boolean(parsed.entityName),
                             abn: et === "entity" && Boolean(parsed.abn),
-                            coPurchaserFirstName: isJoint && Boolean(parsed.coPurchaserFirstName),
-                            coPurchaserLastName: isJoint && Boolean(parsed.coPurchaserLastName),
+                            coPurchaserFirstName:
+                              isJoint && (Boolean(parsed.coPurchaserFirstName) || usedJointLineParse),
+                            coPurchaserLastName:
+                              isJoint && (Boolean(parsed.coPurchaserLastName) || usedJointLineParse),
                           });
                           setIntakeAutoFillResult({
                             success: true,
@@ -12044,6 +13075,21 @@ JOINT PURCHASER RULES:
                         ))}
                     </div>
                   </div>
+                  {!intakeClientFirstName && !intakeClientLastName && (
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        background: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: 6,
+                        fontSize: 11,
+                        color: "#92400e",
+                        marginTop: 8,
+                      }}
+                    >
+                      ⚠ No client name entered — you can add this later from the matter overview tab
+                    </div>
+                  )}
                   <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 16 }}>
                     We&apos;ll automatically: <strong>Create your PEXA workspace link</strong> · <strong>Send intro email to client</strong> · <strong>Set up the workflow checklist</strong>
                   </div>

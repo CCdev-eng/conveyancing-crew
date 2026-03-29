@@ -21,11 +21,13 @@ function filterOutOurReviewEmails(messages) {
   return (messages || []).filter((m) => {
     const subj = (m.subject || "").toLowerCase();
     return (
-      !subj.startsWith("✦ contract review:") &&
+      !subj.startsWith("✦ contract review") &&
       !subj.startsWith("⚠ contract review") &&
       !subj.includes("contract review failed") &&
       !subj.includes("contract review issue") &&
-      !subj.includes("could not find original")
+      !subj.includes("could not find original") &&
+      !subj.includes("no contract found") &&
+      !subj.includes("review issue")
     );
   });
 }
@@ -46,105 +48,424 @@ async function markEmailRead(accessToken, emailId) {
   }
 }
 
-async function sendReviewResultEmail(accessToken, email, documentName, reviewResult) {
+async function sendReviewResultEmail(accessToken, email, documentName, r) {
   const graphUser = encodeURIComponent(CONTRACTS_MAILBOX);
-  const riskColors = { LOW: "🟢", MEDIUM: "🟡", HIGH: "🔴", CRITICAL: "🚨" };
-  const riskIcon = riskColors[reviewResult.overallRiskLevel] || "⚪";
+  const riskColors = { LOW: "#16a34a", MEDIUM: "#ca8a04", HIGH: "#dc2626", CRITICAL: "#7f1d1d" };
+  const riskBg = { LOW: "#f0fdf4", MEDIUM: "#fffbeb", HIGH: "#fef2f2", CRITICAL: "#fff1f2" };
+  const riskEmoji = { LOW: "🟢", MEDIUM: "🟡", HIGH: "🔴", CRITICAL: "🚨" };
+  const risk = String(r.overallRiskLevel || "MEDIUM").toUpperCase();
 
-  const redFlagsHtml = (reviewResult.redFlags || [])
-    .slice(0, 5)
-    .map(
-      (f) => `
+  const statusColor = { OK: "#16a34a", REVIEW: "#245eb0", WARNING: "#ca8a04", CRITICAL: "#dc2626" };
+  const statusBg = { OK: "#f0fdf4", REVIEW: "#e8f0fb", WARNING: "#fffbeb", CRITICAL: "#fef2f2" };
+  const statusLabel = {
+    OK: "✓ OK",
+    REVIEW: "👁 Review",
+    WARNING: "⚠ Warning",
+    CRITICAL: "🚨 Critical",
+  };
+
+  const sectionIcon = {
+    contractTerms: "📋",
+    titleOwnership: "📍",
+    zoningPlanning: "🏡",
+    councilCertificates: "💧",
+    specialConditions: "⚖️",
+    inclusionsExclusions: "🔒",
+    strataDetails: "🏢",
+    adjustments: "💰",
+    disclosures: "🚨",
+  };
+
+  const sectionName = {
+    contractTerms: "Contract Terms",
+    titleOwnership: "Title & Ownership",
+    zoningPlanning: "Zoning & Planning",
+    councilCertificates: "Council Certificates",
+    specialConditions: "Special Conditions",
+    inclusionsExclusions: "Inclusions & Exclusions",
+    strataDetails: "Strata Details",
+    adjustments: "Adjustments & Settlement",
+    disclosures: "Disclosure Documents",
+  };
+
+  const keyDetailsHtml = `
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;background:#f8fafc;border-radius:8px;overflow:hidden;">
       <tr>
-        <td style="padding:8px;border-bottom:1px solid #eee;">
-          <strong>${f.severity}</strong>
+        <td style="padding:10px 14px;border-right:1px solid #dce3f0;">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">BUYER</div>
+          <div style="font-size:13px;font-weight:700;color:#1a2744;">${r.buyerName || "—"}</div>
         </td>
-        <td style="padding:8px;border-bottom:1px solid #eee;">${f.area}</td>
-        <td style="padding:8px;border-bottom:1px solid #eee;">${f.issue}</td>
+        <td style="padding:10px 14px;border-right:1px solid #dce3f0;">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">SELLER</div>
+          <div style="font-size:13px;font-weight:600;color:#1a2744;">${r.sellerName || "—"}</div>
+        </td>
+        <td style="padding:10px 14px;border-right:1px solid #dce3f0;">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">PRICE</div>
+          <div style="font-size:13px;font-weight:700;color:#1a2744;">${r.purchasePrice || "—"}</div>
+        </td>
+        <td style="padding:10px 14px;border-right:1px solid #dce3f0;">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">DEPOSIT</div>
+          <div style="font-size:13px;font-weight:600;color:#1a2744;">${r.depositAmount || "—"}</div>
+        </td>
+        <td style="padding:10px 14px;border-right:1px solid #dce3f0;">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">SETTLEMENT</div>
+          <div style="font-size:13px;font-weight:600;color:#1a2744;">${r.settlementDate || "—"}</div>
+        </td>
+        <td style="padding:10px 14px;">
+          <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">COOLING OFF</div>
+          <div style="font-size:13px;font-weight:600;color:#1a2744;">${r.coolingOffPeriod || "—"}</div>
+        </td>
       </tr>
-    `
-    )
+    </table>`;
+
+  const riskBadgeHtml = `
+    <div style="display:inline-flex;align-items:center;gap:10px;padding:12px 20px;
+      background:${riskBg[risk] || riskBg.MEDIUM};border:2px solid ${riskColors[risk] || riskColors.MEDIUM};
+      border-radius:10px;margin-bottom:20px;">
+      <span style="font-size:24px;">${riskEmoji[risk] || riskEmoji.MEDIUM}</span>
+      <div>
+        <div style="font-size:16px;font-weight:800;color:${riskColors[risk] || riskColors.MEDIUM};">
+          ${risk} RISK
+        </div>
+        <div style="font-size:11px;color:#6b7a99;margin-top:1px;">
+          ${r.redFlags?.length || 0} red flag${(r.redFlags?.length || 0) !== 1 ? "s" : ""} identified
+        </div>
+      </div>
+    </div>`;
+
+  const sortedFlags = [...(r.redFlags || [])].sort((a, b) => {
+    const order = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    const sa = String(a.severity || "").toUpperCase();
+    const sb = String(b.severity || "").toUpperCase();
+    return (order[sa] ?? 9) - (order[sb] ?? 9);
+  });
+
+  const flagColors = { CRITICAL: "#dc2626", HIGH: "#ea580c", MEDIUM: "#ca8a04", LOW: "#94a3b8" };
+  const flagBg = { CRITICAL: "#fef2f2", HIGH: "#fff7ed", MEDIUM: "#fffbeb", LOW: "#f8fafc" };
+
+  const redFlagsHtml =
+    sortedFlags.length > 0
+      ? `
+    <h3 style="color:#1a2744;font-size:14px;border-bottom:2px solid #eee;
+      padding-bottom:8px;margin:24px 0 12px;">
+      🚨 Red Flags (${sortedFlags.length} found)
+    </h3>
+    ${sortedFlags
+      .map((f) => {
+        const sev = String(f.severity || "").toUpperCase();
+        return `
+      <div style="border-left:4px solid ${flagColors[sev] || "#94a3b8"};
+        background:${flagBg[sev] || "#f8fafc"};
+        border-radius:0 8px 8px 0;padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;
+            background:${flagColors[sev] || "#94a3b8"};color:white;
+            font-family:monospace;">
+            ${f.severity}
+          </span>
+          <span style="font-size:11px;color:#6b7a99;font-family:monospace;">
+            ${f.area || ""}
+            ${f.clauseReference ? ` · ${f.clauseReference}` : ""}
+          </span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:#1a2744;margin-bottom:6px;">
+          ${f.issue || ""}
+        </div>
+        <div style="font-size:12px;color:#245eb0;background:#e8f0fb;
+          padding:6px 10px;border-radius:5px;">
+          💡 ${f.recommendation || ""}
+        </div>
+      </div>
+    `;
+      })
+      .join("")}`
+      : `<div style="padding:12px 16px;background:#f0fdf4;border-radius:8px;
+      color:#16a34a;font-weight:600;margin-bottom:20px;">
+      ✓ No major red flags identified
+    </div>`;
+
+  const sectionsHtml = Object.entries(r.sections || {})
+    .map(([key, section]) => {
+      if (!section) return "";
+      const status = String(section.status || "OK").toUpperCase();
+      const details = section.details || [];
+      const concerns = section.concerns || [];
+      const easements = section.easements || [];
+      const encumbrances = section.encumbrances || [];
+      const overlays = section.overlays || [];
+
+      const detailLine = (d) =>
+        `<li style="font-size:11px;color:#6b7a99;margin-bottom:3px;
+                  line-height:1.5;">${typeof d === "string" ? d : String(d)}</li>`;
+
+      return `
+      <div style="border:1px solid #dce3f0;border-radius:8px;
+        margin-bottom:10px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:10px;
+          padding:10px 14px;background:#f8fafc;
+          border-bottom:1px solid #dce3f0;">
+          <span style="font-size:16px;">${sectionIcon[key] || "📄"}</span>
+          <span style="font-size:13px;font-weight:700;color:#1a2744;flex:1;">
+            ${sectionName[key] || key}
+          </span>
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;
+            border-radius:4px;font-family:monospace;
+            background:${statusBg[status] || "#f8fafc"};
+            color:${statusColor[status] || "#6b7a99"};">
+            ${statusLabel[status] || status}
+          </span>
+        </div>
+        <div style="padding:12px 14px;">
+          ${
+            section.summary
+              ? `
+            <div style="font-size:12px;color:#374151;margin-bottom:8px;line-height:1.6;">
+              ${section.summary}
+            </div>`
+              : ""
+          }
+          ${
+            details.length > 0
+              ? `
+            <ul style="margin:0 0 8px;padding-left:18px;">
+              ${details.map((d) => detailLine(d)).join("")}
+            </ul>`
+              : ""
+          }
+          ${
+            [...concerns, ...easements, ...encumbrances, ...overlays].length > 0
+              ? `
+            <div style="background:#fffbeb;border-left:3px solid #ca8a04;
+              padding:8px 10px;border-radius:0 5px 5px 0;margin-top:6px;">
+              ${[...concerns, ...easements, ...encumbrances, ...overlays]
+                .map(
+                  (c) => `
+                <div style="font-size:11px;color:#92400e;margin-bottom:2px;">
+                  ⚠ ${typeof c === "string" ? c : String(c)}
+                </div>
+              `
+                )
+                .join("")}
+            </div>`
+              : ""
+          }
+          ${
+            key === "strataDetails" && section.applicable
+              ? `
+            <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;">
+              ${
+                section.levies
+                  ? `
+                <div style="background:#f8fafc;padding:6px 10px;border-radius:5px;">
+                  <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Levies</div>
+                  <div style="font-size:12px;font-weight:600;color:#1a2744;">${section.levies}</div>
+                </div>`
+                  : ""
+              }
+              ${
+                section.sinkingFund
+                  ? `
+                <div style="background:#f8fafc;padding:6px 10px;border-radius:5px;">
+                  <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Sinking Fund</div>
+                  <div style="font-size:12px;font-weight:600;color:#1a2744;">${section.sinkingFund}</div>
+                </div>`
+                  : ""
+              }
+              ${
+                section.specialLevies
+                  ? `
+                <div style="background:#fef2f2;padding:6px 10px;border-radius:5px;">
+                  <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">Special Levies</div>
+                  <div style="font-size:12px;font-weight:600;color:#dc2626;">${section.specialLevies}</div>
+                </div>`
+                  : ""
+              }
+            </div>`
+              : ""
+          }
+        </div>
+      </div>`;
+    })
     .join("");
 
-  const actionsHtml = (reviewResult.recommendedActions || [])
-    .slice(0, 5)
-    .map((a) => `<li><strong>${a.priority}:</strong> ${a.action}</li>`)
-    .join("");
+  const actionsHtml =
+    (r.recommendedActions || []).length > 0
+      ? `
+    <h3 style="color:#1a2744;font-size:14px;border-bottom:2px solid #eee;
+      padding-bottom:8px;margin:24px 0 12px;">
+      ✅ Recommended Actions
+    </h3>
+    ${r.recommendedActions
+      .map((a) => {
+        const priorityColor = { URGENT: "#dc2626", HIGH: "#ea580c", MEDIUM: "#ca8a04", LOW: "#16a34a" };
+        const pr = String(a.priority || "").toUpperCase();
+        return `
+        <div style="display:flex;gap:10px;padding:8px 12px;
+          border-radius:6px;background:#f8fafc;margin-bottom:6px;
+          border-left:3px solid ${priorityColor[pr] || "#94a3b8"};">
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;
+            border-radius:3px;background:${priorityColor[pr] || "#94a3b8"};
+            color:white;height:fit-content;white-space:nowrap;font-family:monospace;">
+            ${a.priority}
+          </span>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#1a2744;">${a.action}</div>
+            ${
+              a.deadline
+                ? `
+              <div style="font-size:10px;color:#6b7a99;margin-top:2px;">
+                ⏰ ${a.deadline}
+              </div>`
+                : ""
+            }
+          </div>
+        </div>`;
+      })
+      .join("")}`
+      : "";
+
+  const negotiationHtml =
+    (r.negotiationPoints || []).length > 0
+      ? `
+    <h3 style="color:#1a2744;font-size:14px;border-bottom:2px solid #eee;
+      padding-bottom:8px;margin:24px 0 12px;">
+      💬 Negotiation Points
+    </h3>
+    <ul style="margin:0;padding-left:20px;">
+      ${r.negotiationPoints.map((p) => `
+        <li style="font-size:12px;color:#374151;margin-bottom:6px;
+          line-height:1.6;">${p}</li>
+      `).join("")}
+    </ul>`
+      : "";
+
+  const clientLetterHtml = r.clientLetter
+    ? `
+    <h3 style="color:#1a2744;font-size:14px;border-bottom:2px solid #eee;
+      padding-bottom:8px;margin:24px 0 12px;">
+      ✉️ Draft Client Letter
+    </h3>
+    <div style="background:#f8fafc;border:1px solid #dce3f0;border-radius:8px;
+      padding:16px 20px;font-size:12px;color:#374151;line-height:1.8;
+      white-space:pre-wrap;">${r.clientLetter}</div>`
+    : "";
 
   const emailBody = `
-    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;">
-      <div style="background:#1a2744;color:white;padding:20px;border-radius:8px 8px 0 0;">
-        <h2 style="margin:0;">✦ Contract Review Complete</h2>
-        <p style="margin:4px 0 0;opacity:0.7;font-size:13px;">
-          Conveyancing Crew — AI Contract Review
-        </p>
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:750px;margin:0 auto;">
+      
+      <!-- Header -->
+      <div style="background:linear-gradient(135deg,#1a2744,#2d3f6b);
+        color:white;padding:24px 28px;border-radius:10px 10px 0 0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <h2 style="margin:0;font-size:20px;font-weight:800;">
+              ✦ Contract Review Complete
+            </h2>
+            <div style="margin:4px 0 0;opacity:0.7;font-size:12px;">
+              Conveyancing Crew — AI Contract Review
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:10px;opacity:0.6;text-transform:uppercase;
+              letter-spacing:1px;">Document</div>
+            <div style="font-size:12px;font-weight:600;max-width:200px;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${documentName}
+            </div>
+          </div>
+        </div>
       </div>
-      <div style="background:white;padding:24px;border:1px solid #ddd;">
-        <p style="color:#666;font-size:13px;margin-top:0;">
-          Received from: <strong>${email.from?.emailAddress?.name || ""}</strong>
-          &lt;${email.from?.emailAddress?.address || ""}&gt;
-        </p>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-          <tr><td style="padding:8px;background:#f8f9fa;font-size:12px;color:#666;width:130px;">DOCUMENT</td><td style="padding:8px;background:#f8f9fa;font-weight:600;">${documentName}</td></tr>
-          <tr><td style="padding:8px;font-size:12px;color:#666;">PROPERTY</td><td style="padding:8px;font-weight:600;">${reviewResult.propertyAddress || "See full review"}</td></tr>
-          <tr><td style="padding:8px;background:#f8f9fa;font-size:12px;color:#666;">BUYER</td><td style="padding:8px;background:#f8f9fa;font-weight:600;">${reviewResult.buyerName || "—"}</td></tr>
-          <tr><td style="padding:8px;font-size:12px;color:#666;">SELLER</td><td style="padding:8px;font-weight:600;">${reviewResult.sellerName || "—"}</td></tr>
-          <tr><td style="padding:8px;background:#f8f9fa;font-size:12px;color:#666;">PRICE</td><td style="padding:8px;background:#f8f9fa;font-weight:600;">${reviewResult.purchasePrice || "—"}</td></tr>
-          <tr><td style="padding:8px;font-size:12px;color:#666;">DEPOSIT</td><td style="padding:8px;font-weight:600;">${reviewResult.depositAmount || "—"}</td></tr>
-          <tr><td style="padding:8px;background:#f8f9fa;font-size:12px;color:#666;">SETTLEMENT</td><td style="padding:8px;background:#f8f9fa;font-weight:600;">${reviewResult.settlementDate || "—"}</td></tr>
-          <tr><td style="padding:8px;font-size:12px;color:#666;">COOLING OFF</td><td style="padding:8px;font-weight:600;">${reviewResult.coolingOffPeriod || "—"}</td></tr>
-          <tr><td style="padding:8px;background:#f8f9fa;font-size:12px;color:#666;">RISK LEVEL</td><td style="padding:8px;background:#f8f9fa;font-weight:600;font-size:16px;">${riskIcon} ${reviewResult.overallRiskLevel || "—"}</td></tr>
-        </table>
-        <h3 style="color:#1a2744;border-bottom:2px solid #eee;padding-bottom:8px;">Summary</h3>
-        <p style="color:#333;line-height:1.6;">${reviewResult.overallSummary || ""}</p>
+
+      <div style="background:white;padding:24px 28px;
+        border:1px solid #dce3f0;border-top:none;">
+        
+        <!-- Received from -->
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:16px;
+          padding-bottom:12px;border-bottom:1px solid #f0f0f0;">
+          Received from: <strong style="color:#6b7a99;">
+            ${email.from?.emailAddress?.name || ""}</strong>
+          &lt;${email.from?.emailAddress?.address || ""}&gt; ·
+          ${new Date(email.receivedDateTime || Date.now()).toLocaleDateString("en-AU", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </div>
+
+        <!-- Property address -->
         ${
-          reviewResult.redFlags?.length > 0
+          r.propertyAddress
             ? `
-          <h3 style="color:#1a2744;border-bottom:2px solid #eee;padding-bottom:8px;margin-top:24px;">
-            🚨 Red Flags (${reviewResult.redFlags.length} found)
-          </h3>
-          <table style="width:100%;border-collapse:collapse;">
-            <tr style="background:#f8f9fa;">
-              <th style="padding:8px;text-align:left;font-size:12px;">SEVERITY</th>
-              <th style="padding:8px;text-align:left;font-size:12px;">AREA</th>
-              <th style="padding:8px;text-align:left;font-size:12px;">ISSUE</th>
-            </tr>
-            ${redFlagsHtml}
-          </table>`
-            : `<p style="color:#16a34a;font-weight:600;">✓ No major red flags found</p>`
-        }
-        ${
-          actionsHtml
-            ? `
-          <h3 style="color:#1a2744;border-bottom:2px solid #eee;padding-bottom:8px;margin-top:24px;">
-            Recommended Actions
-          </h3>
-          <ul style="color:#333;line-height:1.8;">${actionsHtml}</ul>`
+          <div style="font-size:18px;font-weight:800;color:#1a2744;
+            margin-bottom:16px;">
+            📍 ${r.propertyAddress}
+          </div>`
             : ""
         }
-        ${
-          reviewResult.negotiationPoints?.length > 0
-            ? `
-          <h3 style="color:#1a2744;border-bottom:2px solid #eee;padding-bottom:8px;margin-top:24px;">
-            💬 Negotiation Points
-          </h3>
-          <ul style="color:#333;line-height:1.8;">
-            ${reviewResult.negotiationPoints.map((p) => `<li>${p}</li>`).join("")}
-          </ul>`
-            : ""
-        }
-        <div style="background:#f0f7ff;border:1px solid #bdd6f5;border-radius:8px;padding:16px;margin-top:24px;">
+
+        <!-- Key details bar -->
+        ${keyDetailsHtml}
+
+        <!-- Risk badge + summary -->
+        ${riskBadgeHtml}
+        
+        <div style="font-size:13px;color:#374151;line-height:1.7;
+          margin-bottom:20px;padding:14px 16px;background:#f8fafc;
+          border-radius:8px;border-left:3px solid #245eb0;">
+          ${r.overallSummary || ""}
+        </div>
+
+        <!-- Red flags -->
+        ${redFlagsHtml}
+
+        <!-- Recommended actions -->
+        ${actionsHtml}
+
+        <!-- Negotiation points -->
+        ${negotiationHtml}
+
+        <!-- Full sections report -->
+        <h3 style="color:#1a2744;font-size:14px;border-bottom:2px solid #eee;
+          padding-bottom:8px;margin:24px 0 12px;">
+          📊 Full Report — All Sections
+        </h3>
+        ${sectionsHtml}
+
+        <!-- Client letter -->
+        ${clientLetterHtml}
+
+        <!-- App link -->
+        <div style="background:#f0f7ff;border:1px solid #bdd6f5;
+          border-radius:8px;padding:16px;margin-top:24px;">
           <p style="margin:0;font-size:13px;color:#1a2744;">
-            <strong>📱 View full review in Conveyancing Crew app</strong><br>
-            <span style="color:#666;">
-              Log in → Bell icon → Contract Reviews tab →
-              Link to existing matter or create new matter
+            <strong>📱 View and action this review in the Conveyancing Crew app</strong><br>
+            <span style="color:#666;font-size:12px;">
+              Log in → Bell icon → Contract Reviews → 
+              Link to matter or create new matter
             </span>
           </p>
         </div>
       </div>
-      <div style="background:#f8f9fa;padding:12px;text-align:center;font-size:11px;color:#999;border-radius:0 0 8px 8px;">
-        Conveyancing Crew · AI Contract Review ·
+
+      <!-- Footer -->
+      <div style="background:#f8f9fa;padding:12px 28px;text-align:center;
+        font-size:10px;color:#999;border-radius:0 0 10px 10px;
+        border:1px solid #dce3f0;border-top:none;">
+        ${
+          r._reviewCost
+            ? `
+        <div style="margin-bottom:12px;padding:10px 14px;text-align:left;
+          background:#f0fdf4;border:1px solid #bbf7d0;
+          border-radius:6px;font-size:11px;color:#15803d;">
+          💰 AI Review Cost: <strong>AUD $${(typeof r._reviewCost.cost_aud === "number" ? r._reviewCost.cost_aud : 0).toFixed(2)}</strong>
+          · ${(r._reviewCost.total_tokens ?? 0).toLocaleString()} tokens
+          · ${r._reviewCost.pages_reviewed ?? 0} pages
+        </div>`
+            : ""
+        }
+        Conveyancing Crew · AI Contract Review · 
         Sent to ${GITU_NOTIFY_EMAIL} ·
         ${new Date().toLocaleDateString("en-AU", {
           day: "numeric",
@@ -157,7 +478,7 @@ async function sendReviewResultEmail(accessToken, email, documentName, reviewRes
     </div>`;
 
   const message = {
-    subject: `✦ Contract Review: ${reviewResult.propertyAddress || documentName} — ${riskIcon} ${reviewResult.overallRiskLevel}`,
+    subject: `✦ Contract Review: ${r.propertyAddress || documentName} — ${riskEmoji[risk] || riskEmoji.MEDIUM} ${risk} RISK · ${r.redFlags?.length || 0} red flags`,
     body: { contentType: "HTML", content: emailBody },
     toRecipients: [{ emailAddress: { address: GITU_NOTIFY_EMAIL } }],
   };
@@ -177,7 +498,7 @@ async function sendReviewResultEmail(accessToken, email, documentName, reviewRes
     body: JSON.stringify({ message }),
   });
 
-  console.log("[ContractCron] Result email sent to", GITU_NOTIFY_EMAIL);
+  console.log("[ContractCron] Rich review email sent to", GITU_NOTIFY_EMAIL);
 }
 
 async function sendFailureEmail(accessToken, subjectLine, plainBody) {
@@ -515,11 +836,21 @@ export async function GET(request) {
                   ? await runDocxContractReview(pdfBuffer, attContext)
                   : await runContractReviewEngine(pdfBuffer, attContext);
 
+              console.log(
+                "[ContractCron] Review cost:",
+                attResult._reviewCost?.cost_aud != null
+                  ? `AUD $${attResult._reviewCost.cost_aud}`
+                  : "unknown"
+              );
+
               await supabase
                 .from("contract_review_inbox")
                 .update({
                   status: "complete",
                   review_result: attResult,
+                  review_cost_aud: attResult._reviewCost?.cost_aud ?? null,
+                  review_cost_usd: attResult._reviewCost?.cost_usd ?? null,
+                  tokens_used: attResult._reviewCost?.total_tokens ?? null,
                   is_read: false,
                   updated_at: new Date().toISOString(),
                 })
@@ -1285,50 +1616,9 @@ export async function GET(request) {
 
           console.log("[ContractCron] Total unique links found across chain:", uniqueLinks.length);
 
-          const docLinks = uniqueLinks
-            .map((url) => {
-              const urlLower = url.toLowerCase();
-              let score = 0;
-              if (urlLower.includes(".pdf")) score += 25;
-              if (urlLower.includes(".docx")) score += 25;
-              if (urlLower.includes("contract")) score += 20;
-              if (urlLower.includes("document")) score += 15;
-              if (urlLower.includes("download")) score += 15;
-              if (urlLower.includes("sharepoint")) score += 15;
-              if (urlLower.includes("onedrive")) score += 15;
-              if (urlLower.includes("dropbox")) score += 15;
-              if (urlLower.includes("drive.google")) score += 15;
-              if (urlLower.includes("infotrack")) score += 20;
-              if (urlLower.includes("pexa")) score += 10;
-              if (urlLower.includes("docusign")) score += 15;
-              if (urlLower.includes("triconvey")) score += 20;
-              if (urlLower.includes("realestate") || urlLower.includes("domain.com")) score += 5;
-              if (urlLower.includes(".png") || urlLower.includes(".jpg") || urlLower.includes(".gif"))
-                score -= 20;
-              if (urlLower.includes("unsubscribe")) score -= 20;
-              if (urlLower.includes("logo")) score -= 15;
-              if (urlLower.includes("track")) score -= 10;
-              if (urlLower.includes("pixel")) score -= 15;
-              if (urlLower.includes("microsoft.com/en-us")) score -= 5;
-              if (urlLower.includes("privacy")) score -= 10;
-              return { url, score };
-            })
-            .filter((u) => u.score > 0)
-            .sort((a, b) => b.score - a.score);
-
-          console.log(
-            "[ContractCron] ALL 11 links before scoring:",
-            uniqueLinks.map((u) => u.slice(0, 120))
-          );
-
-          console.log(
-            "[ContractCron] Scored document links:",
-            docLinks.slice(0, 5).map((u) => `score:${u.score} ${u.url.slice(0, 100)}`)
-          );
-
           const cleanSubject = String(linkHelpSubject || subject || email.subject || "(no subject)");
 
-          if (docLinks.length === 0) {
+          if (uniqueLinks.length === 0) {
             await supabase
               .from("contract_review_inbox")
               .update({
@@ -1352,81 +1642,203 @@ export async function GET(request) {
             continue;
           }
 
-          for (const { url, score } of docLinks.slice(0, 3)) {
-            console.log("[ContractCron] Trying download from:", url.slice(0, 100), "score:", score);
+          const resolvedLinks = [];
 
-            try {
-              const dlRes = await fetch(url, {
-                headers: {
-                  "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                  Authorization: `Bearer ${accessToken}`,
-                },
-                redirect: "follow",
-              });
+          for (const url of uniqueLinks.slice(0, 15)) {
+            const urlLower = url.toLowerCase();
 
-              if (!dlRes.ok) {
-                console.log("[ContractCron] Download returned:", dlRes.status, "— trying next link");
-                continue;
-              }
+            if (urlLower.includes("google.com/maps")) continue;
+            if (urlLower.includes("unsubscribe")) continue;
+            if (urlLower.includes(".png") || urlLower.includes(".jpg")) continue;
+            if (urlLower.includes("privacy")) continue;
 
-              const contentType = dlRes.headers.get("content-type") || "";
-              const arrayBuffer = await dlRes.arrayBuffer();
+            const isRedirect =
+              urlLower.includes("click?") ||
+              urlLower.includes("/ls/click") ||
+              urlLower.includes("agentbox") ||
+              urlLower.includes("mailchimp") ||
+              urlLower.includes("sendgrid") ||
+              urlLower.includes("campaign-archive") ||
+              urlLower.includes("link.");
 
-              if (arrayBuffer.byteLength < 10000) {
-                console.log(
-                  "[ContractCron] Downloaded file too small:",
-                  arrayBuffer.byteLength,
-                  "bytes — likely not a contract, trying next"
-                );
-                continue;
-              }
-
-              base64Content = Buffer.from(arrayBuffer).toString("base64");
-              docType =
-                contentType.includes("wordprocessingml") || url.toLowerCase().includes(".docx")
-                  ? "docx"
-                  : "pdf";
+            if (isRedirect) {
               try {
-                const pathPart = url.split("/").pop()?.split("?")[0] || "";
-                documentName =
-                  decodeURIComponent(pathPart) ||
-                  `contract_${cleanSubject.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.${docType === "docx" ? "docx" : "pdf"}`;
-              } catch {
-                documentName =
-                  docType === "docx"
-                    ? "contract.docx"
-                    : `contract_${cleanSubject.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.pdf`;
+                console.log("[ContractCron] Following redirect:", url.slice(0, 80));
+                const redirectRes = await fetch(url, {
+                  method: "GET",
+                  redirect: "follow",
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                  },
+                  signal: AbortSignal.timeout(8000),
+                });
+
+                const finalUrl = redirectRes.url;
+                console.log("[ContractCron] Resolved to:", finalUrl.slice(0, 120));
+
+                if (finalUrl !== url) {
+                  resolvedLinks.push({ original: url, resolved: finalUrl });
+                }
+
+                const contentType = redirectRes.headers.get("content-type") || "";
+                if (contentType.includes("pdf") || contentType.includes("wordprocessingml")) {
+                  console.log(
+                    "[ContractCron] Redirect returned document directly! Type:",
+                    contentType
+                  );
+                  const arrayBuffer = await redirectRes.arrayBuffer();
+                  if (arrayBuffer.byteLength > 10000) {
+                    base64Content = Buffer.from(arrayBuffer).toString("base64");
+                    docType = contentType.includes("wordprocessingml") ? "docx" : "pdf";
+                    try {
+                      const pathPart = finalUrl.split("/").pop()?.split("?")[0] || "";
+                      documentName = decodeURIComponent(pathPart) || "contract.pdf";
+                    } catch {
+                      documentName = "contract.pdf";
+                    }
+                    console.log(
+                      "[ContractCron] ✓ Got document from redirect:",
+                      documentName,
+                      Math.round(arrayBuffer.byteLength / 1024),
+                      "KB"
+                    );
+                    contractFromUrl = true;
+                    await supabase
+                      .from("contract_review_inbox")
+                      .update({ document_name: documentName, document_type: docType })
+                      .eq("id", inboxRecord.id);
+                    break;
+                  }
+                }
+              } catch (redirectErr) {
+                console.log("[ContractCron] Redirect failed:", redirectErr.message);
               }
 
-              console.log(
-                "[ContractCron] ✓ Downloaded:",
-                documentName,
-                Math.round(arrayBuffer.byteLength / 1024),
-                "KB"
-              );
-
-              contractFromUrl = true;
-
-              await supabase
-                .from("contract_review_inbox")
-                .update({ document_name: documentName, document_type: docType })
-                .eq("id", inboxRecord.id);
-
-              break;
-            } catch (dlErr) {
-              console.log("[ContractCron] Download failed:", dlErr.message, "— trying next link");
+              if (base64Content) break;
+            } else {
+              resolvedLinks.push({ original: url, resolved: url });
             }
           }
 
           if (!base64Content) {
+            console.log(
+              "[ContractCron] Resolved links:",
+              resolvedLinks.map((l) => l.resolved.slice(0, 100))
+            );
+
+            const allUrlsToScore = [
+              ...resolvedLinks.map((l) => l.resolved),
+              ...uniqueLinks.filter((u) => !u.toLowerCase().includes("click?")),
+            ];
+
+            const docLinks = [...new Set(allUrlsToScore)]
+              .map((url) => {
+                const urlLower = url.toLowerCase();
+                let score = 0;
+                if (urlLower.includes(".pdf")) score += 25;
+                if (urlLower.includes(".docx")) score += 25;
+                if (urlLower.includes("contract")) score += 20;
+                if (urlLower.includes("document")) score += 15;
+                if (urlLower.includes("download")) score += 15;
+                if (urlLower.includes("sharepoint")) score += 15;
+                if (urlLower.includes("onedrive")) score += 15;
+                if (urlLower.includes("dropbox")) score += 15;
+                if (urlLower.includes("drive.google")) score += 15;
+                if (urlLower.includes("infotrack")) score += 20;
+                if (urlLower.includes("agentbox")) score += 10;
+                if (urlLower.includes("realestate")) score += 8;
+                if (urlLower.includes("domain.com")) score += 5;
+                if (urlLower.includes("property")) score += 5;
+                if (urlLower.includes("view")) score += 5;
+                if (urlLower.includes("file")) score += 5;
+                if (urlLower.includes("google.com/maps")) score -= 20;
+                if (urlLower.includes(".png") || urlLower.includes(".jpg") || urlLower.includes(".gif"))
+                  score -= 20;
+                if (urlLower.includes("unsubscribe")) score -= 20;
+                if (urlLower.includes("logo")) score -= 15;
+                if (urlLower.includes("privacy")) score -= 10;
+                if (urlLower.includes("belleproperty.com") && !urlLower.includes(".pdf")) score += 8;
+                return { url, score };
+              })
+              .filter((u) => u.score > 0)
+              .sort((a, b) => b.score - a.score);
+
+            console.log(
+              "[ContractCron] Scored resolved links:",
+              docLinks.slice(0, 5).map((u) => `score:${u.score} ${u.url.slice(0, 100)}`)
+            );
+
+            for (const { url } of docLinks.slice(0, 5)) {
+              try {
+                console.log("[ContractCron] Trying download:", url.slice(0, 100));
+                const dlRes = await fetch(url, {
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    Authorization: `Bearer ${accessToken}`,
+                  },
+                  redirect: "follow",
+                  signal: AbortSignal.timeout(15000),
+                });
+
+                if (!dlRes.ok) {
+                  console.log("[ContractCron] Download status:", dlRes.status, "— trying next");
+                  continue;
+                }
+
+                const contentType = dlRes.headers.get("content-type") || "";
+                const arrayBuffer = await dlRes.arrayBuffer();
+
+                if (arrayBuffer.byteLength < 10000) {
+                  console.log("[ContractCron] File too small:", arrayBuffer.byteLength, "— skipping");
+                  continue;
+                }
+
+                base64Content = Buffer.from(arrayBuffer).toString("base64");
+                docType =
+                  contentType.includes("wordprocessingml") || url.toLowerCase().includes(".docx")
+                    ? "docx"
+                    : "pdf";
+                try {
+                  const pathPart = url.split("/").pop()?.split("?")[0] || "";
+                  documentName = decodeURIComponent(pathPart) || "contract.pdf";
+                } catch {
+                  documentName = "contract.pdf";
+                }
+
+                console.log(
+                  "[ContractCron] ✓ Downloaded:",
+                  documentName,
+                  Math.round(arrayBuffer.byteLength / 1024),
+                  "KB"
+                );
+
+                contractFromUrl = true;
+
+                await supabase
+                  .from("contract_review_inbox")
+                  .update({ document_name: documentName, document_type: docType })
+                  .eq("id", inboxRecord.id);
+
+                break;
+              } catch (dlErr) {
+                console.log("[ContractCron] Download failed:", dlErr.message, "— trying next");
+              }
+            }
+          }
+
+          if (!base64Content) {
+            console.log("[ContractCron] All download attempts failed for Kenthurst");
+
             await supabase
               .from("contract_review_inbox")
               .update({
                 status: "failed",
                 error_message:
-                  "Found document links but all downloads failed. Links tried: " +
-                  docLinks.slice(0, 3).map((u) => u.url.slice(0, 80)).join(", "),
+                  "Found " +
+                  uniqueLinks.length +
+                  " links in email chain but none could be downloaded. Links require login or are expired.",
                 updated_at: new Date().toISOString(),
               })
               .eq("id", inboxRecord.id);
@@ -1434,10 +1846,10 @@ export async function GET(request) {
             await sendFailureEmail(
               accessToken,
               `Could not download contract — ${email.subject}`,
-              `Found document links in the email chain but could not download them.\n\n` +
-                `Links tried:\n${docLinks.slice(0, 3).map((u) => u.url.slice(0, 150)).join("\n")}\n\n` +
-                `These links may require a login. Please download the contract manually ` +
-                `and forward as an email attachment to contractreview@conveyancingcrew.com.au`
+              `Found ${uniqueLinks.length} links in the email chain but could not download the contract.\n\n` +
+                `The links appear to be from a real estate agent portal (agentbox) that requires login.\n\n` +
+                `Please download the contract PDF manually from the agent portal and ` +
+                `forward it as an email attachment to contractreview@conveyancingcrew.com.au`
             );
             results.skipped++;
             continue;
@@ -1517,11 +1929,21 @@ export async function GET(request) {
           reviewResult.redFlags?.length || 0
         );
 
+        console.log(
+          "[ContractCron] Review cost:",
+          reviewResult._reviewCost?.cost_aud != null
+            ? `AUD $${reviewResult._reviewCost.cost_aud}`
+            : "unknown"
+        );
+
         await supabase
           .from("contract_review_inbox")
           .update({
             status: "complete",
             review_result: reviewResult,
+            review_cost_aud: reviewResult._reviewCost?.cost_aud ?? null,
+            review_cost_usd: reviewResult._reviewCost?.cost_usd ?? null,
+            tokens_used: reviewResult._reviewCost?.total_tokens ?? null,
             is_read: false,
             updated_at: new Date().toISOString(),
           })
