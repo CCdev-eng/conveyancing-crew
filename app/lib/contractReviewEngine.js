@@ -203,6 +203,9 @@ function parseJsonFromModelText(rawText) {
 function getAnthropicClient() {
   return new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
+    // Keep well under Vercel's 300s function limit so a stalled call fails
+    // cleanly with a clear error instead of a raw 504 from Vercel.
+    timeout: 240 * 1000,
     defaultHeaders: {
       "anthropic-beta": "pdfs-2024-09-25",
     },
