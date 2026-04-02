@@ -1,16 +1,26 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PDFDocument } from "pdf-lib";
 
-export async function splitPdfIntoChunks(pdfBuffer, chunkSize = 80) {
+// Claude's hard PDF limit is 32MB per document. We target 20MB per chunk to stay safe.
+const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+
+export async function splitPdfIntoChunks(pdfBuffer) {
   const bytes =
     pdfBuffer instanceof ArrayBuffer ? new Uint8Array(pdfBuffer) : new Uint8Array(Buffer.from(pdfBuffer));
+  const totalBytes = bytes.length;
+
   const pdfDoc = await PDFDocument.load(bytes, {
     ignoreEncryption: true,
     throwOnInvalidObject: false,
   });
   const totalPages = pdfDoc.getPageCount();
-  console.log("[ReviewEngine] Total pages:", totalPages);
-  if (totalPages <= chunkSize) {
+  console.log(
+    "[ReviewEngine] Total pages:", totalPages,
+    "| File size:", Math.round(totalBytes / 1024 / 1024) + "MB"
+  );
+
+  // File fits in one chunk — send as-is
+  if (totalBytes <= MAX_CHUNK_BYTES) {
     return [
       {
         base64: Buffer.from(bytes).toString("base64"),
@@ -21,10 +31,19 @@ export async function splitPdfIntoChunks(pdfBuffer, chunkSize = 80) {
       },
     ];
   }
+
+  // Calculate pages per chunk from average page size, minimum 5 pages
+  const avgBytesPerPage = totalBytes / totalPages;
+  const pagesPerChunk = Math.max(5, Math.floor(MAX_CHUNK_BYTES / avgBytesPerPage));
+  console.log(
+    "[ReviewEngine] Avg page size:", Math.round(avgBytesPerPage / 1024) + "KB",
+    "| Pages per chunk:", pagesPerChunk
+  );
+
   const chunks = [];
   let startPage = 0;
   while (startPage < totalPages) {
-    const endPage = Math.min(startPage + chunkSize, totalPages);
+    const endPage = Math.min(startPage + pagesPerChunk, totalPages);
     const chunkDoc = await PDFDocument.create();
     const indices = [];
     for (let i = startPage; i < endPage; i++) indices.push(i);
@@ -38,7 +57,10 @@ export async function splitPdfIntoChunks(pdfBuffer, chunkSize = 80) {
       totalPages,
       isOnly: false,
     });
-    console.log(`[ReviewEngine] Chunk ${chunks.length}: pages ${startPage + 1}-${endPage}`);
+    console.log(
+      `[ReviewEngine] Chunk ${chunks.length}: pages ${startPage + 1}-${endPage}`,
+      `(${Math.round(outBytes.length / 1024 / 1024 * 10) / 10}MB)`
+    );
     startPage = endPage;
   }
   return chunks;
@@ -370,7 +392,7 @@ Return ONLY this JSON structure (no markdown, no explanation outside JSON):
  */
 export async function runContractReviewEngine(pdfBuffer, matterContext) {
   const client = getAnthropicClient();
-  const chunks = await splitPdfIntoChunks(pdfBuffer, 80);
+  const chunks = await splitPdfIntoChunks(pdfBuffer);
   console.log("[ReviewEngine] Processing", chunks.length, "chunks");
 
   const chunkPromises = chunks.map(async (chunk, i) => {
