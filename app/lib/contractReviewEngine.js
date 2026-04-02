@@ -373,13 +373,9 @@ export async function runContractReviewEngine(pdfBuffer, matterContext) {
   const chunks = await splitPdfIntoChunks(pdfBuffer, 80);
   console.log("[ReviewEngine] Processing", chunks.length, "chunks");
 
-  let totalUsage = { input_tokens: 0, output_tokens: 0 };
-  const chunkResults = [];
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
+  const chunkPromises = chunks.map(async (chunk, i) => {
     console.log(
-      `[ReviewEngine] Chunk ${i + 1}/${chunks.length} (pages ${chunk.startPage}-${chunk.endPage})`
+      `[ReviewEngine] Starting chunk ${i + 1}/${chunks.length} (pages ${chunk.startPage}-${chunk.endPage})`
     );
 
     const chunkNote =
@@ -464,9 +460,6 @@ clientLetter rule: ${clientLetterRule}`,
       input_tokens: response.usage?.input_tokens || 0,
       output_tokens: response.usage?.output_tokens || 0,
     };
-    console.log(`[ReviewEngine] Chunk ${i + 1} tokens:`, chunkUsage);
-    totalUsage.input_tokens += chunkUsage.input_tokens;
-    totalUsage.output_tokens += chunkUsage.output_tokens;
 
     const rawText = response.content?.[0]?.text || "{}";
 
@@ -475,11 +468,33 @@ clientLetter rule: ${clientLetterRule}`,
       chunkResult = parseJsonFromModelText(rawText);
     } catch (parseErr) {
       console.error(`[ReviewEngine] Chunk ${i + 1} parse failed:`, parseErr.message);
-      continue;
+      return { index: i, result: null, usage: chunkUsage };
     }
 
-    if (i > 0 && chunkResults[0]) {
-      const first = chunkResults[0];
+    console.log(
+      `[ReviewEngine] Chunk ${i + 1} done. Risk: ${chunkResult.overallRiskLevel} | Flags: ${chunkResult.redFlags?.length || 0} | Tokens:`, chunkUsage
+    );
+    return { index: i, result: chunkResult, usage: chunkUsage };
+  });
+
+  const outcomes = await Promise.all(chunkPromises);
+
+  // Sort by original chunk index to preserve order
+  outcomes.sort((a, b) => a.index - b.index);
+
+  let totalUsage = { input_tokens: 0, output_tokens: 0 };
+  const chunkResults = [];
+
+  for (const outcome of outcomes) {
+    totalUsage.input_tokens += outcome.usage.input_tokens;
+    totalUsage.output_tokens += outcome.usage.output_tokens;
+    if (outcome.result) chunkResults.push(outcome.result);
+  }
+
+  // Propagate key details from first chunk to any that didn't find them
+  if (chunkResults.length > 1) {
+    const first = chunkResults[0];
+    for (const chunkResult of chunkResults.slice(1)) {
       if (!chunkResult.propertyAddress) chunkResult.propertyAddress = first.propertyAddress;
       if (!chunkResult.buyerName) chunkResult.buyerName = first.buyerName;
       if (!chunkResult.sellerName) chunkResult.sellerName = first.sellerName;
@@ -488,11 +503,6 @@ clientLetter rule: ${clientLetterRule}`,
       if (!chunkResult.settlementDate) chunkResult.settlementDate = first.settlementDate;
       if (!chunkResult.coolingOffPeriod) chunkResult.coolingOffPeriod = first.coolingOffPeriod;
     }
-
-    chunkResults.push(chunkResult);
-    console.log(
-      `[ReviewEngine] Chunk ${i + 1} done. Risk: ${chunkResult.overallRiskLevel} | Flags: ${chunkResult.redFlags?.length || 0}`
-    );
   }
 
   if (chunkResults.length === 0) {
