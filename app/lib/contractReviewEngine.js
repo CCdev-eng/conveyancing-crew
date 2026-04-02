@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PDFDocument } from "pdf-lib";
 
-// Claude's hard PDF limit is 32MB per document. We target 20MB per chunk to stay safe.
-const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+// Anthropic's API request body limit is ~20MB total. Base64 encoding adds ~33% overhead,
+// so a 10MB raw PDF chunk becomes ~13.4MB base64 — safely under the request limit.
+const MAX_CHUNK_BYTES = 10 * 1024 * 1024;
 
 export async function splitPdfIntoChunks(pdfBuffer) {
   const bytes =
