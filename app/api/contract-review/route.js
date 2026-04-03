@@ -4,6 +4,7 @@ import {
   runContractReviewEngine,
   runDocxContractReview,
 } from "@/app/lib/contractReviewEngine";
+import { sendContractReviewEmail } from "@/app/lib/contractReviewEmailer";
 
 export const maxDuration = 300;
 
@@ -75,6 +76,8 @@ export async function POST(request) {
       );
     }
 
+    const documentName = storagePath.split("/").pop() || storagePath;
+
     if (isDocx) {
       let parsed;
       try {
@@ -86,10 +89,16 @@ export async function POST(request) {
           { status: 500 }
         );
       }
+      sendContractReviewEmail(documentName, parsed).catch((err) =>
+        console.error("[ContractReview API] Email send failed:", err.message)
+      );
       return NextResponse.json(parsed);
     }
 
     const parsed = await runContractReviewEngine(pdfBuffer, matterContext);
+    sendContractReviewEmail(documentName, parsed).catch((err) =>
+      console.error("[ContractReview API] Email send failed:", err.message)
+    );
     return NextResponse.json(parsed);
   } catch (err) {
     console.error("[ContractReview API] Unhandled error:", err?.message || err);
