@@ -89,16 +89,20 @@ export async function POST(request) {
           { status: 500 }
         );
       }
-      sendContractReviewEmail(documentName, parsed).catch((err) =>
-        console.error("[ContractReview API] Email send failed:", err.message)
-      );
+      try {
+        await sendContractReviewEmail(documentName, parsed);
+      } catch (err) {
+        console.error("[ContractReview API] Email send failed:", err.message);
+      }
       return NextResponse.json(parsed);
     }
 
     const parsed = await runContractReviewEngine(pdfBuffer, matterContext);
-    sendContractReviewEmail(documentName, parsed).catch((err) =>
-      console.error("[ContractReview API] Email send failed:", err.message)
-    );
+    try {
+      await sendContractReviewEmail(documentName, parsed);
+    } catch (err) {
+      console.error("[ContractReview API] Email send failed:", err.message);
+    }
     return NextResponse.json(parsed);
   } catch (err) {
     console.error("[ContractReview API] Unhandled error:", err?.message || err);
