@@ -2270,7 +2270,7 @@ function ContractReviewsBellTab({
 
   const processing = contractInboxItems.filter((i) => i.status === "processing");
   const needsAction = contractInboxItems.filter(
-    (i) => i.status === "complete" && !i.matter_ref && !i.is_actioned
+    (i) => i.status === "complete" && i.status !== "discarded" && !i.matter_ref && !i.is_actioned
   );
   const actioned = contractInboxItems.filter(
     (i) => i.status === "complete" && (i.matter_ref || i.is_actioned)
@@ -2278,6 +2278,7 @@ function ContractReviewsBellTab({
   const failed = contractInboxItems.filter(
     (i) =>
       i.status === "failed" &&
+      i.status !== "discarded" &&
       !i.from_name?.toLowerCase().includes("godaddy") &&
       !i.from_email?.toLowerCase().includes("godaddy") &&
       !i.subject?.toLowerCase().includes("microsoft 365") &&
