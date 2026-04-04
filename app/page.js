@@ -2847,10 +2847,11 @@ Maximum 300 words.`,
       if (data) {
         setContractInboxItems(data);
         const unread = data.filter((d) => !d.is_read).length;
-        if (!notifOpen) {
-          setContractInboxUnread(unread);
+        setContractInboxUnread((_prev) => {
+          if (notifOpen || bellSeen) return 0;
           if (unread > 0) setBellSeen(false);
-        }
+          return unread;
+        });
         setPrevUnread((prev) => {
           if (unread > prev && !notifOpen) {
             setBellShaking(true);
@@ -2865,7 +2866,7 @@ Maximum 300 words.`,
     } catch (err) {
       console.error("[ContractInbox] Catch error:", err.message, err);
     }
-  }, [notifOpen]);
+  }, [notifOpen, bellSeen]);
 
   const loadBellDraftMatters = useCallback(async () => {
     try {
@@ -6410,277 +6411,319 @@ Return only the email body text, no subject line.`;
                       </div>
                     ) : (
                       contractInboxItems.map((item) => {
-                      const r = item.review_result || {};
-                      const riskColors = {
-                        LOW: "#16a34a",
-                        MEDIUM: "#ca8a04",
-                        HIGH: "#dc2626",
-                        CRITICAL: "#7f1d1d",
-                      };
-                      const riskBg = {
-                        LOW: "#f0fdf4",
-                        MEDIUM: "#fffbeb",
-                        HIGH: "#fef2f2",
-                        CRITICAL: "#fff1f2",
-                      };
-                      const RL = String(r.overallRiskLevel || "").toUpperCase();
-                      const st = item.status;
-                      const borderColor =
-                        st === "complete"
-                          ? riskColors[RL] || "#dce3f0"
-                          : st === "processing"
-                            ? "#245eb0"
-                            : st === "failed"
-                              ? "#94a3b8"
-                              : "#dce3f0";
-                      const docTypeLabel = (item.document_type || "PDF").toUpperCase();
+                        const r = item.review_result || {};
+                        const RL = String(r.overallRiskLevel || "").toUpperCase();
+                        const riskColors = {
+                          LOW: "#16a34a",
+                          MEDIUM: "#ca8a04",
+                          HIGH: "#dc2626",
+                          CRITICAL: "#7f1d1d",
+                        };
+                        const riskBg = {
+                          LOW: "#f0fdf4",
+                          MEDIUM: "#fffbeb",
+                          HIGH: "#fef2f2",
+                          CRITICAL: "#fff1f2",
+                        };
+                        const riskEmoji = {
+                          LOW: "🟢",
+                          MEDIUM: "🟡",
+                          HIGH: "🔴",
+                          CRITICAL: "🚨",
+                        };
+                        const st = item.status;
 
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={async () => {
-                            if (!item.is_read) {
-                              await supabase.from("contract_review_inbox").update({ is_read: true }).eq("id", item.id);
-                              loadContractInbox();
-                            }
-                          }}
-                          style={{
-                            borderLeft: `4px solid ${borderColor}`,
-                            padding: "14px 16px",
-                            borderBottom: "1px solid #f0f0f0",
-                            background: item.is_read ? "white" : "#f8faff",
-                            cursor: "pointer",
-                          }}
-                        >
+                        const rawName = item.document_name || "";
+                        const isUseless =
+                          rawName.toLowerCase() === "view" ||
+                          rawName.toLowerCase() === "contract" ||
+                          rawName.length < 5 ||
+                          rawName.startsWith("scanner_") ||
+                          rawName.startsWith("EnvelopePDF");
+
+                        const smartTitle =
+                          r.propertyAddress && r.propertyAddress !== "Not specified in document"
+                            ? r.propertyAddress
+                            : isUseless
+                              ? item.subject || "Contract Review"
+                              : rawName.replace(/\.pdf$/i, "").replace(/\.docx$/i, "").replace(/_/g, " ");
+
+                        const clientName =
+                          r.buyerName && !r.buyerName.toLowerCase().includes("not specified")
+                            ? r.buyerName
+                            : null;
+
+                        const price =
+                          r.purchasePrice &&
+                          !String(r.purchasePrice).toLowerCase().includes("not specified")
+                            ? r.purchasePrice
+                            : null;
+
+                        const borderColor =
+                          st === "complete"
+                            ? riskColors[RL] || "#dce3f0"
+                            : st === "processing"
+                              ? "#245eb0"
+                              : "#e2e8f0";
+
+                        const timeStr = item.received_at
+                          ? new Date(item.received_at).toLocaleDateString("en-AU", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "";
+
+                        return (
                           <div
+                            key={item.id}
+                            onClick={async () => {
+                              if (!item.is_read) {
+                                await supabase
+                                  .from("contract_review_inbox")
+                                  .update({ is_read: true })
+                                  .eq("id", item.id);
+                                loadContractInbox();
+                              }
+                            }}
                             style={{
-                              display: "flex",
-                              alignItems: "flex-start",
-                              justifyContent: "space-between",
-                              marginBottom: 6,
+                              borderLeft: `3px solid ${borderColor}`,
+                              padding: "12px 14px",
+                              borderBottom: "1px solid #f0f4fa",
+                              background: item.is_read ? "#fff" : "#f8faff",
+                              cursor: "pointer",
+                              transition: "background 0.15s",
                             }}
                           >
-                            <div style={{ flex: 1 }}>
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  color: "#1a2744",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 6,
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                {item.document_name || "Contract"}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginBottom: 5,
+                                gap: 6,
+                              }}
+                            >
+                              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                                 <span
                                   style={{
                                     fontSize: 9,
-                                    fontFamily: "monospace",
-                                    background: "#eef0f5",
-                                    color: "#6b7a99",
-                                    padding: "1px 5px",
-                                    borderRadius: 3,
-                                    textTransform: "uppercase",
+                                    fontFamily: "DM Mono, monospace",
+                                    fontWeight: 700,
+                                    padding: "2px 7px",
+                                    borderRadius: 20,
+                                    background:
+                                      st === "complete"
+                                        ? "#f0fdf4"
+                                        : st === "processing"
+                                          ? "#e8f0fb"
+                                          : "#fef2f2",
+                                    color:
+                                      st === "complete"
+                                        ? "#16a34a"
+                                        : st === "processing"
+                                          ? "#245eb0"
+                                          : "#dc2626",
                                   }}
                                 >
-                                  {docTypeLabel}
+                                  {st === "complete"
+                                    ? "✓ Complete"
+                                    : st === "processing"
+                                      ? "⟳ Reviewing…"
+                                      : "✗ Failed"}
                                 </span>
-                                {!item.is_read && (
+                                {st === "complete" && RL && (
                                   <span
                                     style={{
-                                      width: 6,
-                                      height: 6,
-                                      borderRadius: "50%",
-                                      background: "#245eb0",
-                                      display: "inline-block",
+                                      fontSize: 9,
+                                      fontFamily: "DM Mono, monospace",
+                                      fontWeight: 700,
+                                      padding: "2px 7px",
+                                      borderRadius: 20,
+                                      background: riskBg[RL] || "#f8fafc",
+                                      color: riskColors[RL] || "#6b7a99",
                                     }}
-                                  />
+                                  >
+                                    {riskEmoji[RL]} {RL}
+                                    {r.redFlags?.length > 0 && ` · ${r.redFlags.length} flags`}
+                                  </span>
+                                )}
+                              </div>
+                              {!item.is_read && (
+                                <span
+                                  style={{
+                                    width: 7,
+                                    height: 7,
+                                    borderRadius: "50%",
+                                    background: "#245eb0",
+                                    flexShrink: 0,
+                                    boxShadow: "0 0 0 2px #e8f0fb",
+                                  }}
+                                />
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#1a2744",
+                                lineHeight: 1.35,
+                                marginBottom: clientName || price ? 4 : 6,
+                              }}
+                            >
+                              {smartTitle}
+                            </div>
+
+                            {(clientName || price) && (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 10,
+                                  marginBottom: 6,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                {clientName && (
+                                  <span style={{ fontSize: 11, color: "#6b7a99" }}>👤 {clientName}</span>
+                                )}
+                                {price && (
+                                  <span style={{ fontSize: 11, color: "#6b7a99" }}>💰 {price}</span>
+                                )}
+                              </div>
+                            )}
+
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginBottom: st === "complete" ? 8 : 0,
+                              }}
+                            >
+                              <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                                {item.from_name || item.from_email} · {timeStr}
+                              </span>
+                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                {item.review_cost_aud != null && item.review_cost_aud !== "" && (
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      color: "#16a34a",
+                                      fontFamily: "monospace",
+                                    }}
+                                  >
+                                    {`$${Number(item.review_cost_aud).toFixed(2)}`}
+                                  </span>
+                                )}
+                                {item.matter_ref && (
+                                  <span
+                                    style={{
+                                      fontSize: 9,
+                                      background: "#f0fdf4",
+                                      color: "#16a34a",
+                                      padding: "1px 6px",
+                                      borderRadius: 4,
+                                      fontWeight: 600,
+                                      fontFamily: "monospace",
+                                    }}
+                                  >
+                                    ✓ {item.matter_ref}
+                                  </span>
                                 )}
                               </div>
                             </div>
-                            <span
-                              style={{
-                                fontSize: 9,
-                                fontFamily: "monospace",
-                                fontWeight: 700,
-                                padding: "2px 7px",
-                                borderRadius: 4,
-                                background:
-                                  st === "complete"
-                                    ? "#f0fdf4"
-                                    : st === "processing"
-                                      ? "#e8f0fb"
-                                      : st === "failed"
-                                        ? "#fef2f2"
-                                        : "#f8fafc",
-                                color:
-                                  st === "complete"
-                                    ? "#16a34a"
-                                    : st === "processing"
-                                      ? "#245eb0"
-                                      : st === "failed"
-                                        ? "#dc2626"
-                                        : "#94a3b8",
-                              }}
-                            >
-                              {st === "complete"
-                                ? "✓ Complete"
-                                : st === "processing"
-                                  ? "⟳ Reviewing..."
-                                  : st === "failed"
-                                    ? "✗ Failed"
-                                    : "Pending"}
-                            </span>
-                            {item.review_cost_aud != null && item.review_cost_aud !== "" && (
-                              <span
-                                style={{
-                                  fontSize: 10,
-                                  color: "#15803d",
-                                  background: "#f0fdf4",
-                                  padding: "1px 6px",
-                                  borderRadius: 4,
-                                  fontFamily: "monospace",
-                                }}
-                              >
-                                💰 AUD ${Number(item.review_cost_aud).toFixed(2)}
-                              </span>
+
+                            {st === "complete" && !item.matter_ref && (
+                              <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setLinkReviewModal(item);
+                                    setLinkReviewSearch("");
+                                    setNotifOpen(false);
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    fontSize: 11,
+                                    padding: "6px 10px",
+                                    borderRadius: 6,
+                                    border: "1.5px solid #245eb0",
+                                    background: "white",
+                                    color: "#245eb0",
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  🔗 Link to Matter
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    prefillFromReview(item);
+                                    setNotifOpen(false);
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    fontSize: 11,
+                                    padding: "6px 10px",
+                                    borderRadius: 6,
+                                    border: "none",
+                                    background: "#245eb0",
+                                    color: "white",
+                                    cursor: "pointer",
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  ✨ Create Matter
+                                </button>
+                              </div>
                             )}
-                          </div>
 
-                          {r.propertyAddress && (
-                            <div style={{ fontSize: 11, color: "#1a2744", marginBottom: 2 }}>📍 {r.propertyAddress}</div>
-                          )}
-                          {r.buyerName && (
-                            <div style={{ fontSize: 11, color: "#6b7a99", marginBottom: 2 }}>👤 {r.buyerName}</div>
-                          )}
-                          {r.purchasePrice && (
-                            <div style={{ fontSize: 11, color: "#6b7a99", marginBottom: 2 }}>💰 {r.purchasePrice}</div>
-                          )}
-
-                          {st === "complete" && RL && (
-                            <div style={{ marginBottom: 6 }}>
-                              <span
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  padding: "2px 8px",
-                                  borderRadius: 4,
-                                  background: riskBg[RL] || "#f8fafc",
-                                  color: riskColors[RL] || "#6b7a99",
-                                }}
-                              >
-                                {RL === "LOW" ? "🟢" : RL === "MEDIUM" ? "🟡" : RL === "HIGH" ? "🔴" : "🚨"} {RL} RISK
-                                {r.redFlags?.length > 0 && ` · ${r.redFlags.length} red flags`}
-                              </span>
-                            </div>
-                          )}
-
-                          <div
-                            style={{
-                              fontSize: 10,
-                              color: "#94a3b8",
-                              marginBottom: st === "complete" ? 10 : 0,
-                            }}
-                          >
-                            From: {item.from_name || item.from_email} ·{" "}
-                            {item.received_at
-                              ? new Date(item.received_at).toLocaleDateString("en-AU", {
-                                  day: "numeric",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })
-                              : ""}
-                            {item.matter_ref && (
-                              <span
-                                style={{
-                                  marginLeft: 8,
-                                  background: "#f0fdf4",
-                                  color: "#16a34a",
-                                  padding: "1px 6px",
-                                  borderRadius: 4,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                ✓ Linked: {item.matter_ref}
-                              </span>
-                            )}
-                          </div>
-
-                          {st === "complete" && !item.matter_ref && (
-                            <div style={{ display: "flex", gap: 6, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                            {st === "complete" && item.matter_ref && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setLinkReviewModal(item);
-                                  setLinkReviewSearch("");
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedMatter(item.matter_ref);
+                                  setPage("matter_workspace");
+                                  setMatterTab("Documents");
                                   setNotifOpen(false);
                                 }}
                                 style={{
-                                  flex: 1,
+                                  width: "100%",
                                   fontSize: 11,
                                   padding: "6px 10px",
                                   borderRadius: 6,
-                                  border: "1.5px solid #245eb0",
-                                  background: "white",
+                                  border: "1.5px solid #dce3f0",
+                                  background: "#f8faff",
                                   color: "#245eb0",
                                   cursor: "pointer",
                                   fontWeight: 600,
                                 }}
                               >
-                                🔗 Link to Matter
+                                📂 Open in Matter
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  prefillFromReview(item);
-                                  setNotifOpen(false);
-                                }}
+                            )}
+
+                            {st === "failed" && item.error_message && (
+                              <div
                                 style={{
-                                  flex: 1,
-                                  fontSize: 11,
-                                  padding: "6px 10px",
-                                  borderRadius: 6,
-                                  border: "none",
-                                  background: "#245eb0",
-                                  color: "white",
-                                  cursor: "pointer",
-                                  fontWeight: 600,
+                                  fontSize: 10,
+                                  color: "#dc2626",
+                                  marginTop: 4,
+                                  fontStyle: "italic",
+                                  lineHeight: 1.4,
                                 }}
                               >
-                                ➕ Create Matter
-                              </button>
-                            </div>
-                          )}
-
-                          {st === "complete" && item.matter_ref && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedMatter(item.matter_ref);
-                                setPage("matter_workspace");
-                                setMatterTab("Documents");
-                                setNotifOpen(false);
-                              }}
-                              style={{
-                                marginTop: 8,
-                                width: "100%",
-                                fontSize: 11,
-                                padding: "6px 10px",
-                                borderRadius: 6,
-                                border: "1.5px solid #dce3f0",
-                                background: "white",
-                                color: "#6b7a99",
-                                cursor: "pointer",
-                              }}
-                            >
-                              📂 View in Matter
-                            </button>
-                          )}
-                        </div>
-                      );
+                                {item.error_message.slice(0, 80)}
+                                {item.error_message.length > 80 ? "…" : ""}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     })
                     )}
                   </>
