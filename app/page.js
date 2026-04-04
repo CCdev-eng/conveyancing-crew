@@ -2549,13 +2549,13 @@ function ContractReviewsBellTab({
 
                 {expandedCardId === item.id &&
                   (() => {
-                    const rd = item.review_result || {};
-                    const rawFlags = rd.redFlags;
-                    const flags = Array.isArray(rawFlags) ? rawFlags : [];
-                    const rawCond = rd.specialConditions ?? rd.keySpecialConditions;
-                    const conditions = Array.isArray(rawCond) ? rawCond : [];
-                    const settlement = rd.settlementDate || rd.settlement_date || null;
-                    const summary = rd.summary || rd.executiveSummary || rd.overview || null;
+                    const r = item.review_result || {};
+                    const flags = r.redFlags || [];
+                    const settlement = r.settlementDate || null;
+                    const summary = r.overallSummary || null;
+                    const cooling = r.coolingOffPeriod || null;
+                    const deposit = r.depositAmount || null;
+                    const actions = r.recommendedActions || [];
 
                     return (
                       <div
@@ -2563,7 +2563,7 @@ function ContractReviewsBellTab({
                           margin: "8px 0 10px",
                           background: "#f4f6fb",
                           borderRadius: 8,
-                          padding: "12px 12px",
+                          padding: "12px",
                           border: "1px solid #e8f0fb",
                         }}
                         onClick={(e) => e.stopPropagation()}
@@ -2575,6 +2575,7 @@ function ContractReviewsBellTab({
                               color: "#6b7a99",
                               marginBottom: 8,
                               fontStyle: "italic",
+                              lineHeight: 1.4,
                             }}
                           >
                             📧 {item.subject}
@@ -2594,9 +2595,116 @@ function ContractReviewsBellTab({
                               border: "1px solid #e8f0fb",
                             }}
                           >
-                            {item.body_preview}
+                            {item.body_preview.slice(0, 200)}
+                            {item.body_preview.length > 200 ? "…" : ""}
                           </div>
                         )}
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: 6,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {settlement && !String(settlement).includes("Not specified") && (
+                            <div
+                              style={{
+                                padding: "6px 8px",
+                                background: "white",
+                                borderRadius: 6,
+                                border: "1px solid #e8f0fb",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 9,
+                                  color: "#94a3b8",
+                                  fontFamily: "DM Mono, monospace",
+                                  textTransform: "uppercase",
+                                  letterSpacing: 0.8,
+                                  marginBottom: 2,
+                                }}
+                              >
+                                Settlement
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: "#1a2744",
+                                }}
+                              >
+                                {settlement}
+                              </div>
+                            </div>
+                          )}
+                          {deposit && !String(deposit).includes("Not specified") && (
+                            <div
+                              style={{
+                                padding: "6px 8px",
+                                background: "white",
+                                borderRadius: 6,
+                                border: "1px solid #e8f0fb",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 9,
+                                  color: "#94a3b8",
+                                  fontFamily: "DM Mono, monospace",
+                                  textTransform: "uppercase",
+                                  letterSpacing: 0.8,
+                                  marginBottom: 2,
+                                }}
+                              >
+                                Deposit
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: "#1a2744",
+                                }}
+                              >
+                                {deposit}
+                              </div>
+                            </div>
+                          )}
+                          {cooling && !String(cooling).includes("Not specified") && (
+                            <div
+                              style={{
+                                padding: "6px 8px",
+                                background: "white",
+                                borderRadius: 6,
+                                border: "1px solid #e8f0fb",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 9,
+                                  color: "#94a3b8",
+                                  fontFamily: "DM Mono, monospace",
+                                  textTransform: "uppercase",
+                                  letterSpacing: 0.8,
+                                  marginBottom: 2,
+                                }}
+                              >
+                                Cooling Off
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: "#1a2744",
+                                }}
+                              >
+                                {cooling}
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
                         {summary && (
                           <div style={{ marginBottom: 8 }}>
@@ -2624,20 +2732,14 @@ function ContractReviewsBellTab({
                                 border: "1px solid #e8f0fb",
                               }}
                             >
-                              {String(summary).slice(0, 200)}
-                              {String(summary).length > 200 ? "…" : ""}
+                              {String(summary).slice(0, 250)}
+                              {String(summary).length > 250 ? "…" : ""}
                             </div>
                           </div>
                         )}
 
-                        {settlement && (
-                          <div style={{ fontSize: 11, color: "#6b7a99", marginBottom: 6 }}>
-                            📅 Settlement: <strong style={{ color: "#1a2744" }}>{settlement}</strong>
-                          </div>
-                        )}
-
-                        {flags.length > 0 && (
-                          <div style={{ marginBottom: 6 }}>
+                        {Array.isArray(flags) && flags.length > 0 && (
+                          <div style={{ marginBottom: 8 }}>
                             <div
                               style={{
                                 fontSize: 9,
@@ -2649,35 +2751,102 @@ function ContractReviewsBellTab({
                                 marginBottom: 4,
                               }}
                             >
-                              🚩 Red Flags
+                              🚩 Red Flags ({flags.length})
                             </div>
                             {flags.slice(0, 3).map((flag, i) => (
                               <div
                                 key={i}
                                 style={{
-                                  fontSize: 11,
-                                  color: "#7f1d1d",
-                                  padding: "4px 8px",
+                                  padding: "8px 10px",
                                   background: "#fef2f2",
-                                  borderRadius: 4,
-                                  marginBottom: 3,
-                                  lineHeight: 1.4,
+                                  borderRadius: 6,
+                                  border: "1px solid #fecaca",
+                                  marginBottom: 4,
                                 }}
                               >
-                                {typeof flag === "string"
-                                  ? flag
-                                  : flag.description || flag.flag || JSON.stringify(flag)}
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    marginBottom: 3,
+                                    gap: 6,
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      color: "#7f1d1d",
+                                    }}
+                                  >
+                                    {typeof flag === "object" && flag !== null
+                                      ? flag.area || "Issue"
+                                      : "Issue"}
+                                  </span>
+                                  {typeof flag === "object" &&
+                                    flag !== null &&
+                                    flag.severity && (
+                                      <span
+                                        style={{
+                                          fontSize: 9,
+                                          fontFamily: "DM Mono, monospace",
+                                          fontWeight: 700,
+                                          padding: "1px 6px",
+                                          borderRadius: 4,
+                                          background:
+                                            flag.severity === "CRITICAL" ? "#7f1d1d" : "#dc2626",
+                                          color: "white",
+                                        }}
+                                      >
+                                        {flag.severity}
+                                      </span>
+                                    )}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: "#7f1d1d",
+                                    lineHeight: 1.4,
+                                    marginBottom: 4,
+                                  }}
+                                >
+                                  {typeof flag === "string"
+                                    ? flag
+                                    : flag.issue || flag.description || JSON.stringify(flag)}
+                                </div>
+                                {typeof flag === "object" &&
+                                  flag !== null &&
+                                  flag.recommendation && (
+                                    <div
+                                      style={{
+                                        fontSize: 10,
+                                        color: "#991b1b",
+                                        fontStyle: "italic",
+                                        lineHeight: 1.4,
+                                      }}
+                                    >
+                                      → {flag.recommendation}
+                                    </div>
+                                  )}
                               </div>
                             ))}
                             {flags.length > 3 && (
-                              <div style={{ fontSize: 10, color: "#dc2626", marginTop: 2 }}>
-                                +{flags.length - 3} more flags
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  color: "#dc2626",
+                                  textAlign: "center",
+                                  marginTop: 2,
+                                }}
+                              >
+                                +{flags.length - 3} more flags — open matter for full review
                               </div>
                             )}
                           </div>
                         )}
 
-                        {conditions.length > 0 && (
+                        {Array.isArray(actions) && actions.length > 0 && (
                           <div>
                             <div
                               style={{
@@ -2690,50 +2859,43 @@ function ContractReviewsBellTab({
                                 marginBottom: 4,
                               }}
                             >
-                              ⚠️ Special Conditions
+                              ✅ Recommended Actions
                             </div>
-                            {conditions.slice(0, 2).map((c, i) => (
+                            {actions.slice(0, 2).map((action, i) => (
                               <div
                                 key={i}
                                 style={{
+                                  padding: "6px 8px",
+                                  background: "#fffbeb",
+                                  borderRadius: 6,
+                                  border: "1px solid #fde68a",
+                                  marginBottom: 3,
                                   fontSize: 11,
                                   color: "#78350f",
-                                  padding: "4px 8px",
-                                  background: "#fffbeb",
-                                  borderRadius: 4,
-                                  marginBottom: 3,
                                   lineHeight: 1.4,
                                 }}
                               >
-                                {typeof c === "string"
-                                  ? c
-                                  : c.description || c.condition || JSON.stringify(c)}
+                                {typeof action === "string"
+                                  ? action
+                                  : action.action || JSON.stringify(action)}
+                                {typeof action === "object" &&
+                                  action !== null &&
+                                  action.deadline && (
+                                    <span
+                                      style={{
+                                        marginLeft: 6,
+                                        fontSize: 9,
+                                        color: "#ca8a04",
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      · {action.deadline}
+                                    </span>
+                                  )}
                               </div>
                             ))}
-                            {conditions.length > 2 && (
-                              <div style={{ fontSize: 10, color: "#ca8a04", marginTop: 2 }}>
-                                +{conditions.length - 2} more conditions
-                              </div>
-                            )}
                           </div>
                         )}
-
-                        {!summary &&
-                          flags.length === 0 &&
-                          conditions.length === 0 &&
-                          !settlement &&
-                          !item.body_preview && (
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: "#94a3b8",
-                                textAlign: "center",
-                                padding: "8px 0",
-                              }}
-                            >
-                              No additional details available
-                            </div>
-                          )}
                       </div>
                     );
                   })()}
@@ -3278,6 +3440,7 @@ export default function App() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [bellTab, setBellTab] = useState("notifications");
   const [bellSeen, setBellSeen] = useState(false);
+  const bellSeenRef = React.useRef(false);
   const [bellClosing, setBellClosing] = useState(false);
   const [bellShaking, setBellShaking] = useState(false);
   const [prevUnread, setPrevUnread] = useState(0);
@@ -3643,11 +3806,12 @@ Maximum 300 words.`,
       if (data) {
         setContractInboxItems(data);
         const unread = data.filter((d) => !d.is_read).length;
-        setContractInboxUnread((_prev) => {
-          if (bellSeen) return 0;
+        if (bellSeenRef.current) {
+          setContractInboxUnread(0);
+        } else {
+          setContractInboxUnread(unread);
           if (unread > 0) setBellSeen(false);
-          return unread;
-        });
+        }
         setPrevUnread((prev) => {
           if (unread > prev && !notifOpen) {
             setBellShaking(true);
@@ -3662,7 +3826,7 @@ Maximum 300 words.`,
     } catch (err) {
       console.error("[ContractInbox] Catch error:", err.message, err);
     }
-  }, [bellSeen]);
+  }, [notifOpen]);
 
   const loadBellDraftMatters = useCallback(async () => {
     try {
@@ -4877,6 +5041,7 @@ If no matches found return: []`
   const openNotifications = async () => {
     if (notifOpen) {
       setBellClosing(true);
+      bellSeenRef.current = false;
       setTimeout(() => {
         setBellClosing(false);
         setNotifOpen(false);
@@ -4886,6 +5051,7 @@ If no matches found return: []`
     setNotifOpen(true);
     setBellTab("notifications");
     setBellSeen(true);
+    bellSeenRef.current = true;
     setContractInboxUnread(0);
     const notifs = buildNotifications();
     setNotifications(notifs);
