@@ -32,6 +32,169 @@ function filterOutOurReviewEmails(messages) {
   });
 }
 
+function detectStateFromAddress(addr) {
+  const a = String(addr || "").toUpperCase();
+  if (/\bNSW\b|NEW SOUTH WALES/.test(a)) return "NSW";
+  if (/\bVIC\b|VICTORIA/.test(a)) return "VIC";
+  if (/\bQLD\b|QUEENSLAND/.test(a)) return "QLD";
+  if (/\bSA\b|SOUTH AUSTRALIA/.test(a)) return "SA";
+  if (/\bWA\b|WESTERN AUSTRALIA/.test(a)) return "WA";
+  if (/\bTAS\b|TASMANIA/.test(a)) return "TAS";
+  if (/\bACT\b/.test(a)) return "ACT";
+  const m = a.match(/\b(\d{4})\b/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if ((n >= 2000 && n <= 2599) || (n >= 2619 && n <= 2898)) return "NSW";
+    if (n >= 3000 && n <= 3999) return "VIC";
+    if (n >= 4000 && n <= 4999) return "QLD";
+  }
+  return "NSW";
+}
+
+function parsePurchasePriceInt(priceStr) {
+  const d = String(priceStr || "").replace(/[^0-9]/g, "");
+  if (!d) return null;
+  const n = parseInt(d, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** DD/MM/YYYY → YYYY-MM-DD; formulas skipped */
+function parseSettlementToIso(settlementStr) {
+  const t = String(settlementStr || "").trim();
+  if (!t || /^formula:/i.test(t)) return null;
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const dd = m[1].padStart(2, "0");
+    const mm = m[2].padStart(2, "0");
+    return `${m[3]}-${mm}-${dd}`;
+  }
+  return null;
+}
+
+function extractContractReviewFieldsForMatter(r) {
+  const client_name = r?.buyerName || r?.purchaserName || null;
+  const address = r?.propertyAddress || null;
+  const purchase_price = r?.purchasePrice ?? null;
+  const settlement_date = r?.settlementDate ?? null;
+  const blob = JSON.stringify(r || {}).toLowerCase();
+  const hasPurchaser = blob.includes("purchaser");
+  const hasVendor = blob.includes("vendor");
+  let matter_type = "Purchase";
+  if (hasPurchaser) matter_type = "Purchase";
+  else if (hasVendor) matter_type = "Sale";
+
+  const state = detectStateFromAddress(address);
+  return {
+    client_name: client_name ? String(client_name).trim() || null : null,
+    address: address ? String(address).trim() || null : null,
+    purchase_price: purchase_price != null ? String(purchase_price).trim() || null : null,
+    settlement_date: settlement_date != null ? String(settlement_date).trim() || null : null,
+    matter_type,
+    state,
+  };
+}
+
+async function nextMatterRefContractCron(supabase, year) {
+  const prefix = `CC-${year}-`;
+  const { data: rows, error } = await supabase.from("matters").select("matter_ref");
+  if (error) throw error;
+  let maxN = 0;
+  const re = new RegExp(`^CC-${year}-(\\d+)$`);
+  for (const row of rows || []) {
+    const id = String(row.matter_ref || "");
+    const m = id.match(re);
+    if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+  }
+  return `${prefix}${String(maxN + 1).padStart(3, "0")}`;
+}
+
+/**
+ * After a completed contract review is saved: link to existing matter by address or create draft matter.
+ */
+async function linkOrCreateMatterFromContractReview(supabase, reviewResult, inboxRowId, emailId) {
+  try {
+    const fields = extractContractReviewFieldsForMatter(reviewResult);
+    const { client_name, address, purchase_price, settlement_date, matter_type, state } = fields;
+
+    const draft_extracted = {
+      source: "contract_review",
+      contract_review_id: inboxRowId,
+      client_name,
+      address,
+      purchase_price,
+      settlement_date,
+      matter_type,
+      state,
+    };
+
+    const addrSearch = String(address || "").trim();
+    let existingRef = null;
+
+    if (addrSearch.length >= 6) {
+      const term = addrSearch.replace(/%/g, "").replace(/_/g, "").slice(0, 120);
+      const { data: hit, error: findErr } = await supabase
+        .from("matters")
+        .select("matter_ref")
+        .ilike("address", `%${term}%`)
+        .neq("matter_status", "closed")
+        .limit(1)
+        .maybeSingle();
+      if (findErr) {
+        console.error("[ContractInbox] existing matter lookup failed:", findErr);
+      } else if (hit?.matter_ref) {
+        existingRef = hit.matter_ref;
+      }
+    }
+
+    if (existingRef) {
+      await supabase.from("contract_review_inbox").update({ matter_ref: existingRef }).eq("id", inboxRowId);
+      console.log("[ContractInbox] Linked review to existing matter:", existingRef);
+      return;
+    }
+
+    const year = new Date().getFullYear();
+    const matter_ref = await nextMatterRefContractCron(supabase, year);
+    const opened_date = new Date().toISOString().slice(0, 10);
+    const priceVal = parsePurchasePriceInt(purchase_price);
+    const settlement_date_iso = parseSettlementToIso(settlement_date);
+
+    const row = {
+      matter_ref,
+      client_name: client_name || null,
+      address: addrSearch || null,
+      price: priceVal,
+      settlement_date: settlement_date_iso,
+      type: matter_type,
+      state: state || "NSW",
+      matter_status: "draft",
+      source_email_id: emailId,
+      draft_extracted,
+      opened_date,
+      stage: "Intake",
+      status: "active",
+      urgency: "medium",
+      staff: "contract-review-cron",
+      notes: JSON.stringify({ source: "contract_review_cron" }),
+    };
+
+    let { error: insErr } = await supabase.from("matters").insert(row);
+    if (insErr) {
+      const { source_email_id: _s, draft_extracted: _d, matter_status: _m, ...fallback } = row;
+      const r2 = await supabase.from("matters").insert(fallback);
+      insErr = r2.error;
+    }
+    if (insErr) {
+      console.error("[ContractInbox] matters insert from review failed:", insErr);
+      return;
+    }
+
+    await supabase.from("contract_review_inbox").update({ matter_ref }).eq("id", inboxRowId);
+    console.log("[ContractInbox] Draft matter created:", matter_ref, "from contract review");
+  } catch (e) {
+    console.error("[ContractInbox] linkOrCreateMatterFromContractReview:", e.message);
+  }
+}
+
 async function markEmailRead(accessToken, emailId) {
   const graphUser = encodeURIComponent(CONTRACTS_MAILBOX);
   try {
@@ -843,7 +1006,7 @@ export async function GET(request) {
                   : "unknown"
               );
 
-              await supabase
+              const { error: attSaveErr } = await supabase
                 .from("contract_review_inbox")
                 .update({
                   status: "complete",
@@ -855,6 +1018,12 @@ export async function GET(request) {
                   updated_at: new Date().toISOString(),
                 })
                 .eq("id", attRecord.id);
+
+              if (!attSaveErr) {
+                await linkOrCreateMatterFromContractReview(supabase, attResult, attRecord.id, email.id);
+              } else {
+                console.error("[ContractCron] contract_review_inbox update failed:", attSaveErr);
+              }
 
               await sendReviewResultEmail(accessToken, email, att.name, attResult);
 
@@ -1936,7 +2105,7 @@ export async function GET(request) {
             : "unknown"
         );
 
-        await supabase
+        const { error: reviewSaveErr } = await supabase
           .from("contract_review_inbox")
           .update({
             status: "complete",
@@ -1948,6 +2117,12 @@ export async function GET(request) {
             updated_at: new Date().toISOString(),
           })
           .eq("id", inboxRecord.id);
+
+        if (!reviewSaveErr) {
+          await linkOrCreateMatterFromContractReview(supabase, reviewResult, inboxRecord.id, email.id);
+        } else {
+          console.error("[ContractCron] contract_review_inbox update failed:", reviewSaveErr);
+        }
 
         await sendReviewResultEmail(accessToken, email, documentName, reviewResult);
 
