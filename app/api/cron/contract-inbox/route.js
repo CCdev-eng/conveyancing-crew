@@ -1714,6 +1714,43 @@ export async function GET(request) {
           docType = (contractAtt.name || "").toLowerCase().endsWith(".docx") ? "docx" : "pdf";
           documentName = contractAtt.name || "document";
         } else {
+          function transformGoogleDriveUrl(url) {
+            const fileMatch = url.match(
+              /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/
+            );
+            if (fileMatch) {
+              return `https://drive.google.com/uc?export=download&id=${fileMatch[1]}&confirm=t`;
+            }
+            const openMatch = url.match(
+              /drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/
+            );
+            if (openMatch) {
+              return `https://drive.google.com/uc?export=download&id=${openMatch[1]}&confirm=t`;
+            }
+            const docsMatch = url.match(
+              /docs\.google\.com\/(?:document|spreadsheets|presentation)\/d\/([a-zA-Z0-9_-]+)/
+            );
+            if (docsMatch) {
+              return `https://drive.google.com/uc?export=download&id=${docsMatch[1]}&confirm=t`;
+            }
+            return url;
+          }
+
+          function transformDropboxUrl(url) {
+            if (url.includes('dropbox.com')) {
+              return url
+                .replace('?dl=0', '?dl=1')
+                .replace('www.dropbox.com', 'dl.dropboxusercontent.com');
+            }
+            return url;
+          }
+
+          function normalizeDocUrl(url) {
+            url = transformGoogleDriveUrl(url);
+            url = transformDropboxUrl(url);
+            return url;
+          }
+
           console.log("[ContractCron] No document attachments — checking email body for links (incl. chain)...");
 
           const normalizeBodyText = (html) =>
@@ -1912,8 +1949,9 @@ export async function GET(request) {
                 if (urlLower.includes("download")) score += 15;
                 if (urlLower.includes("sharepoint")) score += 15;
                 if (urlLower.includes("onedrive")) score += 15;
-                if (urlLower.includes("dropbox")) score += 15;
-                if (urlLower.includes("drive.google")) score += 15;
+                if (urlLower.includes("dropbox")) score += 35;
+                if (urlLower.includes("drive.google")) score += 40;
+                if (urlLower.includes("docs.google")) score += 40;
                 if (urlLower.includes("infotrack")) score += 20;
                 if (urlLower.includes("agentbox")) score += 10;
                 if (urlLower.includes("realestate")) score += 8;
@@ -1941,7 +1979,7 @@ export async function GET(request) {
             for (const { url } of docLinks.slice(0, 5)) {
               try {
                 console.log("[ContractCron] Trying download:", url.slice(0, 100));
-                const dlRes = await fetch(url, {
+                const dlRes = await fetch(normalizeDocUrl(url), {
                   headers: {
                     "User-Agent":
                       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
