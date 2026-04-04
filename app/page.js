@@ -918,6 +918,7 @@ function MatterWorkflowFlags({ matter }) {
 // Storage: matter_workflow table (not matters.notes)
 // ─────────────────────────────────────────────────────────────
 
+const { useState, useEffect, Fragment } = React;
 const EMAIL_TEMPLATES_WF = {
   intro: (m) => ({
     to: m?.client_email || m?.email || "",
@@ -967,23 +968,23 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
   const matterRef = matter?.matter_ref || matter?.id;
 
   // ── State ──────────────────────────────────────────────
-  const [wfData, setWfData] = React.useState({});
-  const [flags, setFlags] = React.useState({
+  const [wfData, setWfData] = useState({});
+  const [flags, setFlags] = useState({
     is_strata: false, is_tenanted: false,
     gst_applicable: false, deposit_pct: 10,
   });
-  const [loading, setLoading] = React.useState(true);
-  const [saving, setSaving] = React.useState(null);
-  const [expanded, setExpanded] = React.useState({});
-  const [emailModal, setEmailModal] = React.useState(null);
-  const [sending, setSending] = React.useState(false);
-  const [aiPanel, setAiPanel] = React.useState(null);
-  const [aiLoading, setAiLoading] = React.useState(false);
-  const [aiDraft, setAiDraft] = React.useState("");
-  const [voiStatus, setVoiStatus] = React.useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null);
+  const [expanded, setExpanded] = useState({});
+  const [emailModal, setEmailModal] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [aiPanel, setAiPanel] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDraft, setAiDraft] = useState("");
+  const [voiStatus, setVoiStatus] = useState(null);
 
   // ── Load ───────────────────────────────────────────────
-  React.useEffect(() => {
+  useEffect(() => {
     if (!matterRef) return;
     loadAll();
   }, [matterRef]);
@@ -1366,7 +1367,7 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
         const voiDone = isVoiStep && (voiStatus === "COMPLETE" || voiStatus === "PASSED" || done);
 
         return (
-          <React.Fragment key={step.key}>
+          <Fragment key={step.key}>
             {showPhaseLabel && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 12px" }}>
                 <div style={{ flex: 1, height: 1, background: "#dce3f0" }} />
@@ -1450,7 +1451,7 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
                 )}
               </div>
             </div>
-          </React.Fragment>
+          </Fragment>
         );
       })}
 
