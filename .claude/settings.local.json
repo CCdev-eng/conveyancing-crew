@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vercel whoami:*)",
+      "Bash(npx vercel:*)",
+      "Read(//c/Users/vibsi/.local/share/com.vercel.cli/**)",
+      "Read(//c/Users/vibsi/AppData/Local/vercel/**)",
+      "Read(//c/Users/vibsi/**)",
+      "Bash(curl -s 'https://api.vercel.com/v2/deployments/dpl_FPNDDkF3nbnst1qaKdC3YZsh8NZ7/events?limit=100&direction=backward' -H 'Authorization: Bearer vca_7vUnzgMmA2IuMsA978iyteIwwfzpDgVXV5k3MMhnRfUMjrYagb0X1ERn')",
+      "Bash(python3 -c ':*)",
+      "Bash(node -e ':*)",
+      "Bash(curl -s 'https://api.vercel.com/v3/projects/conveyancing-crew/deployments?teamId=ccdev-engs-projects&limit=1&target=production' -H 'Authorization: Bearer vca_7vUnzgMmA2IuMsA978iyteIwwfzpDgVXV5k3MMhnRfUMjrYagb0X1ERn')",
+      "Bash(curl -s 'https://api.vercel.com/v1/projects/conveyancing-crew/deployments?limit=1' -H 'Authorization: Bearer vca_7vUnzgMmA2IuMsA978iyteIwwfzpDgVXV5k3MMhnRfUMjrYagb0X1ERn')",
+      "Bash(curl -s 'https://api.vercel.com/v9/projects?limit=5' -H 'Authorization: Bearer vca_7vUnzgMmA2IuMsA978iyteIwwfzpDgVXV5k3MMhnRfUMjrYagb0X1ERn')",
+      "Bash(curl -s 'https://api.vercel.com/v9/projects?teamId=ccdev-engs-projects&limit=5' -H 'Authorization: Bearer vca_7vUnzgMmA2IuMsA978iyteIwwfzpDgVXV5k3MMhnRfUMjrYagb0X1ERn')",
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(awk 'NR>=967 && NR<=1545' app/page.js)"
+    ]
+  }
+}

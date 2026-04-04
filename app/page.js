@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback, Fragment } from "react";
+import React, { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import { supabase } from "../lib/supabase";
 /** Parse fetch Response body as JSON; on failure log snippet and return {} */
 async function safeParseFetchJson(res) {
@@ -918,7 +918,6 @@ function MatterWorkflowFlags({ matter }) {
 // Storage: matter_workflow table (not matters.notes)
 // ─────────────────────────────────────────────────────────────
 
-const { useState, useEffect, Fragment } = React;
 const EMAIL_TEMPLATES_WF = {
   intro: (m) => ({
     to: m?.client_email || m?.email || "",
@@ -965,7 +964,6 @@ function addBusinessDaysWF(dateStr, days) {
 }
 
 function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMatterNotesSaved }) {
-  const { useState, useEffect, Fragment } = React;
   const matterRef = matter?.matter_ref || matter?.id;
 
   // ── State ──────────────────────────────────────────────
