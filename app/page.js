@@ -6724,7 +6724,6 @@ Return only the email body text, no subject line.`;
                           </div>
                         );
                       })
-                    })
                     )}
                   </>
                 )}
