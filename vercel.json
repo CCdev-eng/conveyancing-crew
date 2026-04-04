@@ -15,6 +15,9 @@
     },
     "app/api/contract-review/route.js": {
       "maxDuration": 300
+    },
+    "app/api/cron/enquiry-inbox/route.js": {
+      "maxDuration": 120
     }
   }
 }
