@@ -965,6 +965,7 @@ function addBusinessDaysWF(dateStr, days) {
 }
 
 function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMatterNotesSaved }) {
+  const { useState, useEffect, Fragment } = React;
   const matterRef = matter?.matter_ref || matter?.id;
 
   // ── State ──────────────────────────────────────────────
