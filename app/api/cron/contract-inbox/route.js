@@ -769,6 +769,11 @@ export async function GET(request) {
       let originalEmailSubject = "";
       let sourceMailbox = CONTRACTS_MAILBOX;
       let sourceEmailId = email.id;
+      const bodyPreview = String(email.bodyPreview || "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
 
       try {
         const { data: existing, error: existingErr } = await supabase
@@ -832,6 +837,7 @@ export async function GET(request) {
               from_email: email.from?.emailAddress?.address,
               from_name: email.from?.emailAddress?.name,
               subject: email.subject,
+              body_preview: bodyPreview,
               document_name: "",
               document_type: "",
               status: "processing",
@@ -930,6 +936,7 @@ export async function GET(request) {
               from_email: email.from?.emailAddress?.address,
               from_name: email.from?.emailAddress?.name,
               subject: email.subject,
+              body_preview: bodyPreview,
               document_name: `Batch (${envelopeDocAttachments.length} files)`,
               document_type: "pdf",
               status: "failed",
@@ -980,6 +987,7 @@ export async function GET(request) {
                   from_email: email.from?.emailAddress?.address,
                   from_name: email.from?.emailAddress?.name,
                   subject: email.subject || "(no subject)",
+                  body_preview: bodyPreview,
                   document_name: att.name,
                   document_type: attDocType,
                   status: "processing",
@@ -1070,6 +1078,7 @@ export async function GET(request) {
             from_email: email.from?.emailAddress?.address,
             from_name: email.from?.emailAddress?.name,
             subject: email.subject || "(no subject)",
+            body_preview: bodyPreview,
             document_name: `Envelope batch (${envelopeDocAttachments.length} files)`,
             document_type: "pdf",
             status: envFailed === 0 ? "complete" : "failed",
