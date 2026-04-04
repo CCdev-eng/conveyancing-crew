@@ -773,7 +773,7 @@ export async function GET(request) {
       try {
         const { data: existing, error: existingErr } = await supabase
           .from("contract_review_inbox")
-          .select("id, status")
+          .select("id, status, error_message, created_at")
           .eq("email_id", email.id)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -793,7 +793,23 @@ export async function GET(request) {
           }
 
           if (existing.status === "failed") {
-            console.log("[ContractCron] Retrying one failed record:", email.subject);
+            const ageMs = new Date() - new Date(existing.created_at || 0);
+            const olderThan24h = ageMs > 24 * 60 * 60 * 1000;
+            const isTerminal =
+              existing.error_message?.includes("No attachments and not a forwarded email") ||
+              existing.error_message?.includes("No PDF header found") ||
+              (existing.error_message?.includes("none could be downloaded") && olderThan24h);
+            if (isTerminal) {
+              console.log(
+                "[ContractCron] Skipping terminal failure:",
+                email.subject,
+                "|",
+                existing.error_message?.slice(0, 80),
+              );
+              results.skipped++;
+              continue;
+            }
+            console.log("[ContractCron] Retrying failed record:", email.subject);
             inboxRecord = existing;
             await supabase
               .from("contract_review_inbox")
@@ -1745,9 +1761,25 @@ export async function GET(request) {
             return url;
           }
 
+          function transformSharePointUrl(url) {
+            if (url.includes("sharepoint.com")) {
+              if (url.includes("?")) {
+                return url + "&download=1";
+              }
+              return url + "?download=1";
+            }
+            if (url.includes("1drv.ms") || url.includes("onedrive.live.com")) {
+              if (url.includes("?")) {
+                return url + "&download=1";
+              }
+              return url + "?download=1";
+            }
+            return url;
+          }
           function normalizeDocUrl(url) {
             url = transformGoogleDriveUrl(url);
             url = transformDropboxUrl(url);
+            url = transformSharePointUrl(url);
             return url;
           }
 
@@ -1927,6 +1959,7 @@ export async function GET(request) {
             }
           }
 
+          let docLinks = [];
           if (!base64Content) {
             console.log(
               "[ContractCron] Resolved links:",
@@ -1938,7 +1971,7 @@ export async function GET(request) {
               ...uniqueLinks.filter((u) => !u.toLowerCase().includes("click?")),
             ];
 
-            const docLinks = [...new Set(allUrlsToScore)]
+            docLinks = [...new Set(allUrlsToScore)]
               .map((url) => {
                 const urlLower = url.toLowerCase();
                 let score = 0;
@@ -1947,8 +1980,9 @@ export async function GET(request) {
                 if (urlLower.includes("contract")) score += 20;
                 if (urlLower.includes("document")) score += 15;
                 if (urlLower.includes("download")) score += 15;
-                if (urlLower.includes("sharepoint")) score += 15;
-                if (urlLower.includes("onedrive")) score += 15;
+                if (urlLower.includes("sharepoint")) score += 40;
+                if (urlLower.includes("onedrive")) score += 40;
+                if (urlLower.includes("1drv.ms")) score += 40;
                 if (urlLower.includes("dropbox")) score += 35;
                 if (urlLower.includes("drive.google")) score += 40;
                 if (urlLower.includes("docs.google")) score += 40;
@@ -2031,6 +2065,48 @@ export async function GET(request) {
                 break;
               } catch (dlErr) {
                 console.log("[ContractCron] Download failed:", dlErr.message, "— trying next");
+              }
+            }
+          }
+
+          // SharePoint fallback — strip Graph Authorization
+          // header and retry without it
+          if (!base64Content) {
+            const spCandidate = docLinks.find(
+              (d) =>
+                d.url.toLowerCase().includes("sharepoint.com") ||
+                d.url.toLowerCase().includes("1drv.ms"),
+            );
+            if (spCandidate) {
+              try {
+                const spUrl = normalizeDocUrl(spCandidate.url);
+                console.log(
+                  "[ContractCron] SharePoint fallback (no auth):",
+                  spUrl.slice(0, 100),
+                );
+                const spRes = await fetch(spUrl, {
+                  headers: {
+                    "User-Agent":
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                  },
+                  redirect: "follow",
+                  signal: AbortSignal.timeout(20000),
+                });
+                if (spRes.ok) {
+                  const ct = spRes.headers.get("content-type") || "";
+                  const ab = await spRes.arrayBuffer();
+                  if (ab.byteLength > 10000) {
+                    base64Content = Buffer.from(ab).toString("base64");
+                    docType = ct.includes("wordprocessingml") ? "docx" : "pdf";
+                    console.log(
+                      "[ContractCron] SharePoint fallback succeeded:",
+                      ab.byteLength,
+                      "bytes",
+                    );
+                  }
+                }
+              } catch (spErr) {
+                console.log("[ContractCron] SharePoint fallback failed:", spErr.message);
               }
             }
           }
