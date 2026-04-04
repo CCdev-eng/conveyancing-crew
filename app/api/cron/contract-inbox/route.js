@@ -2167,7 +2167,7 @@ export async function GET(request) {
         results.processed++;
         console.log("[ContractCron] ✓ Completed:", email.subject);
       } catch (err) {
-        console.error("[ContractCron] Failed for:", email.subject, "|", err.message);
+        console.error("[ContractCron] Failed processing email:", email?.id, email?.subject, err.message, err.stack);
         results.failed++;
 
         if (inboxRecord?.id) {
