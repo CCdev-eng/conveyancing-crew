@@ -2488,6 +2488,8 @@ export default function App() {
   const [linkReviewModal, setLinkReviewModal] = useState(null);
   const [linkReviewSearch, setLinkReviewSearch] = useState("");
   const [reviewLinkToast, setReviewLinkToast] = useState(null);
+  const [bellDraftMatters, setBellDraftMatters] = useState([]);
+  const [bellDraftBusy, setBellDraftBusy] = useState(null);
 
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
@@ -2847,6 +2849,26 @@ Maximum 300 words.`,
       }
     } catch (err) {
       console.error("[ContractInbox] Catch error:", err.message, err);
+    }
+  }, []);
+
+  const loadBellDraftMatters = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("matters")
+        .select("matter_ref,client_name,type,address,created_at,opened_date")
+        .eq("matter_status", "draft")
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(5);
+      if (error) {
+        console.error("[BellDrafts] load error:", error);
+        setBellDraftMatters([]);
+        return;
+      }
+      setBellDraftMatters(data || []);
+    } catch (e) {
+      console.error("[BellDrafts] load catch:", e);
+      setBellDraftMatters([]);
     }
   }, []);
 
@@ -4047,6 +4069,7 @@ If no matches found return: []`
     setNotifications(notifs);
     setNotifAI(null);
     void loadContractInbox();
+    void loadBellDraftMatters();
   };
 
   const generateMorningBrief = async () => {
@@ -5944,6 +5967,163 @@ Return only the email body text, no subject line.`;
                 animation: "fadeUp 0.2s ease"
               }}
             >
+              {bellDraftMatters.length > 0 && (
+                <div
+                  style={{
+                    flexShrink: 0,
+                    padding: "12px 14px",
+                    background: "linear-gradient(180deg, #fffbeb 0%, #fef9e8 100%)",
+                    borderBottom: "2px solid #e8c468",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
+                    maxHeight: 220,
+                    overflowY: "auto",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 9,
+                      fontFamily: "var(--font-mono)",
+                      color: "#92400e",
+                      textTransform: "uppercase",
+                      letterSpacing: "1.2px",
+                      marginBottom: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    📬 New enquiries — review required
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {bellDraftMatters.map((dm) => {
+                      const ref = dm.matter_ref;
+                      const receivedRaw = dm.created_at || dm.opened_date;
+                      let receivedLabel = "—";
+                      if (receivedRaw) {
+                        const d = new Date(receivedRaw);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const d0 = new Date(d);
+                        d0.setHours(0, 0, 0, 0);
+                        const isToday = d0.getTime() === today.getTime();
+                        const timeStr = d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+                        receivedLabel = isToday
+                          ? `Today ${timeStr}`
+                          : d.toLocaleString("en-AU", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            });
+                      }
+                      const busy = bellDraftBusy === ref;
+                      return (
+                        <div
+                          key={ref}
+                          style={{
+                            border: "1.5px solid #d4a846",
+                            borderRadius: 10,
+                            background: "white",
+                            padding: "12px 14px",
+                            boxShadow: "0 1px 3px rgba(180, 130, 40, 0.12)",
+                          }}
+                        >
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#1a2744", marginBottom: 4 }}>
+                            {dm.client_name || "—"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#57534e", marginBottom: 2 }}>{dm.type || "—"}</div>
+                          <div style={{ fontSize: 11, color: "#57534e", marginBottom: 2 }}>{dm.address || "—"}</div>
+                          <div style={{ fontSize: 10, color: "#a16207", marginBottom: 8, fontFamily: "var(--font-mono)" }}>
+                            Received: {receivedLabel}
+                          </div>
+                          <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#92400e", marginBottom: 10 }}>
+                            {ref}
+                          </div>
+                          <div style={{ display: "flex", gap: 8 }} onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={async () => {
+                                if (!ref || busy) return;
+                                setBellDraftBusy(ref);
+                                try {
+                                  const nowIso = new Date().toISOString();
+                                  const { error: uErr } = await supabase
+                                    .from("matters")
+                                    .update({ matter_status: "pipeline" })
+                                    .eq("matter_ref", ref);
+                                  if (uErr) throw uErr;
+                                  const { error: wErr } = await supabase.from("matter_workflow").insert({
+                                    matter_ref: ref,
+                                    step_key: "step_01",
+                                    completed: true,
+                                    completed_at: nowIso,
+                                    updated_at: nowIso,
+                                  });
+                                  if (wErr) throw wErr;
+                                  await fetchMatters();
+                                  setBellDraftMatters((prev) => prev.filter((m) => m.matter_ref !== ref));
+                                  setReviewLinkToast(`Matter activated — ${ref}`);
+                                  setTimeout(() => setReviewLinkToast(null), 3500);
+                                } catch (err) {
+                                  console.error("[BellDrafts] confirm failed:", err);
+                                } finally {
+                                  setBellDraftBusy(null);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                fontSize: 11,
+                                padding: "7px 10px",
+                                borderRadius: 6,
+                                border: "1px solid #ca8a04",
+                                background: "#fffbeb",
+                                color: "#92400e",
+                                cursor: busy ? "wait" : "pointer",
+                                fontWeight: 600,
+                                opacity: busy ? 0.7 : 1,
+                              }}
+                            >
+                              {"✅ Confirm & activate"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={async () => {
+                                if (!ref || busy) return;
+                                setBellDraftBusy(ref);
+                                try {
+                                  await supabase.from("enquiry_inbox").update({ status: "discarded" }).eq("matter_ref", ref);
+                                  const { error: delErr } = await supabase.from("matters").delete().eq("matter_ref", ref);
+                                  if (delErr) throw delErr;
+                                  await fetchMatters();
+                                  setBellDraftMatters((prev) => prev.filter((m) => m.matter_ref !== ref));
+                                } catch (err) {
+                                  console.error("[BellDrafts] discard failed:", err);
+                                } finally {
+                                  setBellDraftBusy(null);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                fontSize: 11,
+                                padding: "7px 10px",
+                                borderRadius: 6,
+                                border: "1px solid #d6d3d1",
+                                background: "white",
+                                color: "#57534e",
+                                cursor: busy ? "wait" : "pointer",
+                                fontWeight: 600,
+                                opacity: busy ? 0.7 : 1,
+                              }}
+                            >
+                              🗑️ Discard
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div
                 style={{
                   display: "flex",
@@ -6491,6 +6671,7 @@ Return only the email body text, no subject line.`;
                     } else {
                       void loadContractInbox();
                     }
+                    void loadBellDraftMatters();
                   }}
                 >
                   ↺ Refresh
