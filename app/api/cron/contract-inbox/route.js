@@ -800,10 +800,31 @@ export async function GET(request) {
           if (existing.status === "failed") {
             const ageMs = new Date() - new Date(existing.created_at || 0);
             const olderThan24h = ageMs > 24 * 60 * 60 * 1000;
+            /*
+             * Run in Supabase SQL editor (one-off). Copy the SQL below as-is:
+             *
+UPDATE contract_review_inbox
+SET status = 'failed',
+    error_message = 'Permanently failed - will not retry'
+WHERE status = 'failed'
+AND (
+  error_message ILIKE '%fetch failed%' OR
+  error_message ILIKE '%PDF too large%' OR
+  error_message ILIKE '%100 page limit%' OR
+  error_message ILIKE '%Timed out%'
+);
+             */
             const isTerminal =
               existing.error_message?.includes("No attachments and not a forwarded email") ||
               existing.error_message?.includes("No PDF header found") ||
-              (existing.error_message?.includes("none could be downloaded") && olderThan24h);
+              existing.error_message?.includes("PDF too large") ||
+              existing.error_message?.includes("100 page limit") ||
+              existing.error_message?.includes("fetch failed") ||
+              existing.error_message?.includes("Timed out - reset manually") ||
+              existing.error_message?.includes("requires login or are expired") ||
+              existing.error_message?.includes("Could not download") ||
+              (existing.error_message?.includes("none could be downloaded") && olderThan24h) ||
+              olderThan24h; // Any failure older than 24h is terminal
             if (isTerminal) {
               console.log(
                 "[ContractCron] Skipping terminal failure:",
