@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback, Fragment } from "react";
+import { flushSync } from "react-dom";
 import { supabase } from "../lib/supabase";
 /** Parse fetch Response body as JSON; on failure log snippet and return {} */
 async function safeParseFetchJson(res) {
@@ -2583,20 +2584,36 @@ function ContractReviewsBellTab({
                         )}
 
                         {item.body_preview && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#4b5563",
-                              lineHeight: 1.5,
-                              marginBottom: 8,
-                              padding: "8px 10px",
-                              background: "white",
-                              borderRadius: 6,
-                              border: "1px solid #e8f0fb",
-                            }}
-                          >
-                            {item.body_preview.slice(0, 200)}
-                            {item.body_preview.length > 200 ? "…" : ""}
+                          <div style={{ marginBottom: 8 }}>
+                            <div
+                              style={{
+                                fontSize: 9,
+                                fontWeight: 700,
+                                fontFamily: "DM Mono, monospace",
+                                color: "#6b7a99",
+                                textTransform: "uppercase",
+                                letterSpacing: 1,
+                                marginBottom: 4,
+                              }}
+                            >
+                              📧 Email Preview
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#4b5563",
+                                lineHeight: 1.6,
+                                padding: "10px 12px",
+                                background: "white",
+                                borderRadius: 6,
+                                border: "1px solid #e8f0fb",
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {String(item.body_preview).slice(0, 300)}
+                              {String(item.body_preview).length > 300 ? "…" : ""}
+                            </div>
                           </div>
                         )}
 
@@ -3441,6 +3458,7 @@ export default function App() {
   const [bellTab, setBellTab] = useState("notifications");
   const [bellSeen, setBellSeen] = useState(false);
   const bellSeenRef = React.useRef(false);
+  const lastSeenUnreadRef = React.useRef(0);
   const [bellClosing, setBellClosing] = useState(false);
   const [bellShaking, setBellShaking] = useState(false);
   const [prevUnread, setPrevUnread] = useState(0);
@@ -3806,11 +3824,15 @@ Maximum 300 words.`,
       if (data) {
         setContractInboxItems(data);
         const unread = data.filter((d) => !d.is_read).length;
-        if (bellSeenRef.current) {
-          setContractInboxUnread(0);
+        const prevSeenFloor = lastSeenUnreadRef.current;
+        lastSeenUnreadRef.current = Math.min(lastSeenUnreadRef.current, unread);
+        if (unread > prevSeenFloor) {
+          setContractInboxUnread(unread - prevSeenFloor);
+          setBellSeen(false);
+          bellSeenRef.current = false;
+          lastSeenUnreadRef.current = unread;
         } else {
-          setContractInboxUnread(unread);
-          if (unread > 0) setBellSeen(false);
+          setContractInboxUnread(0);
         }
         setPrevUnread((prev) => {
           if (unread > prev && !notifOpen) {
@@ -5041,7 +5063,6 @@ If no matches found return: []`
   const openNotifications = async () => {
     if (notifOpen) {
       setBellClosing(true);
-      bellSeenRef.current = false;
       setTimeout(() => {
         setBellClosing(false);
         setNotifOpen(false);
@@ -5050,9 +5071,13 @@ If no matches found return: []`
     }
     setNotifOpen(true);
     setBellTab("notifications");
+    setContractInboxUnread(0);
     setBellSeen(true);
     bellSeenRef.current = true;
-    setContractInboxUnread(0);
+    flushSync(() => {
+      setNotifications([]);
+    });
+    lastSeenUnreadRef.current = contractInboxUnread;
     const notifs = buildNotifications();
     setNotifications(notifs);
     setNotifAI(null);
