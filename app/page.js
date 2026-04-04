@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback, Fragment } from "react";
-import { flushSync } from "react-dom";
 import { supabase } from "../lib/supabase";
 /** Parse fetch Response body as JSON; on failure log snippet and return {} */
 async function safeParseFetchJson(res) {
@@ -3455,10 +3454,16 @@ export default function App() {
   const searchRef = useRef(null);
 
   const [notifOpen, setNotifOpen] = useState(false);
+  const notifOpenRef = React.useRef(false);
+  useEffect(() => {
+    notifOpenRef.current = notifOpen;
+  }, [notifOpen]);
   const [bellTab, setBellTab] = useState("notifications");
   const [bellSeen, setBellSeen] = useState(false);
   const bellSeenRef = React.useRef(false);
-  const lastSeenUnreadRef = React.useRef(0);
+  useEffect(() => {
+    bellSeenRef.current = bellSeen;
+  }, [bellSeen]);
   const [bellClosing, setBellClosing] = useState(false);
   const [bellShaking, setBellShaking] = useState(false);
   const [prevUnread, setPrevUnread] = useState(0);
@@ -3823,19 +3828,27 @@ Maximum 300 words.`,
 
       if (data) {
         setContractInboxItems(data);
-        const unread = data.filter((d) => !d.is_read).length;
-        const prevSeenFloor = lastSeenUnreadRef.current;
-        lastSeenUnreadRef.current = Math.min(lastSeenUnreadRef.current, unread);
-        if (unread > prevSeenFloor) {
-          setContractInboxUnread(unread - prevSeenFloor);
-          setBellSeen(false);
+        const newComplete = data.filter(
+          (d) => d.status === "complete" && !d.is_read && !d.is_actioned
+        ).length;
+        if (newComplete === 0) {
+          bellSeenRef.current = true;
+          setBellSeen(true);
+        } else if (!notifOpenRef.current) {
           bellSeenRef.current = false;
-          lastSeenUnreadRef.current = unread;
-        } else {
-          setContractInboxUnread(0);
+          setBellSeen(false);
         }
+
+        const unread = data.filter((d) => !d.is_read).length;
+
+        if (bellSeenRef.current) {
+          setContractInboxUnread(0);
+        } else {
+          setContractInboxUnread(unread);
+        }
+
         setPrevUnread((prev) => {
-          if (unread > prev && !notifOpen) {
+          if (unread > prev && !bellSeenRef.current) {
             setBellShaking(true);
             setTimeout(() => setBellShaking(false), 600);
           }
@@ -3848,7 +3861,7 @@ Maximum 300 words.`,
     } catch (err) {
       console.error("[ContractInbox] Catch error:", err.message, err);
     }
-  }, [notifOpen]);
+  }, []);
 
   const loadBellDraftMatters = useCallback(async () => {
     try {
@@ -5059,7 +5072,7 @@ If no matches found return: []`
     return notifs;
   };
 
-  /** Toggle bell panel. Notifications are built from tasks / calendar / matters already in memory; contract inbox from Supabase via loadContractInbox (no /api/chat). */
+  /** Toggle bell panel. Notifications from tasks / calendar / matters; contract inbox from Supabase via loadContractInbox. */
   const openNotifications = async () => {
     if (notifOpen) {
       setBellClosing(true);
@@ -5071,13 +5084,10 @@ If no matches found return: []`
     }
     setNotifOpen(true);
     setBellTab("notifications");
-    setContractInboxUnread(0);
     setBellSeen(true);
     bellSeenRef.current = true;
-    flushSync(() => {
-      setNotifications([]);
-    });
-    lastSeenUnreadRef.current = contractInboxUnread;
+    setContractInboxUnread(0);
+    setNotifications([]);
     const notifs = buildNotifications();
     setNotifications(notifs);
     setNotifAI(null);
@@ -5088,7 +5098,7 @@ If no matches found return: []`
       .update({ is_read: true })
       .eq("is_read", false)
       .eq("status", "complete")
-      .then(() => loadContractInbox());
+      .then(() => {});
   };
 
   const generateMorningBrief = async () => {
@@ -7179,7 +7189,7 @@ Return only the email body text, no subject line.`;
                   }}
                 >
                   🔔 Notifications
-                  {notifications.length > 0 && (
+                  {notifications.length > 0 && !notifOpen && (
                     <span
                       style={{
                         marginLeft: 8,
