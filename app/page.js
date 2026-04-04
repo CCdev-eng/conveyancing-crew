@@ -924,6 +924,11 @@ const EMAIL_TEMPLATES_WF = {
     subject: `Your Property Purchase — ${m?.address || ""}`,
     body: `Hi ${m?.client_first_name || m?.client?.split(" ")[0] || "there"},\n\nThank you for choosing Conveyancing Crew to assist with your property purchase at ${m?.address || "the above property"}.\n\nPlease forward our email address (gitu@conveyancingcrew.com.au) to your real estate agent so they can update the contract with our details, or have the contract sent directly to us.\n\nWe look forward to working with you.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
   }),
+  cr_summary: (m) => ({
+    to: m?.client_email || m?.email || "",
+    subject: `Contract Review Summary — ${m?.address || ""}`,
+    body: `Hi ${m?.client_first_name || m?.client?.split(" ")[0] || "there"},\n\nThanks for sending through the contract for ${m?.address || "the property"}.\n\nPlease find attached our plain-English summary of the key terms, risks and recommended next steps.\n\nIf you'd like, we can also schedule a quick call to walk through the recommendations together.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+  }),
   auth_forms: (m) => ({
     to: m?.client_email || m?.email || "",
     subject: `Action Required — Authorisation Forms | ${m?.address || ""}`,
@@ -961,6 +966,333 @@ function addBusinessDaysWF(dateStr, days) {
     if (dow !== 0 && dow !== 6) added++;
   }
   return d.toISOString().split("T")[0];
+}
+
+const CR_STEPS = [
+  {
+    key: "cr_step_01",
+    num: "01",
+    title: "AI Contract Review Completed",
+    what: "Contract reviewed by AI — red flags and summary generated.",
+    tier: "A",
+    tierNote: "Auto-completed when contract was received",
+    action: null,
+    autoComplete: true,
+  },
+  {
+    key: "cr_step_02",
+    num: "02",
+    title: "Review Summary Sent to Client",
+    what: "Send the AI-generated plain-English summary to the client.",
+    tier: "B",
+    tierNote: "One click — email sent to client",
+    action: {
+      type: "email",
+      template: "cr_summary",
+      label: "Send Summary to Client",
+      icon: "📧",
+    },
+  },
+  {
+    key: "cr_step_03",
+    num: "03",
+    title: "Phone Call with Client Completed",
+    what: "Call client to explain the contract, answer questions and discuss recommendations.",
+    tier: "D",
+    tierNote: "Manual — tick when call is done",
+    action: null,
+    isLast: true,
+  },
+];
+
+function ContractReviewWorkflow({
+  matter, supabase
+}) {
+  const matterRef = matter?.matter_ref || matter?.id;
+  const [wfData, setWfData] = React.useState({});
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(null);
+  const [emailModal, setEmailModal] = React.useState(null);
+  const [sending, setSending] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!matterRef) return;
+    loadAll();
+  }, [matterRef]);
+
+  const loadAll = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("matter_workflow").select("*").eq("matter_ref", matterRef);
+    if (error) {
+      console.error("[CRWorkflow] load failed:", error);
+      setLoading(false);
+      return;
+    }
+    const map = {};
+    (data || []).forEach((r) => { map[r.step_key] = r; });
+
+    // Keep step 01 aligned with contract review ingestion.
+    if (!map.cr_step_01?.completed) {
+      const nowIso = new Date().toISOString();
+      const row = {
+        matter_ref: matterRef,
+        step_key: "cr_step_01",
+        completed: true,
+        completed_at: nowIso,
+        updated_at: nowIso,
+      };
+      const { error: upErr } = await supabase.from("matter_workflow").upsert(row, { onConflict: "matter_ref,step_key" });
+      if (upErr) {
+        console.error("[CRWorkflow] auto-complete step 01 failed:", upErr);
+      } else {
+        map.cr_step_01 = row;
+      }
+    }
+
+    setWfData(map);
+    setLoading(false);
+  };
+
+  const isCompleted = (key) => !!wfData[key]?.completed;
+
+  const persistStep = async (stepKey, done) => {
+    if (!matterRef) return;
+    setSaving(stepKey);
+    const nowIso = new Date().toISOString();
+    const row = {
+      matter_ref: matterRef,
+      step_key: stepKey,
+      completed: done,
+      completed_at: done ? nowIso : null,
+      updated_at: nowIso,
+    };
+    const { error } = await supabase.from("matter_workflow").upsert(row, { onConflict: "matter_ref,step_key" });
+    if (error) {
+      console.error("[CRWorkflow] persist step failed:", stepKey, error);
+      setSaving(null);
+      return;
+    }
+    setWfData((prev) => ({ ...prev, [stepKey]: { ...(prev[stepKey] || {}), ...row } }));
+    if (stepKey === "cr_step_03" && done) {
+      const { error: mErr } = await supabase.from("matters").update({ matter_status: "closed" }).eq("matter_ref", matterRef);
+      if (mErr) console.error("[CRWorkflow] close matter failed:", mErr);
+    }
+    setSaving(null);
+  };
+
+  const toggleStep = async (stepKey) => {
+    if (saving === stepKey) return;
+    await persistStep(stepKey, !isCompleted(stepKey));
+  };
+
+  const openEmailModal = (templateKey, stepKey) => {
+    const tpl = EMAIL_TEMPLATES_WF[templateKey]?.(matter) || { to: "", subject: "", body: "" };
+    setEmailModal({ ...tpl, stepKey });
+  };
+
+  const sendEmail = async () => {
+    if (!emailModal) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emailModal.to,
+          subject: emailModal.subject,
+          body: emailModal.body,
+          matterId: matterRef,
+        }),
+      });
+      if (res.ok) {
+        await persistStep(emailModal.stepKey, true);
+        setEmailModal(null);
+      } else {
+        alert("Email failed — please try again.");
+      }
+    } catch (err) {
+      console.error("[CRWorkflow] send email failed:", err);
+      alert("Error sending email.");
+    }
+    setSending(false);
+  };
+
+  const handleAction = (step) => {
+    if (!step?.action) return;
+    if (step.action.type === "email") openEmailModal(step.action.template, step.key);
+  };
+
+  const doneCount = CR_STEPS.filter((s) => isCompleted(s.key)).length;
+  const progressPct = Math.round((doneCount / CR_STEPS.length) * 100);
+  const nextStep = CR_STEPS.find((s) => !isCompleted(s.key));
+
+  const TIER_STYLE = {
+    A: { label: "Auto", color: "#1a7a4a", bg: "#e6f5ee" },
+    B: { label: "1 click", color: "#245eb0", bg: "#e8f0fb" },
+    D: { label: "Manual", color: "#8a96b0", bg: "#eef0f5" },
+  };
+
+  if (loading) {
+    return <div style={{ padding: 60, textAlign: "center", color: "#8a96b0", fontSize: 14 }}>Loading workflow…</div>;
+  }
+
+  return (
+    <div style={{ maxWidth: 780, padding: "20px 0", fontFamily: "DM Sans, sans-serif" }}>
+      {nextStep && (
+        <div style={{ background: "linear-gradient(135deg,#92400e,#ca8a04)", borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}>
+          <span style={{ fontSize: 22 }}>📑</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Next action</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Step {nextStep.num} — {nextStep.title}</div>
+          </div>
+          {nextStep.action && (
+            <button
+              type="button"
+              onClick={() => handleAction(nextStep)}
+              style={{ background: "white", color: "#92400e", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              {nextStep.action.icon} {nextStep.action.label}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div style={{ background: "#fff", border: "1.5px solid #dce3f0", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
+          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#a3a3a3", textTransform: "uppercase", letterSpacing: 1 }}>Progress</span>
+          <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#92400e", fontWeight: 600 }}>{doneCount}/{CR_STEPS.length} · {progressPct}%</span>
+        </div>
+        <div style={{ height: 7, background: "#f5f5f4", borderRadius: 5, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg,#f59e0b,#ca8a04)", borderRadius: 5, transition: "width 0.25s ease" }} />
+        </div>
+      </div>
+
+      {CR_STEPS.map((step) => {
+        const done = isCompleted(step.key);
+        const tier = TIER_STYLE[step.tier] || TIER_STYLE.D;
+        const completedAt = wfData[step.key]?.completed_at;
+        return (
+          <div key={step.key} style={{ display: "flex", gap: 12, alignItems: "stretch", marginBottom: 12 }}>
+            <div
+              onClick={() => {
+                if (step.autoComplete) return;
+                toggleStep(step.key);
+              }}
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                marginTop: 2,
+                border: `2px solid ${done ? "#1a7a4a" : "#cbd5e1"}`,
+                background: done ? "#1a7a4a" : "#f8fafc",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: step.autoComplete ? "default" : "pointer",
+                opacity: saving === step.key ? 0.5 : 1,
+                flexShrink: 0,
+              }}
+            >
+              {done && <svg width="11" height="9" viewBox="0 0 12 10" fill="none"><path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+            </div>
+            <div style={{ flex: 1, border: `1.5px solid ${done ? "#b8e0ca" : "#dce3f0"}`, borderRadius: 12, background: done ? "#f8fffb" : "#fff", padding: "12px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#92400e", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 6, padding: "2px 6px" }}>
+                  Step {step.num}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: done ? "#7c8b9f" : "#1a2744" }}>{step.title}</span>
+                <span style={{ marginLeft: "auto", fontSize: 10, color: tier.color, background: tier.bg, borderRadius: 999, padding: "3px 8px", fontWeight: 600 }}>
+                  {tier.label}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: "#475569", marginBottom: 6 }}>{step.what}</div>
+              <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 10 }}>{step.tierNote}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 10, color: "#94a3b8", fontFamily: "DM Mono, monospace" }}>
+                  {completedAt ? `Completed: ${new Date(completedAt).toLocaleString("en-AU")}` : "Not completed yet"}
+                </div>
+                {step.action ? (
+                  <button
+                    type="button"
+                    onClick={() => handleAction(step)}
+                    disabled={done || saving === step.key || sending}
+                    style={{
+                      border: "none",
+                      borderRadius: 7,
+                      padding: "7px 10px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: done ? "#e2e8f0" : "#245eb0",
+                      color: done ? "#64748b" : "white",
+                      cursor: done ? "default" : "pointer",
+                    }}
+                  >
+                    {step.action.icon} {done ? "Completed" : step.action.label}
+                  </button>
+                ) : !step.autoComplete ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleStep(step.key)}
+                    disabled={saving === step.key}
+                    style={{
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 7,
+                      padding: "7px 10px",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: "white",
+                      color: "#334155",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {done ? "Mark incomplete" : "Mark complete"}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11, color: "#1a7a4a", fontWeight: 600 }}>Auto-completed</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {emailModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ width: "min(620px, 100%)", background: "white", borderRadius: 12, border: "1px solid #dce3f0", boxShadow: "0 20px 55px rgba(15,23,42,0.3)" }}>
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid #e2e8f0", fontSize: 14, fontWeight: 700, color: "#1a2744" }}>Send Contract Review Summary</div>
+            <div style={{ padding: 16, display: "grid", gap: 10 }}>
+              <input
+                value={emailModal.to}
+                onChange={(e) => setEmailModal((p) => ({ ...p, to: e.target.value }))}
+                placeholder="To"
+                style={{ border: "1px solid #dce3f0", borderRadius: 8, padding: "9px 10px", fontSize: 12 }}
+              />
+              <input
+                value={emailModal.subject}
+                onChange={(e) => setEmailModal((p) => ({ ...p, subject: e.target.value }))}
+                placeholder="Subject"
+                style={{ border: "1px solid #dce3f0", borderRadius: 8, padding: "9px 10px", fontSize: 12 }}
+              />
+              <textarea
+                value={emailModal.body}
+                onChange={(e) => setEmailModal((p) => ({ ...p, body: e.target.value }))}
+                rows={12}
+                style={{ border: "1px solid #dce3f0", borderRadius: 8, padding: "10px 11px", fontSize: 12, lineHeight: 1.5, resize: "vertical" }}
+              />
+            </div>
+            <div style={{ padding: "12px 16px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" onClick={() => setEmailModal(null)} disabled={sending} style={{ border: "1px solid #cbd5e1", background: "white", color: "#334155", borderRadius: 7, padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button type="button" onClick={sendEmail} disabled={sending} style={{ border: "none", background: "#245eb0", color: "white", borderRadius: 7, padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: sending ? 0.7 : 1 }}>
+                {sending ? "Sending..." : "Send Email"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMatterNotesSaved }) {
@@ -7053,7 +7385,6 @@ Return only the email body text, no subject line.`;
                               minute: "2-digit",
                             });
                       }
-                      const busy = bellDraftBusy === ref;
                       return (
                         <div
                           key={ref}
@@ -7076,34 +7407,51 @@ Return only the email body text, no subject line.`;
                           <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#92400e", marginBottom: 10 }}>
                             {ref}
                           </div>
-                          <div style={{ display: "flex", gap: 8 }} onClick={(e) => e.stopPropagation()}>
+                          <div style={{ marginBottom: 8 }}>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "#92400e",
+                                fontFamily: "DM Mono, monospace",
+                                textTransform: "uppercase",
+                                letterSpacing: 0.8,
+                                marginBottom: 6,
+                                fontWeight: 600,
+                              }}
+                            >
+                              What type of matter is this?
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={bellDraftBusy === ref}
                               onClick={async () => {
-                                if (!ref || busy) return;
+                                if (!ref || bellDraftBusy === ref) return;
                                 setBellDraftBusy(ref);
                                 try {
                                   const nowIso = new Date().toISOString();
-                                  const { error: uErr } = await supabase
+                                  await supabase
                                     .from("matters")
-                                    .update({ matter_status: "pipeline" })
+                                    .update({
+                                      matter_status: "pipeline",
+                                      type: "Purchase",
+                                    })
                                     .eq("matter_ref", ref);
-                                  if (uErr) throw uErr;
-                                  const { error: wErr } = await supabase.from("matter_workflow").insert({
+                                  await supabase
+                                    .from("matter_workflow")
+                                    .insert({
                                     matter_ref: ref,
                                     step_key: "step_01",
                                     completed: true,
                                     completed_at: nowIso,
                                     updated_at: nowIso,
                                   });
-                                  if (wErr) throw wErr;
                                   await fetchMatters();
                                   setBellDraftMatters((prev) => prev.filter((m) => m.matter_ref !== ref));
-                                  setReviewLinkToast(`Matter activated — ${ref}`);
+                                  setReviewLinkToast(`Purchase matter created — ${ref}`);
                                   setTimeout(() => setReviewLinkToast(null), 3500);
                                 } catch (err) {
-                                  console.error("[BellDrafts] confirm failed:", err);
+                                  console.error("[BellDrafts] purchase failed:", err);
                                 } finally {
                                   setBellDraftBusy(null);
                                 }
@@ -7111,28 +7459,76 @@ Return only the email body text, no subject line.`;
                               style={{
                                 flex: 1,
                                 fontSize: 11,
-                                padding: "7px 10px",
+                                padding: "7px 8px",
                                 borderRadius: 6,
-                                border: "1px solid #ca8a04",
-                                background: "#fffbeb",
-                                color: "#92400e",
-                                cursor: busy ? "wait" : "pointer",
+                                border: "none",
+                                background: "#245eb0",
+                                color: "white",
+                                cursor: bellDraftBusy === ref ? "wait" : "pointer",
                                 fontWeight: 600,
-                                opacity: busy ? 0.7 : 1,
+                                opacity: bellDraftBusy === ref ? 0.7 : 1,
                               }}
                             >
-                              {"✅ Confirm & activate"}
+                              🏠 Purchase
                             </button>
                             <button
                               type="button"
-                              disabled={busy}
+                              disabled={bellDraftBusy === ref}
                               onClick={async () => {
-                                if (!ref || busy) return;
+                                if (!ref || bellDraftBusy === ref) return;
+                                setBellDraftBusy(ref);
+                                try {
+                                  const nowIso = new Date().toISOString();
+                                  await supabase
+                                    .from("matters")
+                                    .update({
+                                      matter_status: "pipeline",
+                                      type: "Contract Review",
+                                    })
+                                    .eq("matter_ref", ref);
+                                  await supabase
+                                    .from("matter_workflow")
+                                    .insert({
+                                      matter_ref: ref,
+                                      step_key: "cr_step_01",
+                                      completed: true,
+                                      completed_at: nowIso,
+                                      updated_at: nowIso,
+                                    });
+                                  await fetchMatters();
+                                  setBellDraftMatters((prev) => prev.filter((m) => m.matter_ref !== ref));
+                                  setReviewLinkToast(`Contract Review matter created — ${ref}`);
+                                  setTimeout(() => setReviewLinkToast(null), 3500);
+                                } catch (err) {
+                                  console.error("[BellDrafts] CR failed:", err);
+                                } finally {
+                                  setBellDraftBusy(null);
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                fontSize: 11,
+                                padding: "7px 8px",
+                                borderRadius: 6,
+                                border: "1.5px solid #ca8a04",
+                                background: "white",
+                                color: "#92400e",
+                                cursor: bellDraftBusy === ref ? "wait" : "pointer",
+                                fontWeight: 600,
+                                opacity: bellDraftBusy === ref ? 0.7 : 1,
+                              }}
+                            >
+                              📋 Review Only
+                            </button>
+                            <button
+                              type="button"
+                              disabled={bellDraftBusy === ref}
+                              onClick={async () => {
+                                if (!ref || bellDraftBusy === ref) return;
                                 setBellDraftBusy(ref);
                                 try {
                                   await supabase.from("enquiry_inbox").update({ status: "discarded" }).eq("matter_ref", ref);
-                                  const { error: delErr } = await supabase.from("matters").delete().eq("matter_ref", ref);
-                                  if (delErr) throw delErr;
+                                  await supabase.from("matters").delete().eq("matter_ref", ref);
                                   await fetchMatters();
                                   setBellDraftMatters((prev) => prev.filter((m) => m.matter_ref !== ref));
                                 } catch (err) {
@@ -7142,20 +7538,20 @@ Return only the email body text, no subject line.`;
                                 }
                               }}
                               style={{
-                                flex: 1,
                                 fontSize: 11,
                                 padding: "7px 10px",
                                 borderRadius: 6,
-                                border: "1px solid #d6d3d1",
+                                border: "1.5px solid #e2e8f0",
                                 background: "white",
-                                color: "#57534e",
-                                cursor: busy ? "wait" : "pointer",
+                                color: "#94a3b8",
+                                cursor: bellDraftBusy === ref ? "wait" : "pointer",
                                 fontWeight: 600,
-                                opacity: busy ? 0.7 : 1,
+                                opacity: bellDraftBusy === ref ? 0.7 : 1,
                               }}
                             >
-                              🗑️ Discard
+                              🗑️
                             </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -8679,6 +9075,13 @@ Return only the email body text, no subject line.`;
           }}
         />
       )
+    : selMatterObj?.type === "Contract Review"
+      ? (
+          <ContractReviewWorkflow
+            matter={selMatterObj}
+            supabase={supabase}
+          />
+        )
     : (() => {
         const typeMap = { "Purchase":"Purchase","Sale":"Sale","Lease":"Lease","Contract Review":"Contract Review","General Enquiry":"General Enquiry" };
         const wfKey = typeMap[selMatterObj.type] || "Purchase";
