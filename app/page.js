@@ -1584,6 +1584,7 @@ const CSS = `
 body{font-family:var(--font-body);background:var(--surface);color:var(--text);overflow:hidden}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bellShake{0%,100%{transform:rotate(0)}15%{transform:rotate(-12deg)}30%{transform:rotate(10deg)}45%{transform:rotate(-8deg)}60%{transform:rotate(6deg)}75%{transform:rotate(-4deg)}90%{transform:rotate(2deg)}}.bell-shake{animation:bellShake 0.5s ease both}@keyframes badgePop{0%{transform:scale(0)}70%{transform:scale(1.3)}100%{transform:scale(1)}}.badge-pop{animation:badgePop 0.3s ease both}@keyframes dropdownOpen{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes dropdownClose{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(4px)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 @keyframes riskPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.5)}50%{box-shadow:0 0 0 10px rgba(220,38,38,0)}}
@@ -2480,6 +2481,10 @@ export default function App() {
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [bellTab, setBellTab] = useState("notifications");
+  const [bellSeen, setBellSeen] = useState(false);
+  const [bellClosing, setBellClosing] = useState(false);
+  const [bellShaking, setBellShaking] = useState(false);
+  const [prevUnread, setPrevUnread] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [notifAI, setNotifAI] = useState(null);
   const notifRef = useRef(null);
@@ -2842,7 +2847,17 @@ Maximum 300 words.`,
       if (data) {
         setContractInboxItems(data);
         const unread = data.filter((d) => !d.is_read).length;
-        setContractInboxUnread(unread);
+        if (!notifOpen) {
+          setContractInboxUnread(unread);
+          if (unread > 0) setBellSeen(false);
+        }
+        setPrevUnread((prev) => {
+          if (unread > prev && !notifOpen) {
+            setBellShaking(true);
+            setTimeout(() => setBellShaking(false), 600);
+          }
+          return unread;
+        });
         console.log("[ContractInbox] Set", data.length, "items,", unread, "unread");
       } else {
         console.log("[ContractInbox] No data returned");
@@ -2850,7 +2865,7 @@ Maximum 300 words.`,
     } catch (err) {
       console.error("[ContractInbox] Catch error:", err.message, err);
     }
-  }, []);
+  }, [notifOpen]);
 
   const loadBellDraftMatters = useCallback(async () => {
     try {
@@ -4063,13 +4078,29 @@ If no matches found return: []`
 
   /** Toggle bell panel. Notifications are built from tasks / calendar / matters already in memory; contract inbox from Supabase via loadContractInbox (no /api/chat). */
   const openNotifications = async () => {
-    setNotifOpen((open) => !open);
+    if (notifOpen) {
+      setBellClosing(true);
+      setTimeout(() => {
+        setBellClosing(false);
+        setNotifOpen(false);
+      }, 120);
+      return;
+    }
+    setNotifOpen(true);
     setBellTab("notifications");
+    setBellSeen(true);
+    setContractInboxUnread(0);
     const notifs = buildNotifications();
     setNotifications(notifs);
     setNotifAI(null);
     void loadContractInbox();
     void loadBellDraftMatters();
+    supabase
+      .from("contract_review_inbox")
+      .update({ is_read: true })
+      .eq("is_read", false)
+      .eq("status", "complete")
+      .then(() => loadContractInbox());
   };
 
   const generateMorningBrief = async () => {
@@ -5692,7 +5723,7 @@ Return only the email body text, no subject line.`;
                   </div>
                   <button
                     type="button"
-                    className="icon-btn"
+                    className={`icon-btn${bellShaking ? " bell-shake" : ""}`}
                     title="Notifications & contract reviews"
                     onClick={openNotifications}
                     style={{
@@ -5703,11 +5734,14 @@ Return only the email body text, no subject line.`;
                       fontSize: 18,
                       padding: 4,
                       lineHeight: 1,
+                      color: notifOpen ? "#245eb0" : "#6b7a99",
+                      transition: "color 0.15s ease",
                     }}
                   >
-                    🔔
-                    {contractInboxUnread > 0 && (
+                    {notifOpen ? "🔔" : "🔔"}
+                    {contractInboxUnread > 0 && !bellSeen && (
                       <span
+                        className="badge-pop"
                         style={{
                           position: "absolute",
                           top: -6,
@@ -5725,6 +5759,7 @@ Return only the email body text, no subject line.`;
                           padding: "0 3px",
                           fontFamily: "monospace",
                           lineHeight: 1,
+                          boxShadow: "0 0 0 2px white",
                         }}
                       >
                         {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
@@ -5882,7 +5917,7 @@ Return only the email body text, no subject line.`;
               </div>
               <button
                 type="button"
-                className="icon-btn"
+                className={`icon-btn${bellShaking ? " bell-shake" : ""}`}
                 title="Notifications & contract reviews"
                 onClick={openNotifications}
                 style={{
@@ -5893,11 +5928,14 @@ Return only the email body text, no subject line.`;
                   fontSize: 18,
                   padding: 4,
                   lineHeight: 1,
+                  color: notifOpen ? "#245eb0" : "#6b7a99",
+                  transition: "color 0.15s ease",
                 }}
               >
-                🔔
-                {contractInboxUnread > 0 && (
+                {notifOpen ? "🔔" : "🔔"}
+                {contractInboxUnread > 0 && !bellSeen && (
                   <span
+                    className="badge-pop"
                     style={{
                       position: "absolute",
                       top: -6,
@@ -5915,6 +5953,7 @@ Return only the email body text, no subject line.`;
                       padding: "0 3px",
                       fontFamily: "monospace",
                       lineHeight: 1,
+                      boxShadow: "0 0 0 2px white",
                     }}
                   >
                     {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
@@ -5964,7 +6003,9 @@ Return only the email body text, no subject line.`;
                 display: "flex",
                 flexDirection: "column",
                 overflow: "hidden",
-                animation: "fadeUp 0.2s ease"
+                animation: bellClosing
+                  ? "dropdownClose 0.12s ease forwards"
+                  : "dropdownOpen 0.18s ease both",
               }}
             >
               {bellDraftMatters.length > 0 && (
