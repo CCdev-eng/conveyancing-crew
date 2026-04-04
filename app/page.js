@@ -1178,22 +1178,6 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
   const getDate = (k, f) => wfData[k]?.[f] || "";
   const balancePct = Math.max(0, (flags.deposit_pct || 10) - 0.25).toFixed(2);
 
-  // ── Next Action ────────────────────────────────────────
-  const getNextAction = () => {
-    const order = ["step_01","step_02","step_03","step_04","step_05","step_06","concurrent_finance","concurrent_bp","step_07","step_08","step_09","step_10","step_11","step_12","step_13","step_14","step_15","step_16","step_17","step_18","step_19","step_20"];
-    for (const k of order) {
-      if (k === "step_13" && !flags.gst_applicable) continue;
-      if (k === "step_17" && !flags.is_strata) continue;
-      if (k === "step_18" && !flags.is_tenanted) continue;
-      if (!isCompleted(k)) {
-        const stepConfig = STEPS_CONFIG.find((s) => s.key === k);
-        return stepConfig;
-      }
-    }
-    return null;
-  };
-  const nextAction = getNextAction();
-
   // ── Step definitions ───────────────────────────────────
   const STEPS_CONFIG = [
     { key: "step_01", num: "01", phase: 1, title: "Enquiry Received", what: "Record how the enquiry came in.", tier: "A", tierNote: "Auto-detected from email · tick manually for phone/WhatsApp", action: null },
@@ -1219,6 +1203,22 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
     { key: "step_19", num: "19", phase: 4, title: "Final Settlement Statement Sent", what: "AI generates final statement. Review and send to client.", tier: "C", tierNote: "AI generates · you review · one click send", action: { type: "ai", aiType: "final_statement", label: "Generate & Send Statement", icon: "📊" } },
     { key: "step_20", num: "20", phase: 4, title: "Matter Closed", what: "Matter closed. Fees collected from settlement proceeds.", tier: "A", tierNote: "Auto-closed when final statement sent", action: null, isLast: true },
   ];
+
+  // ── Next Action ────────────────────────────────────────
+  const getNextAction = () => {
+    const order = ["step_01","step_02","step_03","step_04","step_05","step_06","concurrent_finance","concurrent_bp","step_07","step_08","step_09","step_10","step_11","step_12","step_13","step_14","step_15","step_16","step_17","step_18","step_19","step_20"];
+    for (const k of order) {
+      if (k === "step_13" && !flags.gst_applicable) continue;
+      if (k === "step_17" && !flags.is_strata) continue;
+      if (k === "step_18" && !flags.is_tenanted) continue;
+      if (!isCompleted(k)) {
+        const stepConfig = STEPS_CONFIG.find((s) => s.key === k);
+        return stepConfig;
+      }
+    }
+    return null;
+  };
+  const nextAction = getNextAction();
 
   const TIER_STYLE = {
     A: { label: "Auto", color: "#1a7a4a", bg: "#e6f5ee" },
