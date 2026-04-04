@@ -1585,6 +1585,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes bellShake{0%,100%{transform:rotate(0)}15%{transform:rotate(-12deg)}30%{transform:rotate(10deg)}45%{transform:rotate(-8deg)}60%{transform:rotate(6deg)}75%{transform:rotate(-4deg)}90%{transform:rotate(2deg)}}.bell-shake{animation:bellShake 0.5s ease both}@keyframes badgePop{0%{transform:scale(0)}70%{transform:scale(1.3)}100%{transform:scale(1)}}.badge-pop{animation:badgePop 0.3s ease both}@keyframes dropdownOpen{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes dropdownClose{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(4px)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 @keyframes riskPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.5)}50%{box-shadow:0 0 0 10px rgba(220,38,38,0)}}
@@ -2251,6 +2252,566 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
   .acc-grid { grid-template-columns: 1fr !important; }
 }
 `;
+
+function ContractReviewsBellTab({
+  contractInboxItems,
+  loadContractInbox,
+  setLinkReviewModal,
+  setLinkReviewSearch,
+  setNotifOpen,
+  prefillFromReview,
+  setSelectedMatter,
+  setPage,
+  setMatterTab,
+}) {
+  const [showFailed, setShowFailed] = useState(false);
+  const [showActioned, setShowActioned] = useState(false);
+
+  const processing = contractInboxItems.filter((i) => i.status === "processing");
+  const needsAction = contractInboxItems.filter(
+    (i) => i.status === "complete" && !i.matter_ref && !i.is_actioned
+  );
+  const actioned = contractInboxItems.filter(
+    (i) => i.status === "complete" && (i.matter_ref || i.is_actioned)
+  );
+  const failed = contractInboxItems.filter(
+    (i) =>
+      i.status === "failed" &&
+      !i.from_name?.toLowerCase().includes("godaddy") &&
+      !i.from_email?.toLowerCase().includes("godaddy") &&
+      !i.subject?.toLowerCase().includes("microsoft 365") &&
+      !i.subject?.toLowerCase().includes("favorite devices")
+  );
+
+  const riskColors = {
+    LOW: "#16a34a",
+    MEDIUM: "#ca8a04",
+    HIGH: "#dc2626",
+    CRITICAL: "#7f1d1d",
+  };
+  const riskBg = {
+    LOW: "#f0fdf4",
+    MEDIUM: "#fffbeb",
+    HIGH: "#fef2f2",
+    CRITICAL: "#fff1f2",
+  };
+  const riskEmoji = {
+    LOW: "🟢",
+    MEDIUM: "🟡",
+    HIGH: "🔴",
+    CRITICAL: "🚨",
+  };
+
+  const smartTitle = (item) => {
+    const r = item.review_result || {};
+    if (r.propertyAddress && !r.propertyAddress.includes("Not specified")) {
+      return r.propertyAddress;
+    }
+    const n = item.document_name || "";
+    const useless =
+      n.toLowerCase() === "view" ||
+      n.toLowerCase() === "contract" ||
+      n.length < 5 ||
+      n.startsWith("scanner_") ||
+      n.startsWith("EnvelopePDF") ||
+      /^[a-zA-Z0-9_-]{15,}$/.test(n);
+    return useless
+      ? item.subject || "Contract Review"
+      : n.replace(/\.(pdf|docx)$/i, "").replace(/_/g, " ");
+  };
+
+  const timeStr = (item) =>
+    item.received_at
+      ? new Date(item.received_at).toLocaleDateString("en-AU", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+
+  const markActioned = async (itemId) => {
+    await supabase
+      .from("contract_review_inbox")
+      .update({ is_actioned: true, is_read: true })
+      .eq("id", itemId);
+    loadContractInbox();
+  };
+
+  if (contractInboxItems.length === 0) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#1a2744" }}>No contract reviews yet</div>
+        <div
+          style={{
+            fontSize: 11,
+            marginTop: 4,
+            color: "#b0bdd8",
+            lineHeight: 1.5,
+          }}
+        >
+          Forward a contract to<br />
+          contractreview@conveyancingcrew.com.au
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          padding: "10px 14px",
+          background: "#f8faff",
+          borderBottom: "1.5px solid #e8f0fb",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          flexWrap: "wrap",
+        }}
+      >
+        {processing.length > 0 && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              background: "#e8f0fb",
+              color: "#245eb0",
+              padding: "3px 9px",
+              borderRadius: 20,
+            }}
+          >
+            🔄 {processing.length} reviewing
+          </span>
+        )}
+        {needsAction.length > 0 && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              background: "#fef2f2",
+              color: "#dc2626",
+              padding: "3px 9px",
+              borderRadius: 20,
+            }}
+          >
+            ⚡ {needsAction.length} need action
+          </span>
+        )}
+        {needsAction.length === 0 && processing.length === 0 && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              background: "#f0fdf4",
+              color: "#16a34a",
+              padding: "3px 9px",
+              borderRadius: 20,
+            }}
+          >
+            ✅ All caught up
+          </span>
+        )}
+        {actioned.length > 0 && (
+          <span style={{ fontSize: 11, color: "#94a3b8", marginLeft: "auto" }}>{actioned.length} done</span>
+        )}
+      </div>
+
+      {needsAction.length > 0 && (
+        <>
+          <div
+            style={{
+              padding: "8px 14px 4px",
+              background: "#fffbeb",
+              borderBottom: "1px solid #fde68a",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                fontFamily: "DM Mono, monospace",
+                color: "#92400e",
+                textTransform: "uppercase",
+                letterSpacing: 1,
+              }}
+            >
+              ⚡ Needs Action
+            </span>
+          </div>
+          {needsAction.map((item) => {
+            const r = item.review_result || {};
+            const RL = String(r.overallRiskLevel || "").toUpperCase();
+            const clientName =
+              r.buyerName && !r.buyerName.toLowerCase().includes("not specified") ? r.buyerName : null;
+            const price =
+              r.purchasePrice && !String(r.purchasePrice).toLowerCase().includes("not specified")
+                ? r.purchasePrice
+                : null;
+
+            return (
+              <div
+                key={item.id}
+                style={{
+                  padding: "12px 14px",
+                  borderBottom: "1px solid #f0f4fa",
+                  background: "#fff",
+                  borderLeft: `3px solid ${riskColors[RL] || "#e0c97a"}`,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  {RL && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: 20,
+                        background: riskBg[RL] || "#f8fafc",
+                        color: riskColors[RL] || "#6b7a99",
+                      }}
+                    >
+                      {riskEmoji[RL]} {RL}
+                      {r.redFlags?.length > 0 &&
+                        ` · ${r.redFlags.length} flag${r.redFlags.length > 1 ? "s" : ""}`}
+                    </span>
+                  )}
+                  {!item.is_read && (
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "#245eb0",
+                        marginLeft: "auto",
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#1a2744",
+                    lineHeight: 1.35,
+                    marginBottom: 4,
+                  }}
+                >
+                  {smartTitle(item)}
+                </div>
+
+                {(clientName || price) && (
+                  <div style={{ display: "flex", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                    {clientName && <span style={{ fontSize: 11, color: "#6b7a99" }}>👤 {clientName}</span>}
+                    {price && <span style={{ fontSize: 11, color: "#6b7a99" }}>💰 {price}</span>}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "#94a3b8",
+                    marginBottom: 10,
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>
+                    {item.from_name || item.from_email} · {timeStr(item)}
+                  </span>
+                  {item.review_cost_aud != null && item.review_cost_aud !== "" && (
+                    <span style={{ color: "#16a34a", fontFamily: "monospace" }}>
+                      {`${Number(item.review_cost_aud).toFixed(2)}`}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkReviewModal(item);
+                      setLinkReviewSearch("");
+                      setNotifOpen(false);
+                      void markActioned(item.id);
+                    }}
+                    style={{
+                      flex: 1,
+                      fontSize: 11,
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      border: "1.5px solid #245eb0",
+                      background: "white",
+                      color: "#245eb0",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    🔗 Link to Matter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      prefillFromReview(item);
+                      setNotifOpen(false);
+                      void markActioned(item.id);
+                    }}
+                    style={{
+                      flex: 1,
+                      fontSize: 11,
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      border: "none",
+                      background: "#245eb0",
+                      color: "white",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    ✨ Create Matter
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {processing.map((item) => (
+        <div
+          key={item.id}
+          style={{
+            padding: "12px 14px",
+            borderBottom: "1px solid #f0f4fa",
+            background: "#f8faff",
+            borderLeft: "3px solid #245eb0",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 14,
+              height: 14,
+              flexShrink: 0,
+              border: "2px solid #245eb0",
+              borderTop: "2px solid transparent",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#1a2744",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {smartTitle(item)}
+            </div>
+            <div style={{ fontSize: 10, color: "#8a96b0", marginTop: 2 }}>Reviewing — usually 1–3 minutes</div>
+          </div>
+          <span
+            style={{
+              fontSize: 9,
+              fontFamily: "DM Mono, monospace",
+              fontWeight: 700,
+              padding: "2px 7px",
+              borderRadius: 20,
+              background: "#e8f0fb",
+              color: "#245eb0",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            Reviewing…
+          </span>
+        </div>
+      ))}
+
+      {needsAction.length === 0 && processing.length === 0 && (
+        <div style={{ padding: "24px 14px", textAlign: "center" }}>
+          <div style={{ fontSize: 24, marginBottom: 6 }}>✅</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#1a2744", marginBottom: 4 }}>All caught up</div>
+          <div style={{ fontSize: 11, color: "#94a3b8" }}>No contract reviews need action right now</div>
+        </div>
+      )}
+
+      {actioned.length > 0 && (
+        <div style={{ borderTop: "1px solid #f0f4fa" }}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowActioned((s) => !s)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setShowActioned((s) => !s);
+              }
+            }}
+            style={{
+              padding: "10px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              cursor: "pointer",
+              background: "#fafafa",
+              userSelect: "none",
+            }}
+          >
+            <span style={{ fontSize: 11, color: "#6b7a99", fontWeight: 600 }}>
+              ✓ Recently actioned ({actioned.length})
+            </span>
+            <span style={{ fontSize: 10, color: "#94a3b8" }}>{showActioned ? "▲" : "▾"}</span>
+          </div>
+          {showActioned &&
+            actioned.map((item) => {
+              const r = item.review_result || {};
+              const RL = String(r.overallRiskLevel || "").toUpperCase();
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    padding: "9px 14px",
+                    borderBottom: "1px solid #f5f5f5",
+                    background: "white",
+                    borderLeft: `3px solid ${riskColors[RL] || "#dce3f0"}`,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    cursor: "pointer",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (item.matter_ref) {
+                      setSelectedMatter(item.matter_ref);
+                      setPage("matter_workspace");
+                      setMatterTab("Documents");
+                      setNotifOpen(false);
+                    }
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#6b7a99",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {smartTitle(item)}
+                    </div>
+                    <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{timeStr(item)}</div>
+                  </div>
+                  {item.matter_ref && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontFamily: "monospace",
+                        background: "#f0fdf4",
+                        color: "#16a34a",
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✓ {item.matter_ref}
+                    </span>
+                  )}
+                  {RL && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: 20,
+                        background: riskBg[RL] || "#f8fafc",
+                        color: riskColors[RL] || "#6b7a99",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {riskEmoji[RL]}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      )}
+
+      {failed.length > 0 && (
+        <div style={{ borderTop: "1px solid #f0f4fa" }}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowFailed((s) => !s)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setShowFailed((s) => !s);
+              }
+            }}
+            style={{
+              padding: "10px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              cursor: "pointer",
+              background: "#fafafa",
+              userSelect: "none",
+            }}
+          >
+            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>✗ Failed ({failed.length})</span>
+            <span style={{ fontSize: 10, color: "#94a3b8" }}>{showFailed ? "▲" : "▾"}</span>
+          </div>
+          {showFailed &&
+            failed.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  padding: "9px 14px",
+                  borderBottom: "1px solid #fef2f2",
+                  background: "#fffafa",
+                  borderLeft: "3px solid #fca5a5",
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#7f1d1d", marginBottom: 2 }}>{smartTitle(item)}</div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "#94a3b8",
+                    marginBottom: item.error_message ? 4 : 0,
+                  }}
+                >
+                  {item.from_name || item.from_email} · {timeStr(item)}
+                </div>
+                {item.error_message && (
+                  <div style={{ fontSize: 10, color: "#dc2626", fontStyle: "italic", lineHeight: 1.4 }}>
+                    {item.error_message.slice(0, 80)}
+                    {item.error_message.length > 80 ? "…" : ""}
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -6358,374 +6919,17 @@ Return only the email body text, no subject line.`;
                   </div>
                 )}
                 {bellTab === "reviews" && (
-                  <>
-                    {contractInboxItems.filter((i) => !i.is_read && i.status === "complete").length > 1 && (
-                      <div
-                        style={{
-                          padding: "10px 16px",
-                          background: "#fffbeb",
-                          borderBottom: "1px solid #fde68a",
-                          fontSize: 12,
-                          color: "#92400e",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <span>⚡</span>
-                        <span>
-                          <strong>
-                            {contractInboxItems.filter((i) => !i.is_read && i.status === "complete").length} new
-                            contract reviews
-                          </strong>{" "}
-                          ready for action
-                        </span>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await supabase.from("contract_review_inbox").update({ is_read: true }).eq("is_read", false);
-                            loadContractInbox();
-                          }}
-                          style={{
-                            marginLeft: "auto",
-                            fontSize: 11,
-                            padding: "3px 8px",
-                            borderRadius: 4,
-                            border: "1px solid #fde68a",
-                            background: "white",
-                            cursor: "pointer",
-                            color: "#92400e",
-                          }}
-                        >
-                          Mark all read
-                        </button>
-                      </div>
-                    )}
-                    {contractInboxItems.length === 0 ? (
-                      <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
-                        <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>No contract reviews yet</div>
-                        <div style={{ fontSize: 11, marginTop: 4 }}>
-                          Forward a contract to contractreview@conveyancingcrew.com.au
-                        </div>
-                      </div>
-                    ) : (
-                      contractInboxItems.map((item) => {
-                        const r = item.review_result || {};
-                        const RL = String(r.overallRiskLevel || "").toUpperCase();
-                        const riskColors = {
-                          LOW: "#16a34a",
-                          MEDIUM: "#ca8a04",
-                          HIGH: "#dc2626",
-                          CRITICAL: "#7f1d1d",
-                        };
-                        const riskBg = {
-                          LOW: "#f0fdf4",
-                          MEDIUM: "#fffbeb",
-                          HIGH: "#fef2f2",
-                          CRITICAL: "#fff1f2",
-                        };
-                        const riskEmoji = {
-                          LOW: "🟢",
-                          MEDIUM: "🟡",
-                          HIGH: "🔴",
-                          CRITICAL: "🚨",
-                        };
-                        const st = item.status;
-
-                        const rawName = item.document_name || "";
-                        const isUseless =
-                          rawName.toLowerCase() === "view" ||
-                          rawName.toLowerCase() === "contract" ||
-                          rawName.length < 5 ||
-                          rawName.startsWith("scanner_") ||
-                          rawName.startsWith("EnvelopePDF");
-
-                        const smartTitle =
-                          r.propertyAddress && r.propertyAddress !== "Not specified in document"
-                            ? r.propertyAddress
-                            : isUseless
-                              ? item.subject || "Contract Review"
-                              : rawName.replace(/\.pdf$/i, "").replace(/\.docx$/i, "").replace(/_/g, " ");
-
-                        const clientName =
-                          r.buyerName && !r.buyerName.toLowerCase().includes("not specified")
-                            ? r.buyerName
-                            : null;
-
-                        const price =
-                          r.purchasePrice &&
-                          !String(r.purchasePrice).toLowerCase().includes("not specified")
-                            ? r.purchasePrice
-                            : null;
-
-                        const borderColor =
-                          st === "complete"
-                            ? riskColors[RL] || "#dce3f0"
-                            : st === "processing"
-                              ? "#245eb0"
-                              : "#e2e8f0";
-
-                        const timeStr = item.received_at
-                          ? new Date(item.received_at).toLocaleDateString("en-AU", {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "";
-
-                        return (
-                          <div
-                            key={item.id}
-                            onClick={async () => {
-                              if (!item.is_read) {
-                                await supabase
-                                  .from("contract_review_inbox")
-                                  .update({ is_read: true })
-                                  .eq("id", item.id);
-                                loadContractInbox();
-                              }
-                            }}
-                            style={{
-                              borderLeft: `3px solid ${borderColor}`,
-                              padding: "12px 14px",
-                              borderBottom: "1px solid #f0f4fa",
-                              background: item.is_read ? "#fff" : "#f8faff",
-                              cursor: "pointer",
-                              transition: "background 0.15s",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                marginBottom: 5,
-                                gap: 6,
-                              }}
-                            >
-                              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                                <span
-                                  style={{
-                                    fontSize: 9,
-                                    fontFamily: "DM Mono, monospace",
-                                    fontWeight: 700,
-                                    padding: "2px 7px",
-                                    borderRadius: 20,
-                                    background:
-                                      st === "complete"
-                                        ? "#f0fdf4"
-                                        : st === "processing"
-                                          ? "#e8f0fb"
-                                          : "#fef2f2",
-                                    color:
-                                      st === "complete"
-                                        ? "#16a34a"
-                                        : st === "processing"
-                                          ? "#245eb0"
-                                          : "#dc2626",
-                                  }}
-                                >
-                                  {st === "complete"
-                                    ? "✓ Complete"
-                                    : st === "processing"
-                                      ? "⟳ Reviewing…"
-                                      : "✗ Failed"}
-                                </span>
-                                {st === "complete" && RL && (
-                                  <span
-                                    style={{
-                                      fontSize: 9,
-                                      fontFamily: "DM Mono, monospace",
-                                      fontWeight: 700,
-                                      padding: "2px 7px",
-                                      borderRadius: 20,
-                                      background: riskBg[RL] || "#f8fafc",
-                                      color: riskColors[RL] || "#6b7a99",
-                                    }}
-                                  >
-                                    {riskEmoji[RL]} {RL}
-                                    {r.redFlags?.length > 0 && ` · ${r.redFlags.length} flags`}
-                                  </span>
-                                )}
-                              </div>
-                              {!item.is_read && (
-                                <span
-                                  style={{
-                                    width: 7,
-                                    height: 7,
-                                    borderRadius: "50%",
-                                    background: "#245eb0",
-                                    flexShrink: 0,
-                                    boxShadow: "0 0 0 2px #e8f0fb",
-                                  }}
-                                />
-                              )}
-                            </div>
-
-                            <div
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#1a2744",
-                                lineHeight: 1.35,
-                                marginBottom: clientName || price ? 4 : 6,
-                              }}
-                            >
-                              {smartTitle}
-                            </div>
-
-                            {(clientName || price) && (
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 10,
-                                  marginBottom: 6,
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                {clientName && (
-                                  <span style={{ fontSize: 11, color: "#6b7a99" }}>👤 {clientName}</span>
-                                )}
-                                {price && (
-                                  <span style={{ fontSize: 11, color: "#6b7a99" }}>💰 {price}</span>
-                                )}
-                              </div>
-                            )}
-
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                marginBottom: st === "complete" ? 8 : 0,
-                              }}
-                            >
-                              <span style={{ fontSize: 10, color: "#94a3b8" }}>
-                                {item.from_name || item.from_email} · {timeStr}
-                              </span>
-                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                {item.review_cost_aud != null && item.review_cost_aud !== "" && (
-                                  <span
-                                    style={{
-                                      fontSize: 10,
-                                      color: "#16a34a",
-                                      fontFamily: "monospace",
-                                    }}
-                                  >
-                                    {`$${Number(item.review_cost_aud).toFixed(2)}`}
-                                  </span>
-                                )}
-                                {item.matter_ref && (
-                                  <span
-                                    style={{
-                                      fontSize: 9,
-                                      background: "#f0fdf4",
-                                      color: "#16a34a",
-                                      padding: "1px 6px",
-                                      borderRadius: 4,
-                                      fontWeight: 600,
-                                      fontFamily: "monospace",
-                                    }}
-                                  >
-                                    ✓ {item.matter_ref}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {st === "complete" && !item.matter_ref && (
-                              <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setLinkReviewModal(item);
-                                    setLinkReviewSearch("");
-                                    setNotifOpen(false);
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    fontSize: 11,
-                                    padding: "6px 10px",
-                                    borderRadius: 6,
-                                    border: "1.5px solid #245eb0",
-                                    background: "white",
-                                    color: "#245eb0",
-                                    cursor: "pointer",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  🔗 Link to Matter
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    prefillFromReview(item);
-                                    setNotifOpen(false);
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    fontSize: 11,
-                                    padding: "6px 10px",
-                                    borderRadius: 6,
-                                    border: "none",
-                                    background: "#245eb0",
-                                    color: "white",
-                                    cursor: "pointer",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  ✨ Create Matter
-                                </button>
-                              </div>
-                            )}
-
-                            {st === "complete" && item.matter_ref && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedMatter(item.matter_ref);
-                                  setPage("matter_workspace");
-                                  setMatterTab("Documents");
-                                  setNotifOpen(false);
-                                }}
-                                style={{
-                                  width: "100%",
-                                  fontSize: 11,
-                                  padding: "6px 10px",
-                                  borderRadius: 6,
-                                  border: "1.5px solid #dce3f0",
-                                  background: "#f8faff",
-                                  color: "#245eb0",
-                                  cursor: "pointer",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                📂 Open in Matter
-                              </button>
-                            )}
-
-                            {st === "failed" && item.error_message && (
-                              <div
-                                style={{
-                                  fontSize: 10,
-                                  color: "#dc2626",
-                                  marginTop: 4,
-                                  fontStyle: "italic",
-                                  lineHeight: 1.4,
-                                }}
-                              >
-                                {item.error_message.slice(0, 80)}
-                                {item.error_message.length > 80 ? "…" : ""}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </>
+                  <ContractReviewsBellTab
+                    contractInboxItems={contractInboxItems}
+                    loadContractInbox={loadContractInbox}
+                    setLinkReviewModal={setLinkReviewModal}
+                    setLinkReviewSearch={setLinkReviewSearch}
+                    setNotifOpen={setNotifOpen}
+                    prefillFromReview={prefillFromReview}
+                    setSelectedMatter={setSelectedMatter}
+                    setPage={setPage}
+                    setMatterTab={setMatterTab}
+                  />
                 )}
               </div>
               <div
