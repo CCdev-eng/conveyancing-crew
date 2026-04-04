@@ -67,6 +67,109 @@ const SUBJECT_BLOCK_SUBSTRINGS = [
   "your subscription",
 ];
 
+/*
+CREATE TABLE IF NOT EXISTS milestone_inbox (
+  id uuid default gen_random_uuid() primary key,
+  email_id text,
+  matter_ref text,
+  step_key text,
+  matched_keyword text,
+  processed_at timestamptz default now(),
+  UNIQUE(email_id, step_key)
+);
+ALTER TABLE milestone_inbox ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all" ON milestone_inbox
+  FOR ALL TO anon, authenticated
+  USING (true) WITH CHECK (true);
+*/
+
+const MILESTONES = [
+  {
+    key: "concurrent_finance",
+    keywords: [
+      "unconditional approval",
+      "formal approval",
+      "finance approved",
+      "unconditional finance",
+      "loan approved",
+      "mortgage approved",
+    ],
+  },
+  {
+    key: "concurrent_bp",
+    keywords: [
+      "building inspection",
+      "pest inspection",
+      "pest report",
+      "building report",
+      "inspection report",
+      "b&p report",
+    ],
+  },
+  {
+    key: "step_15",
+    keywords: [
+      "settlement complete",
+      "settlement confirmed",
+      "settled successfully",
+      "settlement has occurred",
+      "settlement took place",
+    ],
+  },
+  {
+    key: "step_16",
+    keywords: [
+      "keys released",
+      "keys have been released",
+      "order on agent",
+      "deposit released",
+    ],
+  },
+];
+
+function findMilestoneMatch(textLower) {
+  for (const m of MILESTONES) {
+    for (const kw of m.keywords) {
+      if (textLower.includes(kw)) {
+        return { milestone: m, matchedKeyword: kw };
+      }
+    }
+  }
+  return null;
+}
+
+/** Match matters where client_last_name or address (or address segments) appears in email text. */
+function findMatterForMilestoneText(textLower, matters) {
+  for (const row of matters || []) {
+    const last = String(row.client_last_name || "").trim().toLowerCase();
+    if (last.length >= 2 && textLower.includes(last)) {
+      return row;
+    }
+    if (!last || last.length < 2) {
+      const fullName = String(row.client_name || "").trim();
+      const parts = fullName.split(/\s+/).filter(Boolean);
+      const guessLast = parts.length > 0 ? parts[parts.length - 1].toLowerCase() : "";
+      if (guessLast.length >= 2 && textLower.includes(guessLast)) {
+        return row;
+      }
+    }
+    const addr = String(row.address || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+    if (addr.length >= 8 && textLower.includes(addr)) {
+      return row;
+    }
+    if (addr.length >= 8) {
+      const segments = addr.split(",").map((p) => p.trim()).filter((p) => p.length >= 6);
+      for (const seg of segments) {
+        if (textLower.includes(seg)) return row;
+      }
+    }
+  }
+  return null;
+}
+
 function stripHtml(html) {
   return String(html || "")
     .replace(/<[^>]*>/g, " ")
@@ -414,11 +517,112 @@ export async function GET(request) {
       console.log("[EnquiryCron] Draft matter created:", matterRef, "|", subject);
     }
 
+    let milestonesTicked = 0;
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    const sinceIso = twentyFourHoursAgo.toISOString();
+    const milestoneFilter = `receivedDateTime ge ${sinceIso}`;
+    const milestoneListUrl =
+      `https://graph.microsoft.com/v1.0/users/${graphMailbox}/messages` +
+      `?$filter=${encodeURIComponent(milestoneFilter)}` +
+      `&$orderby=receivedDateTime desc` +
+      `&$top=50` +
+      `&$select=id,subject,from,receivedDateTime,bodyPreview`;
+
+    const milestoneListRes = await fetch(milestoneListUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const milestoneListData = await milestoneListRes.json();
+    if (milestoneListData.error) {
+      console.error("[Milestone] Graph list error:", milestoneListData.error);
+    } else {
+      const recentEmails = milestoneListData.value || [];
+      const { data: pipelineMatters, error: pmErr } = await supabase
+        .from("matters")
+        .select("matter_ref,client_last_name,client_name,address,matter_status")
+        .in("matter_status", ["pipeline", "confirmed"])
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (pmErr) {
+        console.error("[Milestone] matters query failed:", pmErr);
+      } else {
+        for (const email of recentEmails) {
+          const eid = email.id;
+          if (!eid) continue;
+
+          const { data: alreadyRows } = await supabase
+            .from("milestone_inbox")
+            .select("id")
+            .eq("email_id", eid)
+            .limit(1);
+
+          if (alreadyRows?.length) continue;
+
+          const subjectLower = (email.subject || "").toLowerCase();
+          const body = (email.bodyPreview || "").toLowerCase();
+          const text = `${subjectLower} ${body}`;
+
+          const hit = findMilestoneMatch(text);
+          if (!hit) continue;
+
+          const matterRow = findMatterForMilestoneText(text, pipelineMatters);
+          if (!matterRow?.matter_ref) continue;
+
+          const matterRef = matterRow.matter_ref;
+          const stepKey = hit.milestone.key;
+
+          const { data: wfRow } = await supabase
+            .from("matter_workflow")
+            .select("completed")
+            .eq("matter_ref", matterRef)
+            .eq("step_key", stepKey)
+            .maybeSingle();
+
+          if (wfRow?.completed) continue;
+
+          const nowIso = new Date().toISOString();
+          const { error: wfErr } = await supabase.from("matter_workflow").upsert(
+            {
+              matter_ref: matterRef,
+              step_key: stepKey,
+              completed: true,
+              completed_at: nowIso,
+              updated_at: nowIso,
+            },
+            { onConflict: "matter_ref,step_key" },
+          );
+
+          if (wfErr) {
+            console.error("[Milestone] matter_workflow upsert failed:", wfErr);
+            continue;
+          }
+
+          const { error: miErr } = await supabase.from("milestone_inbox").insert({
+            email_id: eid,
+            matter_ref: matterRef,
+            step_key: stepKey,
+            matched_keyword: hit.matchedKeyword,
+            processed_at: nowIso,
+          });
+
+          if (miErr) {
+            console.error("[Milestone] milestone_inbox insert failed:", miErr);
+            continue;
+          }
+
+          milestonesTicked++;
+          console.log("[Milestone] Auto-ticked", stepKey, "for matter", matterRef);
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       processed,
       drafts_created: draftsCreated,
       skipped,
+      milestones_ticked: milestonesTicked,
     });
   } catch (err) {
     console.error("[EnquiryCron] Fatal:", err.message);
