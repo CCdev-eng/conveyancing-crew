@@ -81,6 +81,7 @@ export async function POST(request) {
         matter_ref: matterRef,
         client_name: vendorName,
         task: "Vendor form submitted — review and update matter details",
+        notes: propertyAddress || "",
         urgency: "high",
         done: false,
         due_date: today

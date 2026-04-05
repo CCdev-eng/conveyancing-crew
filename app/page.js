@@ -827,6 +827,19 @@ function mapMatterFromRow(row) {
   };
 }
 
+function matterByRefForNotif(MATTERS, ref) {
+  if (ref == null || ref === "") return null;
+  const r = String(ref);
+  return (MATTERS || []).find((m) => String(m.matter_ref || m.id) === r) || null;
+}
+
+function stripTaskUndefinedSuffix(text) {
+  return String(text || "")
+    .trim()
+    .replace(/\s[—–-]\s*undefined\s*$/i, "")
+    .trim();
+}
+
 function parseMatterNotesObject(notesStr) {
   if (!notesStr || typeof notesStr !== "string" || !notesStr.trim().startsWith("{")) return {};
   try {
@@ -4479,6 +4492,8 @@ export default function App() {
   const notifRef = useRef(null);
   const [contractInboxItems, setContractInboxItems] = useState([]);
   const [contractInboxUnread, setContractInboxUnread] = useState(0);
+  /** Count from buildNotifications (tasks due / overdue, settlements); cleared when bell notifications opened. */
+  const [notifUnreadCount, setNotifUnreadCount] = useState(0);
   const [linkReviewModal, setLinkReviewModal] = useState(null);
   const [linkReviewSearch, setLinkReviewSearch] = useState("");
   const [reviewLinkToast, setReviewLinkToast] = useState(null);
@@ -6028,7 +6043,7 @@ If no matches found return: []`
     setSearchOpen(results.length > 0);
   };
 
-  const buildNotifications = () => {
+  const buildNotifications = useCallback(() => {
     const notifs = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -6038,6 +6053,10 @@ If no matches found return: []`
         const d = new Date(e.date + "T00:00:00");
         const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
         if (days >= 0 && days <= 7) {
+          const mat = matterByRefForNotif(MATTERS, e.matter_ref);
+          const clientLabel = mat?.client_name || mat?.client || e.client_name || "—";
+          const addr = (mat && mat.address) || e.title || "—";
+          const timePart = e.time ? " · " + e.time : "";
           notifs.push({
             id: "settle-" + e.id,
             type: "settlement",
@@ -6051,7 +6070,16 @@ If no matches found return: []`
             body: e.title + (e.time ? " at " + e.time : ""),
             matter_ref: e.matter_ref,
             date: e.date,
-            icon: "🏠"
+            icon: "🏠",
+            cardTitle:
+              days === 0
+                ? "Settlement today"
+                : days === 1
+                  ? "Settlement tomorrow"
+                  : `Settlement in ${days} days`,
+            cardAddress: addr,
+            cardClient: clientLabel,
+            cardExtra: (e.title || "") + timePart,
           });
         }
       });
@@ -6060,34 +6088,90 @@ If no matches found return: []`
       .forEach((t) => {
         const d = new Date(t.due_date + "T00:00:00");
         const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+        const ref = t.matter_ref || t.matter;
+        const mat = matterByRefForNotif(MATTERS, ref);
+        const isVendor = String(t.task || "").toLowerCase().includes("vendor form submitted");
+        const clientFromMatter = mat?.client_name || mat?.client;
+        const clientLabel = clientFromMatter || t.client_name || t.client || "";
+        const addrFromMatter = (mat && mat.address) || String(t.notes || "").trim() || "";
+
         if (days < 0) {
-          notifs.push({
-            id: "task-" + t.id,
-            type: "task",
-            urgency: "high",
-            title: "Overdue task",
-            body: t.task + " — " + (t.client_name || t.client),
-            matter_ref: t.matter_ref || t.matter,
-            date: t.due_date,
-            icon: "⚠️"
-          });
+          if (isVendor) {
+            notifs.push({
+              id: "vendor-task-" + t.id,
+              type: "vendor_form",
+              urgency: "high",
+              title: "Vendor form submitted",
+              body: t.task,
+              matter_ref: ref,
+              date: t.due_date,
+              icon: "",
+              cardTitle: "📋 Vendor form submitted",
+              cardAddress: addrFromMatter || "—",
+              cardClient: clientLabel || "—",
+              cardExtra: "",
+            });
+          } else {
+            const taskLine = stripTaskUndefinedSuffix(t.task);
+            notifs.push({
+              id: "task-" + t.id,
+              type: "task_overdue",
+              urgency: "high",
+              title: "Overdue task",
+              body: taskLine,
+              matter_ref: ref,
+              date: t.due_date,
+              icon: "⚠️",
+              cardTitle: taskLine || "Overdue task",
+              cardAddress: addrFromMatter || "—",
+              cardClient: clientLabel || "—",
+              cardExtra: "",
+            });
+          }
         } else if (days === 0) {
-          notifs.push({
-            id: "task-today-" + t.id,
-            type: "task",
-            urgency: t.urgency === "critical" ? "critical" : "high",
-            title: "Task due today",
-            body: t.task + " — " + (t.client_name || t.client),
-            matter_ref: t.matter_ref || t.matter,
-            date: t.due_date,
-            icon: "📋"
-          });
+          if (isVendor) {
+            notifs.push({
+              id: "vendor-task-" + t.id,
+              type: "vendor_form",
+              urgency: t.urgency === "critical" ? "critical" : "high",
+              title: "Vendor form submitted",
+              body: t.task,
+              matter_ref: ref,
+              date: t.due_date,
+              icon: "",
+              cardTitle: "📋 Vendor form submitted",
+              cardAddress: addrFromMatter || "—",
+              cardClient: clientLabel || "—",
+              cardExtra: "",
+            });
+          } else {
+            const taskLine = stripTaskUndefinedSuffix(t.task);
+            notifs.push({
+              id: "task-today-" + t.id,
+              type: "task_today",
+              urgency: t.urgency === "critical" ? "critical" : "high",
+              title: "Task due today",
+              body: taskLine,
+              matter_ref: ref,
+              date: t.due_date,
+              icon: "📋",
+              cardTitle: "Task due today",
+              cardAddress: addrFromMatter || "—",
+              cardClient: clientLabel || "—",
+              cardExtra: taskLine,
+            });
+          }
         }
       });
     const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
     notifs.sort((a, b) => (urgencyOrder[a.urgency] || 3) - (urgencyOrder[b.urgency] || 3));
     return notifs;
-  };
+  }, [tasks, calendarEvents, MATTERS]);
+
+  useEffect(() => {
+    if (notifOpen) return;
+    setNotifUnreadCount(buildNotifications().length);
+  }, [buildNotifications, notifOpen]);
 
   /** Toggle bell panel. Notifications from tasks / calendar / matters; contract inbox from Supabase via loadContractInbox. */
   const openNotifications = async () => {
@@ -6104,6 +6188,7 @@ If no matches found return: []`
     setBellSeen(true);
     bellSeenRef.current = true;
     setContractInboxUnread(0);
+    setNotifUnreadCount(0);
     setNotifications([]);
     const notifs = buildNotifications();
     setNotifications(notifs);
@@ -7922,7 +8007,7 @@ Return only the email body text, no subject line.`;
                     }}
                   >
                     {notifOpen ? "🔔" : "🔔"}
-                    {contractInboxUnread > 0 && !bellSeen && (
+                    {contractInboxUnread + notifUnreadCount > 0 && (
                       <span
                         className="badge-pop"
                         style={{
@@ -7945,7 +8030,7 @@ Return only the email body text, no subject line.`;
                           boxShadow: "0 0 0 2px white",
                         }}
                       >
-                        {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
+                        {contractInboxUnread + notifUnreadCount > 9 ? "9+" : contractInboxUnread + notifUnreadCount}
                       </span>
                     )}
                   </button>
@@ -8116,7 +8201,7 @@ Return only the email body text, no subject line.`;
                 }}
               >
                 {notifOpen ? "🔔" : "🔔"}
-                {contractInboxUnread > 0 && !bellSeen && (
+                {contractInboxUnread + notifUnreadCount > 0 && (
                   <span
                     className="badge-pop"
                     style={{
@@ -8139,7 +8224,7 @@ Return only the email body text, no subject line.`;
                       boxShadow: "0 0 0 2px white",
                     }}
                   >
-                    {contractInboxUnread > 9 ? "9+" : contractInboxUnread}
+                    {contractInboxUnread + notifUnreadCount > 9 ? "9+" : contractInboxUnread + notifUnreadCount}
                   </span>
                 )}
               </button>
@@ -8438,7 +8523,7 @@ Return only the email body text, no subject line.`;
                   }}
                 >
                   🔔 Notifications
-                  {notifications.length > 0 && !notifOpen && (
+                  {notifUnreadCount > 0 && !notifOpen && (
                     <span
                       style={{
                         marginLeft: 8,
@@ -8450,7 +8535,7 @@ Return only the email body text, no subject line.`;
                         fontWeight: 700,
                       }}
                     >
-                      {notifications.length}
+                      {notifUnreadCount > 9 ? "9+" : notifUnreadCount}
                     </span>
                   )}
                 </button>
@@ -8542,7 +8627,12 @@ Return only the email body text, no subject line.`;
                       All caught up — no urgent notifications
                     </div>
                   ) : (
-                    notifications.map((n) => (
+                    notifications.map((n) => {
+                      const cardTitle = n.cardTitle || n.title;
+                      const cardAddress = n.cardAddress;
+                      const cardClient = n.cardClient;
+                      const cardExtra = n.cardExtra;
+                      return (
                       <div
                         key={n.id}
                         style={{
@@ -8553,6 +8643,7 @@ Return only the email body text, no subject line.`;
                           borderLeft:
                             "3px solid " +
                             (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)"),
+                          background: "var(--white)",
                         }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
@@ -8565,41 +8656,57 @@ Return only the email body text, no subject line.`;
                           }
                         }}
                       >
-                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                          <span style={{ fontSize: 18, flexShrink: 0 }}>{n.icon}</span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          {n.icon ? (
+                            <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.2 }}>{n.icon}</span>
+                          ) : (
+                            <span style={{ width: 4, flexShrink: 0 }} aria-hidden />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
                               <span
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   fontWeight: 700,
-                                  color:
-                                    n.urgency === "critical"
-                                      ? "var(--red)"
-                                      : n.urgency === "high"
-                                        ? "var(--amber)"
-                                        : "var(--text)",
+                                  color: "var(--text)",
+                                  lineHeight: 1.35,
+                                  letterSpacing: "-0.01em",
                                 }}
                               >
-                                {n.title}
+                                {cardTitle}
                               </span>
                               <span
                                 className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
-                                style={{ fontSize: 9 }}
+                                style={{ fontSize: 9, flexShrink: 0, textTransform: "capitalize" }}
                               >
                                 {n.urgency}
                               </span>
                             </div>
-                            <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>{n.body}</div>
+                            {cardAddress != null && cardAddress !== "" && (
+                              <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.45, marginBottom: 2 }}>
+                                {cardAddress}
+                              </div>
+                            )}
+                            {cardClient != null && cardClient !== "" && cardClient !== "—" && (
+                              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)", marginBottom: 2 }}>
+                                {cardClient}
+                              </div>
+                            )}
+                            {cardExtra && String(cardExtra).trim() && cardExtra !== cardTitle && (
+                              <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45, marginTop: 2 }}>
+                                {cardExtra}
+                              </div>
+                            )}
                             {n.matter_ref && (
-                              <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 3 }}>
+                              <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 6, letterSpacing: "0.02em" }}>
                                 {n.matter_ref}
                               </div>
                             )}
                           </div>
                         </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                   </div>
                 )}
