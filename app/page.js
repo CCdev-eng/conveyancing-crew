@@ -818,8 +818,8 @@ function mapMatterFromRow(row) {
     deposit: row.deposit,
     depositPaid: row.deposit_paid,
     lender: row.lender,
-    agent: row.agent_name ?? row.agent ?? "",
-    agent_name: row.agent_name ?? row.agent ?? "",
+    agent: row.agent_name ?? "",
+    agent_name: row.agent_name ?? "",
     agent_email: row.agent_email ?? "",
     agentPhone: row.agent_phone,
     searches: row.searches,
@@ -6493,6 +6493,10 @@ RESPONSE RULES:
         !isNaN(new Date(settlementDateValue).getTime());
       const sanitizedSettlementDate = isValidDate ? settlementDateValue : null;
 
+      const saleAgentName =
+        intakeMatterType === "Sale"
+          ? [intakeAgentFirstName, intakeAgentLastName].filter(Boolean).join(" ").trim() || null
+          : null;
       const row = {
         matter_ref,
         client_name: clientName,
@@ -6517,6 +6521,13 @@ RESPONSE RULES:
         notes: JSON.stringify(notesObj),
         settlement_date: sanitizedSettlementDate,
         price: priceForDb,
+        ...(intakeMatterType === "Sale"
+          ? {
+              agent_name: saleAgentName,
+              agent_phone: intakeAgentPhone?.trim() || null,
+              agent_email: intakeAgentEmail?.trim() || null,
+            }
+          : {}),
       };
       let { error } = await supabase.from("matters").insert(row);
       if (error) {
@@ -9940,7 +9951,7 @@ Return only the email body text, no subject line.`;
               if (!m || m.type !== "Sale") return;
               const notesStr = typeof m.notes === "string" ? m.notes : "";
               const notes = parseMatterNotesObject(notesStr);
-              const ag = String(m.agent || "").trim();
+              const ag = String(m.agent_name || m.agent || "").trim();
               const agParts = ag ? ag.split(/\s+/) : [];
               setVendorFormPrefill({
                 vendor_email: m.client_email || m.email || "",
