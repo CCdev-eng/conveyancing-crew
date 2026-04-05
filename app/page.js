@@ -2059,6 +2059,444 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
   );
 }
 
+function SaleWorkflow({ matter, supabase, isMobile }) {
+  const matterRef = matter?.matter_ref || matter?.id;
+  const outerPadY = isMobile ? 16 : 20;
+
+  const SW_EMAIL_TEMPLATES = {
+    sw_intro: (m) => ({
+      to: m?.client_email || m?.email || "",
+      subject: `Your Property Sale — ${m?.address || ""}`,
+      body: `Hi ${m?.client_first_name || m?.client_name?.split(" ")[0] || m?.client?.split(" ")[0] || "there"},\n\nThank you for engaging Conveyancing Crew to act as your conveyancer for the sale of ${m?.address || "your property"}.\n\nPlease advise your selling agent of our details as your conveyancer so we can be noted on the agency agreement and receive the contract and vendor statement for review. You can forward this email or provide the following:\n\nConveyancing Crew\nEmail: gitu@conveyancingcrew.com.au\n\nWe will liaise with the agent and purchaser's conveyancer on your behalf throughout the sale.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+    }),
+    sw_contract_sent: (m) => ({
+      to: "",
+      toInputLabel: "Agent",
+      subject: `Contract for Sale — ${m?.address || ""}`,
+      body: `Dear Agent,\n\nWe act for the vendor in the sale of ${m?.address || "the above property"}.\n\nPlease find attached the signed contract and vendor statement (Section 32 / Contract for Sale as applicable), which are ready for listing.\n\nKindly confirm receipt and advise if you require any further information.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+    }),
+    sw_order_on_agent: (m) => ({
+      to: "",
+      toInputLabel: "Agent",
+      subject: `Order on Agent — ${m?.address || ""}`,
+      body: `Dear Agent,\n\nSettlement of ${m?.address || "the above property"} has now completed.\n\nPlease be advised that you are authorised to release the deposit held in your trust account in accordance with the contract, and to release keys to the purchaser.\n\nThis email confirms settlement is complete. If you require any further documentation, please contact our office.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+    }),
+    sw_final: (m) => ({
+      to: m?.client_email || m?.email || "",
+      subject: `Settlement Complete & Final Invoice — ${m?.address || ""}`,
+      body: `Hi ${m?.client_first_name || m?.client_name?.split(" ")[0] || m?.client?.split(" ")[0] || "there"},\n\nCongratulations — settlement of ${m?.address || "your property"} has completed.\n\nNet sale proceeds should shortly reflect in your nominated account after discharge of your mortgage and agreed adjustments. Please retain our final invoice for your records (attached or to follow separately as agreed).\n\nIt has been a pleasure acting for you. If we can assist with anything further, please let us know.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+    }),
+  };
+
+  const SALE_STEPS_CONFIG = [
+    { key: "sw_01", num: "01", phase: 1, phaseLabel: "Pre-Exchange", title: "Enquiry Received", what: "Record how the enquiry came in — phone, email or referral", tier: "A", tierNote: "Auto-detected from email · tick manually for phone/walk-in", action: null, autoComplete: true },
+    { key: "sw_02", num: "02", phase: 1, title: "Intro Email Sent to Vendor", what: "Send intro email so vendor can share our details with the agent", tier: "B", action: { type: "email", template: "sw_intro", label: "Send Intro Email", icon: "✉️" } },
+    { key: "sw_03", num: "03", phase: 1, title: "Vendor & Property Details Gathered", what: "Gather vendor name, property address, agent details, expected sale price, mortgage details", tier: "D", tierNote: "Manual — call or email vendor", action: null },
+    { key: "sw_04", num: "04", phase: 1, title: "Vendor ID Verified (VOI)", what: "Verify vendor identity per ARNECC requirements before preparing contract", tier: "D", tierNote: "Manual — verify via InfoTrack or in person", action: null },
+    { key: "sw_05", num: "05", phase: 1, title: "Section 32 / Vendor Statement Prepared", what: "Prepare Vendor Statement (VIC) or Contract for Sale (NSW) including all prescribed documents", tier: "B", tierNote: "State-specific — VIC: Section 32 · NSW: Contract for Sale", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" }, isMilestone: true },
+    { key: "sw_06", num: "06", phase: 1, title: "Contract Searches Ordered & Collated", what: "Order title search, council, water, land tax and any strata searches via InfoTrack", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📦" } },
+    { key: "sw_07", num: "07", phase: 1, title: "Contract Sent to Agent / Listed for Sale", what: "Send signed contract and vendor statement to agent for listing", tier: "B", tierNote: "One click — email to agent", action: { type: "email", template: "sw_contract_sent", label: "Send to Agent", icon: "📤" } },
+    { key: "sw_08", num: "08", phase: 1, title: "Mortgage Discharge Initiated", what: "Contact vendor's lender to initiate discharge of mortgage. Obtain payout figure and confirm discharge authority lodged in PEXA", tier: "D", tierNote: "Manual — contact lender directly", action: null, isMilestone: true },
+    { key: "sw_09", num: "09", phase: 1, title: "Negotiations, Requisitions & Cooling-Off", what: "Handle purchaser requisitions, negotiate special conditions, monitor cooling-off period", tier: "D", tierNote: "Manual — address/email", action: null, isMilestone: true, dates: [{ key: "date_1", label: "Exchange Date" }, { key: "date_2", label: "Cooling-Off Ends", note: "Auto: exchange + 5 business days" }] },
+    { key: "sw_10", num: "10", phase: 2, phaseLabel: "Post-Exchange", title: "Deposit Received & Receipted", what: "Confirm deposit paid to agent's trust account and receipted", tier: "A", tierNote: "Auto-detected or confirm manually with agent", action: null },
+    { key: "sw_11", num: "11", phase: 2, title: "Land Tax Clearance Certificate Ordered", what: "Order land tax clearance via InfoTrack or request from client", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" } },
+    { key: "sw_12", num: "12", phase: 2, title: "FRGW Certificate Obtained", what: "Foreign Resident Gain Withholding certificate obtained if applicable", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📑" } },
+    { key: "sw_13", num: "13", phase: 2, title: "PEXA Workspace Joined & Discharge Lodged", what: "Join purchaser's PEXA workspace. Confirm discharge of mortgage lodged by lender", tier: "B", action: { type: "url", url: "https://www.pexa.com.au", label: "Open PEXA", icon: "🔗" }, isMilestone: true },
+    { key: "sw_14", num: "14", phase: 2, title: "Settlement Adjustment Sheet Agreed", what: "Calculate rates, water and strata adjustments. Agree figures with purchaser's conveyancer", tier: "C", action: { type: "ai", aiType: "sale_adjustment", label: "Generate Adjustment Sheet", icon: "🧮" } },
+    { key: "sw_15", num: "15", phase: 2, title: "Pre-Settlement Inspection Acknowledged", what: "Vendor notified of purchaser's right to pre-settlement inspection. Coordinate access with agent", tier: "D", tierNote: "Manual — notify vendor and agent", action: null },
+    { key: "sw_16", num: "16", phase: 3, phaseLabel: "Settlement", title: "Settlement Complete", what: "Settlement occurs in PEXA. Confirm funds received and title transferred", tier: "B", action: { type: "url", url: "https://www.pexa.com.au", label: "Open PEXA", icon: "🔗" }, isMilestone: true, dates: [{ key: "date_1", label: "Settlement Date" }] },
+    { key: "sw_17", num: "17", phase: 4, phaseLabel: "Post-Settlement", title: "Order on Agent Sent", what: "Authorise agent to release deposit and keys to purchaser", tier: "B", action: { type: "email", template: "sw_order_on_agent", label: "Send Order on Agent", icon: "🔑" } },
+    { key: "sw_18", num: "18", phase: 4, title: "Vendor Proceeds Confirmed", what: "Confirm net proceeds received into vendor's nominated account after mortgage discharge and adjustments", tier: "D", tierNote: "Manual — confirm with vendor", action: null },
+    { key: "sw_19", num: "19", phase: 4, title: "Authorities Notified", what: "Notify council, water, strata (if applicable) of change of ownership", tier: "D", tierNote: "Manual — standard letters", action: null },
+    { key: "sw_20", num: "20", phase: 4, title: "Invoice Issued & Matter Closed", what: "Issue final invoice to vendor and close matter", tier: "B", action: { type: "email", template: "sw_final", label: "Send Final Invoice", icon: "📊" }, isLast: true },
+  ];
+
+  const [wfData, setWfData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(null);
+  const [expanded, setExpanded] = useState({});
+  const [emailModal, setEmailModal] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [aiPanel, setAiPanel] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDraft, setAiDraft] = useState("");
+
+  useEffect(() => {
+    if (!matterRef) return;
+    loadAll();
+  }, [matterRef]);
+
+  const loadAll = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("matter_workflow").select("*").eq("matter_ref", matterRef);
+    if (data) {
+      const map = {};
+      data.forEach((r) => { map[r.step_key] = r; });
+      setWfData(map);
+    }
+    setLoading(false);
+  };
+
+  const toggleStep = async (stepKey) => {
+    const done = !(wfData[stepKey]?.completed || false);
+    setSaving(stepKey);
+    const row = {
+      matter_ref: matterRef,
+      step_key: stepKey,
+      completed: done,
+      completed_at: done ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    };
+    await supabase.from("matter_workflow").upsert(row, { onConflict: "matter_ref,step_key" });
+    setWfData((p) => ({ ...p, [stepKey]: { ...(p[stepKey] || {}), ...row } }));
+    if (stepKey === "sw_16" && done) await supabase.from("matters").update({ matter_status: "settled" }).eq("matter_ref", matterRef);
+    if (stepKey === "sw_20" && done) await supabase.from("matters").update({ matter_status: "closed" }).eq("matter_ref", matterRef);
+    setSaving(null);
+    recalcProgress();
+  };
+
+  const saveDate = async (stepKey, field, value) => {
+    const row = { matter_ref: matterRef, step_key: stepKey, [field]: value || null, updated_at: new Date().toISOString() };
+    await supabase.from("matter_workflow").upsert(row, { onConflict: "matter_ref,step_key" });
+    setWfData((p) => ({ ...p, [stepKey]: { ...(p[stepKey] || {}), ...row } }));
+    if (stepKey === "sw_09" && field === "date_1" && value) {
+      const coolingEnd = addBusinessDaysWF(value, 5);
+      const row2 = { matter_ref: matterRef, step_key: "sw_09", date_2: coolingEnd, updated_at: new Date().toISOString() };
+      await supabase.from("matter_workflow").upsert(row2, { onConflict: "matter_ref,step_key" });
+      setWfData((p) => ({ ...p, sw_09: { ...(p.sw_09 || {}), ...row2 } }));
+    }
+    if (stepKey === "sw_16" && field === "date_1") {
+      await supabase.from("matters").update({ settlement: value }).eq("matter_ref", matterRef);
+    }
+  };
+
+  const recalcProgress = async () => {
+    const allKeys = SALE_STEPS_CONFIG.map((s) => s.key);
+    const { data } = await supabase.from("matter_workflow").select("step_key,completed").eq("matter_ref", matterRef);
+    const pct = Math.round(((data || []).filter((r) => r.completed && allKeys.includes(r.step_key)).length / allKeys.length) * 100);
+    await supabase.from("matters").update({ workflow_progress: pct }).eq("matter_ref", matterRef);
+  };
+
+  const openEmailModal = (templateKey, stepKey) => {
+    const tpl = SW_EMAIL_TEMPLATES[templateKey]?.(matter) || { to: "", subject: "", body: "" };
+    setEmailModal({ ...tpl, stepKey });
+  };
+
+  const sendEmail = async () => {
+    if (!emailModal) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emailModal.to,
+          subject: emailModal.subject,
+          body: emailModal.body,
+          matterId: matterRef,
+        }),
+      });
+      if (res.ok) {
+        await toggleStep(emailModal.stepKey);
+        setEmailModal(null);
+      } else {
+        alert("Email failed — please try again.");
+      }
+    } catch { alert("Error sending email."); }
+    setSending(false);
+  };
+
+  const openAiPanel = async (type, stepKey) => {
+    setAiPanel({ type, stepKey });
+    setAiLoading(true);
+    setAiDraft("");
+    const addr = matter?.address || "";
+    const st = matter?.state || "";
+    const price = matter?.price || matter?.value || matter?.purchase_price || "";
+    const settle = matter?.settlement || "";
+    const prompts = {
+      sale_adjustment: `You are a licensed Australian conveyancer. Generate a settlement adjustment sheet for the vendor covering council rates, water charges, strata levies (if applicable) adjusted to the settlement date, with a clear proceeds summary showing estimated net sale proceeds after mortgage discharge and agreed adjustments.
+
+Property: ${addr}
+State: ${st}
+Sale price (contract): $${price || "TBC"}
+Settlement date: ${settle || "TBC"}
+
+Use clear sections or a table format suitable to paste into an email or letter. Follow Australian conveyancing practice for the state where relevant. Sign off as Gitu Kaur, Conveyancing Crew.`,
+    };
+    try {
+      const res = await fetch("/api/contract-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompts[type], mode: "draft" }),
+      });
+      const data = await res.json();
+      setAiDraft(data?.result || data?.text || data?.content || "Could not generate draft — please try again.");
+    } catch { setAiDraft("Error generating draft. Please try again."); }
+    setAiLoading(false);
+  };
+
+  const sendAiDraft = async () => {
+    if (!aiPanel) return;
+    const clientEmail = matter?.client_email || matter?.email || "";
+    setEmailModal({
+      to: clientEmail,
+      subject: `Settlement adjustment sheet — ${matter?.address || ""}`,
+      body: aiDraft,
+      stepKey: aiPanel.stepKey,
+    });
+    setAiPanel(null);
+  };
+
+  const PHASE_CONFIG_SW = [
+    { id: 1, name: "Pre-Exchange", color: "#7b5ea7", bg: "#f0ebfa", border: "#c5b8e0", steps: ["sw_01", "sw_02", "sw_03", "sw_04", "sw_05", "sw_06", "sw_07", "sw_08", "sw_09"] },
+    { id: 2, name: "Post-Exchange", color: "#245eb0", bg: "#e8f0fb", border: "#90b4e0", steps: ["sw_10", "sw_11", "sw_12", "sw_13", "sw_14", "sw_15"] },
+    { id: 3, name: "Settlement", color: "#1a7a4a", bg: "#e6f5ee", border: "#6dba92", steps: ["sw_16"] },
+    { id: 4, name: "Post-Settlement", color: "#6b7a99", bg: "#eef0f5", border: "#b8c2d8", steps: ["sw_17", "sw_18", "sw_19", "sw_20"] },
+  ];
+
+  const phaseProgress = PHASE_CONFIG_SW.map((p) => {
+    const done = p.steps.filter((k) => wfData[k]?.completed).length;
+    return { ...p, done, total: p.steps.length, pct: Math.round((done / p.steps.length) * 100) };
+  });
+
+  const activePhaseId = wfData.sw_20?.completed ? 4 : wfData.sw_16?.completed ? 4 : wfData.sw_09?.completed ? 2 : 1;
+  const activePD = phaseProgress.find((p) => p.id === activePhaseId);
+  const isCompleted = (k) => wfData[k]?.completed || false;
+  const getDate = (k, f) => wfData[k]?.[f] || "";
+
+  const getNextAction = () => {
+    const order = SALE_STEPS_CONFIG.map((s) => s.key);
+    for (const k of order) {
+      if (!isCompleted(k)) {
+        return SALE_STEPS_CONFIG.find((s) => s.key === k);
+      }
+    }
+    return null;
+  };
+  const nextAction = getNextAction();
+
+  const TIER_STYLE = {
+    A: { label: "Auto", color: "#1a7a4a", bg: "#e6f5ee" },
+    B: { label: "1 click", color: "#245eb0", bg: "#e8f0fb" },
+    C: { label: "AI", color: "#7b5ea7", bg: "#f0ebfa" },
+    D: { label: "Manual", color: "#8a96b0", bg: "#eef0f5" },
+  };
+
+  const phaseColor = (phaseId) => PHASE_CONFIG_SW.find((p) => p.id === phaseId) || PHASE_CONFIG_SW[0];
+
+  const handleAction = (step) => {
+    if (!step.action) return;
+    const { type, template, url, aiType } = step.action;
+    if (type === "email") { openEmailModal(template, step.key); return; }
+    if (type === "url") { window.open(url, "_blank"); return; }
+    if (type === "ai") { openAiPanel(aiType, step.key); return; }
+  };
+
+  const Chk = ({ stepKey, size = 20 }) => {
+    const done = isCompleted(stepKey);
+    return (
+      <div onClick={() => toggleStep(stepKey)} style={{ width: size, height: size, borderRadius: 5, border: `2px solid ${done ? "#1a7a4a" : "#b0bdd8"}`, background: done ? "#1a7a4a" : "#f4f6fb", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.15s", opacity: saving === stepKey ? 0.4 : 1 }}>
+        {done && <svg width="11" height="9" viewBox="0 0 12 10" fill="none"><path d="M1 5l3.5 3.5L11 1" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+      </div>
+    );
+  };
+
+  if (loading) return <div style={{ padding: 60, textAlign: "center", color: "#8a96b0", fontSize: 14 }}>Loading workflow…</div>;
+
+  return (
+    <div style={{ maxWidth: 780, padding: `${outerPadY}px 0`, fontFamily: "DM Sans, sans-serif" }}>
+
+      {nextAction && (
+        <div style={{ background: "linear-gradient(135deg,#1a2744,#245eb0)", borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}>
+          <span style={{ fontSize: 22 }}>🎯</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>Next action</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Step {nextAction.num} — {nextAction.title}</div>
+          </div>
+          {nextAction.action && (
+            <button type="button" onClick={() => handleAction(nextAction)} style={{ background: "#c9a84c", color: "#3a2000", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {nextAction.action.icon} {nextAction.action.label}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div style={{ background: "#fff", border: "1.5px solid #dce3f0", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {phaseProgress.map((p) => (
+            <div key={p.id} style={{ flex: 1, minWidth: 80, background: p.id === activePhaseId ? p.bg : "#f4f6fb", border: `1.5px solid ${p.id === activePhaseId ? p.color : "#dce3f0"}`, borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
+              <div style={{ fontFamily: "DM Mono, monospace", fontSize: 9, fontWeight: 500, textTransform: "uppercase", letterSpacing: 1, color: p.id === activePhaseId ? p.color : "#b0bdd8", marginBottom: 3 }}>{p.name}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: p.id === activePhaseId ? p.color : "#d0d6e0" }}>{p.pct}%</div>
+              <div style={{ fontSize: 10, color: "#aaa", marginTop: 1 }}>{p.done}/{p.total}</div>
+            </div>
+          ))}
+        </div>
+        {activePD && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+              <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 1 }}>Current: {activePD.name}</span>
+              <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: activePD.color, fontWeight: 600 }}>{activePD.pct}%</span>
+            </div>
+            <div style={{ height: 6, background: "#f0f0f0", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${activePD.pct}%`, background: activePD.color, borderRadius: 3, transition: "width 0.4s ease" }} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {SALE_STEPS_CONFIG.map((step, idx) => {
+        const prev = SALE_STEPS_CONFIG[idx - 1];
+        const pc = phaseColor(step.phase);
+        const done = isCompleted(step.key);
+        const isExp = !done || expanded[step.key];
+        const tier = TIER_STYLE[step.tier] || TIER_STYLE.D;
+        const showPhaseLabel = step.phaseLabel && step.phaseLabel !== prev?.phaseLabel;
+
+        return (
+          <Fragment key={step.key}>
+            {showPhaseLabel && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 12px" }}>
+                <div style={{ flex: 1, height: 1, background: "#dce3f0" }} />
+                <div style={{ fontFamily: "DM Mono, monospace", fontSize: 9, fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase", padding: "3px 10px", borderRadius: 20, background: pc.bg, color: pc.color, border: `1px solid ${pc.border}`, whiteSpace: "nowrap" }}>{step.phaseLabel}</div>
+                <div style={{ flex: 1, height: 1, background: "#dce3f0" }} />
+              </div>
+            )}
+
+            <div style={{ display: "flex", alignItems: "stretch", marginBottom: 0 }}>
+              <div style={{ width: 44, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ width: 30, height: 30, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "DM Mono, monospace", fontSize: 11, fontWeight: 500, border: "2px solid", zIndex: 2, flexShrink: 0, transition: "all 0.2s", background: pc.bg, borderColor: pc.color, color: done ? "#ccc" : pc.color }}>
+                  {done ? "✓" : step.num}
+                </div>
+                {!step.isLast && <div style={{ width: 2, flex: 1, minHeight: 10, margin: "2px 0", background: pc.color, opacity: 0.15 }} />}
+              </div>
+
+              <div style={{ flex: 1, paddingBottom: 8 }}>
+                {done && !isExp ? (
+                  <div onClick={() => setExpanded((e) => ({ ...e, [step.key]: true }))} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: "pointer", borderRadius: 8, background: "#f9fbf9", border: "1.5px solid #d4ead4" }}>
+                    <span style={{ fontSize: 13, color: "#6b7a99", textDecoration: "line-through", flex: 1 }}>{step.title}</span>
+                    <span style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#1a7a4a" }}>✓ Done</span>
+                    <span style={{ fontSize: 11, color: "#ccc" }}>▾</span>
+                  </div>
+                ) : (
+                  <div style={{ borderRadius: 10, padding: "14px 16px", border: `1.5px solid ${step.isMilestone ? "#e0c97a" : pc.border}`, background: step.isMilestone ? "#fdf3dc" : done ? "#f9fbf9" : "#fff" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
+                      <Chk stepKey={step.key} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: done ? "#aaa" : "#1a2744", textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>
+                          {step.isMilestone && "⚡ "}{step.title}
+                        </div>
+                        {!done && <div style={{ fontSize: 12, color: "#8a96b0", marginTop: 3, lineHeight: 1.5 }}>{step.what}</div>}
+                      </div>
+                      <span style={{ fontFamily: "DM Mono, monospace", fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase", letterSpacing: 0.5, background: tier.bg, color: tier.color, whiteSpace: "nowrap", flexShrink: 0 }}>{tier.label}</span>
+                      {done && <span onClick={() => setExpanded((e) => ({ ...e, [step.key]: false }))} style={{ fontSize: 11, color: "#ccc", cursor: "pointer" }}>▲</span>}
+                    </div>
+
+                    {!done && step.tierNote ? (
+                      <div style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#bbb", marginBottom: step.action || step.dates ? 10 : 0, letterSpacing: 0.3 }}>{step.tierNote}</div>
+                    ) : null}
+
+                    {!done && step.action?.type === "email" && step.action.template !== "sw_contract_sent" && step.action.template !== "sw_order_on_agent" && !(matter?.client_email || matter?.email) && (
+                      <div style={{ background: "#fff8ed", border: "1.5px solid #f5c6c2", borderRadius: 7, padding: "6px 10px", marginBottom: 10, fontSize: 12, color: "#b06020" }}>
+                        ⚠️ No vendor email on file — you can still type one in the email modal below.
+                      </div>
+                    )}
+
+                    {!done && step.action?.type === "email" && (step.action.template === "sw_contract_sent" || step.action.template === "sw_order_on_agent") && (
+                      <div style={{ background: "#fff8ed", border: "1.5px solid #f5c6c2", borderRadius: 7, padding: "6px 10px", marginBottom: 10, fontSize: 12, color: "#b06020" }}>
+                        ⚠️ Add the agent&apos;s email in To before sending.
+                      </div>
+                    )}
+
+                    {step.dates && (
+                      <div style={{ display: "flex", gap: 10, marginBottom: step.action ? 10 : 0, flexWrap: "wrap" }}>
+                        {step.dates.map((d) => (
+                          <div key={d.key} style={{ flex: 1, minWidth: 140 }}>
+                            <label style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 3 }}>
+                              {d.label} {d.note && <span style={{ color: "#1a7a4a", textTransform: "none", letterSpacing: 0 }}>· {d.note}</span>}
+                            </label>
+                            <input type={d.inputType || "date"} value={getDate(step.key, d.key)} onChange={(e) => saveDate(step.key, d.key, e.target.value)}
+                              style={{ fontSize: 13, border: "1.5px solid #dce3f0", borderRadius: 6, padding: "5px 8px", background: "#f4f6fb", color: "#1a2744", width: "100%", outline: "none" }} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!done && step.action && (
+                      <button type="button" onClick={() => handleAction(step)} style={{ display: "flex", alignItems: "center", gap: 7, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s" }}
+                        onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }} onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}>
+                        <span>{step.action.icon}</span> {step.action.label}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Fragment>
+        );
+      })}
+
+      {emailModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 24, width: "100%", maxWidth: 580, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#1a2744", marginBottom: 16 }}>Review & Send Email</div>
+            {[{ label: emailModal.toInputLabel ? `To (${emailModal.toInputLabel})` : "To", key: "to" }, { label: "Subject", key: "subject" }].map((f) => (
+              <div key={f.key} style={{ marginBottom: 10 }}>
+                <label style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>{f.label}</label>
+                <input value={emailModal[f.key]} onChange={(e) => setEmailModal((m) => ({ ...m, [f.key]: e.target.value }))} style={{ width: "100%", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "8px 12px", fontSize: 13, color: "#1a2744", boxSizing: "border-box" }} />
+              </div>
+            ))}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>Message</label>
+              <textarea value={emailModal.body} onChange={(e) => setEmailModal((m) => ({ ...m, body: e.target.value }))} rows={10} style={{ width: "100%", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "8px 12px", fontSize: 13, color: "#1a2744", resize: "vertical", fontFamily: "DM Sans, sans-serif", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" onClick={sendEmail} disabled={sending} style={{ flex: 1, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "10px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                {sending ? "Sending…" : "📧 Send & Mark Done"}
+              </button>
+              <button type="button" onClick={() => setEmailModal(null)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 16px", fontSize: 14, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {aiPanel && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxWidth: 520, height: "100%", overflowY: "auto", boxShadow: "-20px 0 60px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "20px 24px", borderBottom: "1.5px solid #dce3f0", display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 20 }}>🤖</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#1a2744" }}>AI Draft</div>
+                <div style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 1 }}>{aiPanel.type}</div>
+              </div>
+              <button type="button" onClick={() => setAiPanel(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#aaa" }}>✕</button>
+            </div>
+            <div style={{ flex: 1, padding: 24 }}>
+              {aiLoading ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 200, gap: 12 }}>
+                  <div style={{ width: 32, height: 32, border: "3px solid #dce3f0", borderTop: "3px solid #245eb0", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                  <div style={{ fontSize: 13, color: "#8a96b0" }}>Generating draft…</div>
+                </div>
+              ) : (
+                <textarea value={aiDraft} onChange={(e) => setAiDraft(e.target.value)} rows={20} style={{ width: "100%", border: "1.5px solid #dce3f0", borderRadius: 8, padding: "12px", fontSize: 13, color: "#1a2744", resize: "vertical", fontFamily: "DM Sans, sans-serif", lineHeight: 1.6, boxSizing: "border-box" }} placeholder="AI draft will appear here…" />
+              )}
+            </div>
+            <div style={{ padding: "16px 24px", borderTop: "1.5px solid #dce3f0", display: "flex", gap: 10 }}>
+              <button type="button" onClick={sendAiDraft} disabled={aiLoading || !aiDraft} style={{ flex: 1, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "10px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                Use This Draft →
+              </button>
+              <button type="button" onClick={() => openAiPanel(aiPanel.type, aiPanel.stepKey)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Regenerate</button>
+              <button type="button" onClick={() => setAiPanel(null)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 
 const SEARCH_TYPES_BY_MATTER = {
   NSW_Purchase: [
@@ -9283,6 +9721,14 @@ Return only the email body text, no subject line.`;
           }}
         />
       )
+    : selMatterObj?.type === "Sale"
+      ? (
+          <SaleWorkflow
+            matter={selMatterObj}
+            supabase={supabase}
+            isMobile={isMobile}
+          />
+        )
     : selMatterObj?.type === "Contract Review"
       ? (
           <ContractReviewWorkflow
