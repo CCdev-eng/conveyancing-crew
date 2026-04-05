@@ -8007,7 +8007,11 @@ Return only the email body text, no subject line.`;
                     }}
                   >
                     {notifOpen ? "🔔" : "🔔"}
-                    {contractInboxUnread + notifUnreadCount > 0 && (
+                    {(() => {
+                      const totalBadge =
+                        contractInboxUnread +
+                        notifications.filter((n) => n.urgency === "critical" || n.urgency === "high").length;
+                      return totalBadge > 0 && !bellSeen ? (
                       <span
                         className="badge-pop"
                         style={{
@@ -8030,9 +8034,10 @@ Return only the email body text, no subject line.`;
                           boxShadow: "0 0 0 2px white",
                         }}
                       >
-                        {contractInboxUnread + notifUnreadCount > 9 ? "9+" : contractInboxUnread + notifUnreadCount}
+                        {totalBadge > 9 ? "9+" : totalBadge}
                       </span>
-                    )}
+                      ) : null;
+                    })()}
                   </button>
                   <div
                     style={{
@@ -8201,7 +8206,11 @@ Return only the email body text, no subject line.`;
                 }}
               >
                 {notifOpen ? "🔔" : "🔔"}
-                {contractInboxUnread + notifUnreadCount > 0 && (
+                {(() => {
+                  const totalBadge =
+                    contractInboxUnread +
+                    notifications.filter((n) => n.urgency === "critical" || n.urgency === "high").length;
+                  return totalBadge > 0 && !bellSeen ? (
                   <span
                     className="badge-pop"
                     style={{
@@ -8224,9 +8233,10 @@ Return only the email body text, no subject line.`;
                       boxShadow: "0 0 0 2px white",
                     }}
                   >
-                    {contractInboxUnread + notifUnreadCount > 9 ? "9+" : contractInboxUnread + notifUnreadCount}
+                    {totalBadge > 9 ? "9+" : totalBadge}
                   </span>
-                )}
+                  ) : null;
+                })()}
               </button>
                 <div
                   style={{
@@ -8628,83 +8638,63 @@ Return only the email body text, no subject line.`;
                     </div>
                   ) : (
                     notifications.map((n) => {
-                      const cardTitle = n.cardTitle || n.title;
-                      const cardAddress = n.cardAddress;
-                      const cardClient = n.cardClient;
-                      const cardExtra = n.cardExtra;
+                      const matter = MATTERS.find(
+                        (m) => m.matter_ref === n.matter_ref || m.id === n.matter_ref
+                      );
+                      const bodyText = String(n.body ?? "")
+                        .replace(/\s*—\s*undefined/g, "")
+                        .replace(/\s*—\s*null/g, "")
+                        .trim();
                       return (
-                      <div
-                        key={n.id}
-                        style={{
-                          padding: "12px 16px",
-                          borderBottom: "1px solid var(--border-2)",
-                          cursor: "pointer",
-                          transition: "background 0.12s",
-                          borderLeft:
-                            "3px solid " +
-                            (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)"),
-                          background: "var(--white)",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
-                        onClick={() => {
-                          if (n.matter_ref) {
-                            setSelectedMatter(n.matter_ref);
-                            setPage("matter_workspace");
-                            setMatterTab("Overview");
-                            setNotifOpen(false);
-                          }
-                        }}
-                      >
-                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                          {n.icon ? (
-                            <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.2 }}>{n.icon}</span>
-                          ) : (
-                            <span style={{ width: 4, flexShrink: 0 }} aria-hidden />
-                          )}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
-                              <span
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  color: "var(--text)",
-                                  lineHeight: 1.35,
-                                  letterSpacing: "-0.01em",
-                                }}
-                              >
-                                {cardTitle}
-                              </span>
-                              <span
-                                className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
-                                style={{ fontSize: 9, flexShrink: 0, textTransform: "capitalize" }}
-                              >
-                                {n.urgency}
-                              </span>
-                            </div>
-                            {cardAddress != null && cardAddress !== "" && (
-                              <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.45, marginBottom: 2 }}>
-                                {cardAddress}
-                              </div>
-                            )}
-                            {cardClient != null && cardClient !== "" && cardClient !== "—" && (
-                              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)", marginBottom: 2 }}>
-                                {cardClient}
-                              </div>
-                            )}
-                            {cardExtra && String(cardExtra).trim() && cardExtra !== cardTitle && (
-                              <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45, marginTop: 2 }}>
-                                {cardExtra}
-                              </div>
-                            )}
-                            {n.matter_ref && (
-                              <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 6, letterSpacing: "0.02em" }}>
-                                {n.matter_ref}
-                              </div>
-                            )}
+                        <div
+                          key={n.id}
+                          style={{
+                            padding: "12px 16px",
+                            borderBottom: "1px solid var(--border-2)",
+                            cursor: "pointer",
+                            transition: "background 0.12s",
+                            borderLeft:
+                              "3px solid " +
+                              (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)"),
+                            background: "var(--white)",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
+                          onClick={() => {
+                            if (n.matter_ref) {
+                              setSelectedMatter(n.matter_ref);
+                              setPage("matter_workspace");
+                              setMatterTab("Overview");
+                              setNotifOpen(false);
+                            }
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{n.title}</span>
+                            <span
+                              className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
+                              style={{ fontSize: 9, flexShrink: 0, textTransform: "capitalize" }}
+                            >
+                              {n.urgency}
+                            </span>
                           </div>
+                          {bodyText ? (
+                            <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5, marginBottom: 4 }}>{bodyText}</div>
+                          ) : null}
+                          {matter?.address ? (
+                            <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45 }}>{matter.address}</div>
+                          ) : null}
+                          {matter && (matter.client_name || matter.client) ? (
+                            <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45, marginTop: 2 }}>
+                              {matter.client_name || matter.client}
+                            </div>
+                          ) : null}
+                          {n.matter_ref ? (
+                            <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 6, letterSpacing: "0.02em" }}>
+                              {n.matter_ref}
+                            </div>
+                          ) : null}
                         </div>
-                      </div>
                       );
                     })
                   )}
