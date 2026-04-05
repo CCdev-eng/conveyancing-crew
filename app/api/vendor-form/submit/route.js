@@ -81,6 +81,36 @@ export async function POST(request) {
     }
     console.log("[submit] task insert attempted")
 
+    // Update matters table with correct column names
+    try {
+      const matterPatch = {}
+      const agentFirst = payload.agent_first_name || row.agent_first_name || ""
+      const agentLast = payload.agent_last_name || row.agent_last_name || ""
+      const agentFullName = [agentFirst, agentLast].filter(Boolean).join(" ").trim()
+      if (agentFullName) matterPatch.agent_name = agentFullName
+      if (payload.agent_phone || row.agent_phone) matterPatch.agent_phone = payload.agent_phone || row.agent_phone
+      if (payload.agent_email || row.agent_email) matterPatch.agent_email = payload.agent_email || row.agent_email
+      if (payload.expected_price || row.expected_price) matterPatch.price = payload.expected_price || row.expected_price
+      if (payload.possession_type || row.possession_type) {
+        const tenanted = (payload.possession_type || row.possession_type) === "tenanted"
+        matterPatch.is_tenanted = tenanted
+      }
+      if (Object.keys(matterPatch).length > 0) {
+        matterPatch.updated_at = new Date().toISOString()
+        const { error: matterErr } = await supabase
+          .from("matters")
+          .update(matterPatch)
+          .eq("matter_ref", matterRef)
+        if (matterErr) {
+          console.error("[submit] matter update error:", matterErr.message)
+        } else {
+          console.log("[submit] matter updated successfully:", Object.keys(matterPatch).join(","))
+        }
+      }
+    } catch (matterUpdateErr) {
+      console.error("[submit] matter update exception:", matterUpdateErr.message)
+    }
+
     // 6. Build email body for Gitu
     const staffBody = `A vendor instruction form has been submitted for matter ${matterRef}.
 
