@@ -4969,8 +4969,31 @@ Maximum 300 words.`,
         console.log("[ContractInbox] Subscription status:", status);
       });
 
+    const tasksChannel = supabase
+      .channel("tasks-realtime-" + Date.now())
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "tasks",
+        },
+        (payload) => {
+          console.log("[Tasks] Realtime new task:", payload.new?.task);
+          setTasks((prev) => [payload.new, ...prev]);
+          if (payload.new?.urgency === "critical" || payload.new?.urgency === "high") {
+            setBellSeen(false);
+            bellSeenRef.current = false;
+            setBellShaking(true);
+            setTimeout(() => setBellShaking(false), 600);
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(inboxChannel);
+      supabase.removeChannel(tasksChannel);
     };
   }, [loadContractInbox, user?.id]);
 
