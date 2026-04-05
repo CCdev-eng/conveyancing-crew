@@ -4299,6 +4299,14 @@ export default function App() {
   const [intakeHasCoPurchaser, setIntakeHasCoPurchaser] = useState(false);
   const [intakeCoPurchaserFirstName, setIntakeCoPurchaserFirstName] = useState("");
   const [intakeCoPurchaserLastName, setIntakeCoPurchaserLastName] = useState("");
+  const [intakeAgentFirstName, setIntakeAgentFirstName] = useState("");
+  const [intakeAgentLastName, setIntakeAgentLastName] = useState("");
+  const [intakeAgencyName, setIntakeAgencyName] = useState("");
+  const [intakeAgentPhone, setIntakeAgentPhone] = useState("");
+  const [intakeAgentEmail, setIntakeAgentEmail] = useState("");
+  const [intakeHasCoVendor, setIntakeHasCoVendor] = useState(false);
+  const [intakeCoVendorFirstName, setIntakeCoVendorFirstName] = useState("");
+  const [intakeCoVendorLastName, setIntakeCoVendorLastName] = useState("");
   const [intakeEntityType, setIntakeEntityType] = useState("individual");
   const [intakeEntityName, setIntakeEntityName] = useState("");
   const [intakeEntityABN, setIntakeEntityABN] = useState("");
@@ -6314,6 +6322,14 @@ RESPONSE RULES:
     setIntakeHasCoPurchaser(false);
     setIntakeCoPurchaserFirstName("");
     setIntakeCoPurchaserLastName("");
+    setIntakeAgentFirstName("");
+    setIntakeAgentLastName("");
+    setIntakeAgencyName("");
+    setIntakeAgentPhone("");
+    setIntakeAgentEmail("");
+    setIntakeHasCoVendor(false);
+    setIntakeCoVendorFirstName("");
+    setIntakeCoVendorLastName("");
     setIntakePurchasePrice("");
     setIntakeSettlementDate("");
     setIntakeReferralSource("");
@@ -6354,6 +6370,14 @@ RESPONSE RULES:
     setIntakeHasCoPurchaser(false);
     setIntakeCoPurchaserFirstName("");
     setIntakeCoPurchaserLastName("");
+    setIntakeAgentFirstName("");
+    setIntakeAgentLastName("");
+    setIntakeAgencyName("");
+    setIntakeAgentPhone("");
+    setIntakeAgentEmail("");
+    setIntakeHasCoVendor(false);
+    setIntakeCoVendorFirstName("");
+    setIntakeCoVendorLastName("");
     setIntakeEntityType("individual");
     setIntakeEntityName("");
     setIntakeEntityABN("");
@@ -6408,7 +6432,16 @@ RESPONSE RULES:
         const fd = String(intakeReferralFee).replace(/[^0-9]/g, "");
         if (fd) notesObj.referralFee = parseInt(fd, 10);
       }
-      if (intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)) {
+      if (intakeMatterType === "Sale") {
+        const agName = [intakeAgentFirstName, intakeAgentLastName].filter(Boolean).join(" ").trim();
+        if (agName) notesObj.agentName = agName;
+        if (intakeAgencyName?.trim()) notesObj.agencyName = intakeAgencyName.trim();
+        if (intakeAgentPhone?.trim()) notesObj.agentPhone = intakeAgentPhone.trim();
+        if (intakeAgentEmail?.trim()) notesObj.agentEmail = intakeAgentEmail.trim();
+        if (intakeHasCoVendor && (intakeCoVendorFirstName || intakeCoVendorLastName)) {
+          notesObj.co_vendor_name = [intakeCoVendorFirstName, intakeCoVendorLastName].filter(Boolean).join(" ").trim();
+        }
+      } else if (intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)) {
         notesObj.coPurchaser = [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim();
       }
 
@@ -6427,9 +6460,13 @@ RESPONSE RULES:
         client_first_name: intakeClientFirstName?.trim() || null,
         client_last_name: intakeClientLastName?.trim() || null,
         co_purchaser_name:
-          intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)
+          intakeMatterType !== "Sale" &&
+          intakeHasCoPurchaser &&
+          (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)
             ? [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim() || null
             : null,
+        agent: intakeMatterType === "Sale" ? [intakeAgentFirstName, intakeAgentLastName].filter(Boolean).join(" ").trim() || null : null,
+        agent_phone: intakeMatterType === "Sale" ? (intakeAgentPhone?.trim() || null) : null,
         type: intakeMatterType,
         address: intakeAddress || "",
         state: intakeState || "NSW",
@@ -6573,7 +6610,7 @@ RESPONSE RULES:
       setModal(null);
       resetIntakeModal();
       setPage("matter_workspace");
-      setMatterTab(intakeMatterType === "Purchase" ? "Workflow" : "Overview");
+      setMatterTab(intakeMatterType === "Purchase" || intakeMatterType === "Sale" ? "Workflow" : "Overview");
     } catch (e) {
       console.error(e);
       alert(e.message || "Could not create matter");
@@ -7480,7 +7517,7 @@ Return only the email body text, no subject line.`;
   }, [selMatterObj]);
 
   useEffect(() => {
-    if (modal !== "intake" || intakeStep !== 1 || intakeMatterType !== "Purchase") {
+    if (modal !== "intake" || intakeStep !== 1 || (intakeMatterType !== "Purchase" && intakeMatterType !== "Sale")) {
       autocompleteAttachedRef.current = false;
       return;
     }
@@ -13469,9 +13506,11 @@ Return only the email body text, no subject line.`;
       ══════════════════════════════════════════════ */}
       {modal === "intake" && (() => {
         const purchase = intakeMatterType === "Purchase";
-        const maxIdx = purchase ? 3 : 2;
-        const labels = purchase ? ["Type", "Property", "Client", "Review"] : ["Type", "Client", "Review"];
-        const displayIdx = purchase ? intakeStep : intakeStep === 0 ? 0 : intakeStep === 1 ? 1 : 2;
+        const sale = intakeMatterType === "Sale";
+        const shortIntake = !purchase && !sale;
+        const maxIdx = purchase ? 3 : sale ? 4 : 2;
+        const labels = purchase ? ["Type", "Property", "Client", "Review"] : sale ? ["Type", "Property", "Vendor", "Agent", "Review"] : ["Type", "Client", "Review"];
+        const displayIdx = purchase || sale ? intakeStep : intakeStep === 0 ? 0 : intakeStep === 1 ? 1 : 2;
         const goNext = () => {
           if (intakeStep === 0) {
             if (!intakeMatterType) return;
@@ -13480,11 +13519,13 @@ Return only the email body text, no subject line.`;
           }
           if (purchase) {
             if (intakeStep < 3) setIntakeStep((s) => s + 1);
+          } else if (sale) {
+            if (intakeStep < 4) setIntakeStep((s) => s + 1);
           } else if (intakeStep === 1) setIntakeStep(2);
         };
         const goBack = () => {
           if (intakeStep === 0) return;
-          if (purchase) setIntakeStep((s) => s - 1);
+          if (purchase || sale) setIntakeStep((s) => s - 1);
           else if (intakeStep === 2) setIntakeStep(1);
           else if (intakeStep === 1) setIntakeStep(0);
         };
@@ -13496,13 +13537,17 @@ Return only the email body text, no subject line.`;
         const nextValid =
           intakeStep === 0
             ? !!intakeMatterType
-            : intakeStep === 1 && purchase
+            : intakeStep === 1 && (purchase || sale)
               ? purchasePropertyOk
-              : intakeStep === 1 && !purchase
+              : intakeStep === 1 && shortIntake
                 ? true
                 : intakeStep === 2 && purchase
                   ? entityNameOk
-                  : true;
+                  : intakeStep === 2 && sale
+                    ? entityNameOk
+                    : intakeStep === 3 && sale
+                      ? true
+                      : true;
         const autofillBadge = (key) =>
           intakeAutoFilledFields[key] ? (
             <span
@@ -13530,11 +13575,14 @@ Return only the email body text, no subject line.`;
                 <div className="intake-title">New matter</div>
                 <div className="intake-sub">
                   {intakeStep === 0 && "What type of matter?"}
-                  {intakeStep === 1 && purchase && "Property details"}
-                  {intakeStep === 1 && !purchase && "Client details"}
+                  {intakeStep === 1 && (purchase || sale) && "Property details"}
+                  {intakeStep === 1 && shortIntake && "Client details"}
                   {intakeStep === 2 && purchase && "Client details"}
-                  {intakeStep === 2 && !purchase && "Review & create"}
+                  {intakeStep === 2 && sale && "Vendor details"}
+                  {intakeStep === 3 && sale && "Agent details"}
+                  {intakeStep === 2 && shortIntake && "Review & create"}
                   {intakeStep === 3 && purchase && "Review & create"}
+                  {intakeStep === 4 && sale && "Review & create"}
                 </div>
               </div>
               <button type="button" className="modal-close" onClick={() => { setModal(null); resetIntakeModal(); }}>✕</button>
@@ -13588,7 +13636,7 @@ Return only the email body text, no subject line.`;
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8, textAlign: "center" }}>We&apos;ll guide you through the full process step by step</div>
                 </>
               )}
-              {intakeStep === 1 && purchase && (
+              {intakeStep === 1 && (purchase || sale) && (
                 <>
                   <label className="intake-label">Full address</label>
                   <input
@@ -13625,7 +13673,7 @@ Return only the email body text, no subject line.`;
                       ))}
                     </div>
                   </div>
-                  <label className="intake-label">Purchase price</label>
+                  <label className="intake-label">{sale ? "Expected sale price" : "Purchase price"}</label>
                   <div style={{ position: "relative", marginBottom: 14 }}>
                     <span style={{ position: "absolute", left: 12, top: 9, fontSize: 12, color: "var(--text-3)", zIndex: 1 }}>$</span>
                     <input
@@ -13880,7 +13928,7 @@ Return only the email body text, no subject line.`;
                   )}
                 </>
               )}
-              {intakeStep === 1 && !purchase && (
+              {intakeStep === 1 && shortIntake && (
                 <>
                   <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 16 }}>
                     All fields optional — you can update client details later from the matter overview
@@ -13916,6 +13964,140 @@ Return only the email body text, no subject line.`;
                     </div>
                   )}
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>We&apos;ll send them an intro email automatically once the matter is created</div>
+                </>
+              )}
+              {intakeStep === 2 && sale && (
+                <>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 16 }}>
+                    All fields optional — you can update vendor details later from the matter overview
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>Who is the vendor?</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                    <button
+                      type="button"
+                      onClick={() => setIntakeEntityType("individual")}
+                      style={{
+                        textAlign: "left",
+                        padding: 14,
+                        borderRadius: 12,
+                        border: intakeEntityType === "individual" ? "2px solid var(--blue)" : "1px solid var(--border)",
+                        background: intakeEntityType === "individual" ? "var(--blue-light)" : "var(--surface)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-body)",
+                      }}
+                    >
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>👤</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Individual / Joint vendors</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.35 }}>One or more people selling in their own name</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIntakeEntityType("entity")}
+                      style={{
+                        textAlign: "left",
+                        padding: 14,
+                        borderRadius: 12,
+                        border: intakeEntityType === "entity" ? "2px solid var(--blue)" : "1px solid var(--border)",
+                        background: intakeEntityType === "entity" ? "var(--blue-light)" : "var(--surface)",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-body)",
+                      }}
+                    >
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>🏢</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Company / Trust / SMSF</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.35 }}>Selling through a business entity</div>
+                    </button>
+                  </div>
+                  {intakeEntityType === "individual" ? (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <label className="intake-label">First name</label>
+                          <input className="intake-input" value={intakeClientFirstName} onChange={(e) => setIntakeClientFirstName(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="intake-label">Last name</label>
+                          <input className="intake-input" value={intakeClientLastName} onChange={(e) => setIntakeClientLastName(e.target.value)} />
+                        </div>
+                      </div>
+                      <label className="intake-label">Email</label>
+                      <input className="intake-input" type="email" value={intakeClientEmail} onChange={(e) => setIntakeClientEmail(e.target.value)} style={{ marginBottom: 12 }} />
+                      <label className="intake-label">Mobile</label>
+                      <input className="intake-input" value={intakeClientPhone} onChange={(e) => setIntakeClientPhone(e.target.value)} style={{ marginBottom: 12 }} />
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text-2)" }}>
+                        <input type="checkbox" checked={intakeHasCoVendor} onChange={(e) => setIntakeHasCoVendor(e.target.checked)} />
+                        Is there a co-vendor?
+                      </label>
+                      {intakeHasCoVendor && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                          <div>
+                            <label className="intake-label">Co-vendor first name</label>
+                            <input className="intake-input" value={intakeCoVendorFirstName} onChange={(e) => setIntakeCoVendorFirstName(e.target.value)} />
+                          </div>
+                          <div>
+                            <label className="intake-label">Co-vendor last name</label>
+                            <input className="intake-input" value={intakeCoVendorLastName} onChange={(e) => setIntakeCoVendorLastName(e.target.value)} />
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>Joint vendors will both be noted on the contract</div>
+                    </>
+                  ) : (
+                    <>
+                      <label className="intake-label">Entity name</label>
+                      <input
+                        className="intake-input"
+                        placeholder="e.g. Smith Family Trust"
+                        value={intakeEntityName}
+                        onChange={(e) => setIntakeEntityName(e.target.value)}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <label className="intake-label">ABN / ACN</label>
+                      <input className="intake-input" value={intakeEntityABN} onChange={(e) => setIntakeEntityABN(e.target.value)} style={{ marginBottom: 16 }} />
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>Primary contact person</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                        <div>
+                          <label className="intake-label">First name</label>
+                          <input className="intake-input" value={intakeClientFirstName} onChange={(e) => setIntakeClientFirstName(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="intake-label">Last name</label>
+                          <input className="intake-input" value={intakeClientLastName} onChange={(e) => setIntakeClientLastName(e.target.value)} />
+                        </div>
+                      </div>
+                      <label className="intake-label">Email</label>
+                      <input className="intake-input" type="email" value={intakeClientEmail} onChange={(e) => setIntakeClientEmail(e.target.value)} style={{ marginBottom: 12 }} />
+                      <label className="intake-label">Phone</label>
+                      <input className="intake-input" value={intakeClientPhone} onChange={(e) => setIntakeClientPhone(e.target.value)} style={{ marginBottom: 12 }} />
+                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4, lineHeight: 1.45 }}>
+                        The entity name will appear on the contract. The contact person receives correspondence.
+                      </div>
+                    </>
+                  )}
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>We&apos;ll send them an intro email automatically once the matter is created</div>
+                </>
+              )}
+              {intakeStep === 3 && sale && (
+                <>
+                  <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 16 }}>
+                    All fields optional — you can update agent details later from the matter overview
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label className="intake-label">Agent first name</label>
+                      <input className="intake-input" value={intakeAgentFirstName} onChange={(e) => setIntakeAgentFirstName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="intake-label">Agent last name</label>
+                      <input className="intake-input" value={intakeAgentLastName} onChange={(e) => setIntakeAgentLastName(e.target.value)} />
+                    </div>
+                  </div>
+                  <label className="intake-label">Agency name</label>
+                  <input className="intake-input" value={intakeAgencyName} onChange={(e) => setIntakeAgencyName(e.target.value)} style={{ marginBottom: 12 }} />
+                  <label className="intake-label">Agent phone</label>
+                  <input className="intake-input" value={intakeAgentPhone} onChange={(e) => setIntakeAgentPhone(e.target.value)} style={{ marginBottom: 12 }} />
+                  <label className="intake-label">Agent email</label>
+                  <input className="intake-input" type="email" value={intakeAgentEmail} onChange={(e) => setIntakeAgentEmail(e.target.value)} />
                 </>
               )}
               {intakeStep === 2 && purchase && (
@@ -14971,7 +15153,7 @@ JOINT PURCHASER RULES:
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 14 }}>We&apos;ll send them an intro email automatically once the matter is created</div>
                 </>
               )}
-              {(intakeStep === 3 && purchase) || (intakeStep === 2 && !purchase) ? (
+              {(intakeStep === 3 && purchase) || (intakeStep === 4 && sale) || (intakeStep === 2 && shortIntake) ? (
                 <div>
                   <div className="card" style={{ marginBottom: 14 }}>
                     <div className="card-hdr">
@@ -14980,30 +15162,86 @@ JOINT PURCHASER RULES:
                     <div style={{ padding: "10px 16px 14px", fontSize: 12 }}>
                       {[
                         ["Type", intakeMatterType],
-                        ["Address", intakeAddress || "—"],
-                        ["State", intakeState],
-                        ["Price", intakePurchasePrice ? `$${formatDigitsWithCommas(intakePurchasePrice)}` : "—"],
-                        ["Settlement", intakeSettlementDate || "—"],
-                        [
-                          "Referral",
-                          [
-                            intakeReferralSource,
-                            intakeReferrerName ? ` · ${intakeReferrerName}` : "",
-                            intakeReferralFeeEnabled && intakeReferralFee ? ` · Fee $${formatDigitsWithCommas(intakeReferralFee)}` : "",
-                          ].join(""),
-                        ],
-                        ...(intakeEntityType === "entity"
+                        ...(purchase || sale
                           ? [
-                              ["Entity name", intakeEntityName || "—"],
-                              ["ABN / ACN", intakeEntityABN || "—"],
+                              ["Address", intakeAddress || "—"],
+                              ["State", intakeState],
                               [
-                                "Primary contact",
-                                [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—",
+                                sale ? "Expected sale price" : "Price",
+                                intakePurchasePrice ? `$${formatDigitsWithCommas(intakePurchasePrice)}` : "—",
                               ],
-                              ["Contact email", intakeClientEmail || "—"],
-                              ["Contact phone", intakeClientPhone || "—"],
+                              ["Settlement", intakeSettlementDate || "—"],
+                              [
+                                "Referral",
+                                [
+                                  intakeReferralSource,
+                                  intakeReferrerName ? ` · ${intakeReferrerName}` : "",
+                                  intakeReferralFeeEnabled && intakeReferralFee ? ` · Fee $${formatDigitsWithCommas(intakeReferralFee)}` : "",
+                                ].join(""),
+                              ],
                             ]
-                          : [
+                          : []),
+                        ...(sale
+                          ? [
+                              ...(intakeEntityType === "entity"
+                                ? [
+                                    ["Entity name", intakeEntityName || "—"],
+                                    ["ABN / ACN", intakeEntityABN || "—"],
+                                    [
+                                      "Primary contact",
+                                      [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—",
+                                    ],
+                                    ["Vendor email", intakeClientEmail || "—"],
+                                    ["Vendor phone", intakeClientPhone || "—"],
+                                  ]
+                                : [
+                                    ["Vendor", [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—"],
+                                    ["Email", intakeClientEmail || "—"],
+                                    ["Phone", intakeClientPhone || "—"],
+                                    intakeHasCoVendor
+                                      ? [
+                                          "Co-vendor",
+                                          [intakeCoVendorFirstName, intakeCoVendorLastName].filter(Boolean).join(" ") || "—",
+                                        ]
+                                      : null,
+                                  ]),
+                              [
+                                "Agent",
+                                [intakeAgentFirstName, intakeAgentLastName].filter(Boolean).join(" ") || "—",
+                              ],
+                              ["Agency", intakeAgencyName || "—"],
+                              ["Agent phone", intakeAgentPhone || "—"],
+                              ["Agent email", intakeAgentEmail || "—"],
+                            ]
+                          : []),
+                        ...(purchase
+                          ? [
+                              ...(intakeEntityType === "entity"
+                                ? [
+                                    ["Entity name", intakeEntityName || "—"],
+                                    ["ABN / ACN", intakeEntityABN || "—"],
+                                    [
+                                      "Primary contact",
+                                      [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—",
+                                    ],
+                                    ["Contact email", intakeClientEmail || "—"],
+                                    ["Contact phone", intakeClientPhone || "—"],
+                                  ]
+                                : [
+                                    ["Client", [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—"],
+                                    ["Email", intakeClientEmail || "—"],
+                                    ["Phone", intakeClientPhone || "—"],
+                                    intakeHasCoPurchaser
+                                      ? [
+                                          "Co-purchaser",
+                                          [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ") || "—",
+                                        ]
+                                      : null,
+                                  ]),
+                            ]
+                          : []),
+                        ...(shortIntake
+                          ? [
                               ["Client", [intakeClientFirstName, intakeClientLastName].filter(Boolean).join(" ") || "—"],
                               ["Email", intakeClientEmail || "—"],
                               ["Phone", intakeClientPhone || "—"],
@@ -15013,11 +15251,12 @@ JOINT PURCHASER RULES:
                                     [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ") || "—",
                                   ]
                                 : null,
-                            ]),
+                            ]
+                          : []),
                       ]
                         .filter(Boolean)
-                        .map(([k, v]) => (
-                          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-2)" }}>
+                        .map(([k, v], sumIdx) => (
+                          <div key={`intake-sum-${sumIdx}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-2)" }}>
                             <span style={{ color: "var(--text-3)" }}>{k}</span>
                             <span style={{ fontWeight: 600, color: "var(--text)", textAlign: "right" }}>{v}</span>
                           </div>
