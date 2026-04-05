@@ -79,6 +79,7 @@ export async function POST(request) {
     try {
       await supabase.from("tasks").insert({
         matter_ref: matterRef,
+        client_name: vendorName,
         task: "Vendor form submitted — review and update matter details",
         urgency: "high",
         done: false,

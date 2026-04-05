@@ -4244,8 +4244,6 @@ export default function App() {
   const [selectedCommId, setSelectedCommId] = useState(1);
   const [commTab, setCommTab] = useState("all");
   const [tasks, setTasks] = useState([]);
-  /** Increment to re-run the tasks fetch effect (e.g. after vendor form submission detected). */
-  const [tasksRefreshNonce, setTasksRefreshNonce] = useState(0);
   const [comms, setComms] = useState([]);
   const [referrers, setReferrers] = useState([]);
   const [referralsList, setReferralsList] = useState([]);
@@ -4925,6 +4923,11 @@ Maximum 300 words.`,
     }
   }, []);
 
+  const fetchTasks = useCallback(async () => {
+    const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
+    if (data) setTasks(data);
+  }, []);
+
   useEffect(() => {
     console.log("[ContractInbox] About to call loadContractInbox...");
     loadContractInbox();
@@ -5068,12 +5071,8 @@ Maximum 300 words.`,
   }, []);
 
   useEffect(() => {
-    const fetchTasks = async () => {
-      const { data } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
-      if (data) setTasks(data);
-    };
-    fetchTasks();
-  }, [tasksRefreshNonce]);
+    void fetchTasks();
+  }, [fetchTasks]);
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -7131,7 +7130,6 @@ RESPONSE RULES:
         setVendorFormStatus(submitted ? "submitted" : "pending");
         if (submitted) {
           void fetchMatters();
-          setTasksRefreshNonce((n) => n + 1);
         }
       } catch {
         if (!cancelled) {
@@ -7144,6 +7142,11 @@ RESPONSE RULES:
       cancelled = true;
     };
   }, [selectedMatter, selMatterObj?.matter_ref, selMatterObj?.type, selMatterObj?.notes, fetchMatters]);
+
+  useEffect(() => {
+    if (vendorFormStatus !== "submitted") return;
+    void fetchTasks();
+  }, [vendorFormStatus, fetchTasks]);
 
   useEffect(() => {
     const matterRef = selMatterObj?.matter_ref || selMatterObj?.id;
