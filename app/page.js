@@ -2126,7 +2126,7 @@ const CSS = `
 body{font-family:var(--font-body);background:var(--surface);color:var(--text);overflow:hidden}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes bellShake{0%,100%{transform:rotate(0)}15%{transform:rotate(-12deg)}30%{transform:rotate(10deg)}45%{transform:rotate(-8deg)}60%{transform:rotate(6deg)}75%{transform:rotate(-4deg)}90%{transform:rotate(2deg)}}.bell-shake{animation:bellShake 0.5s ease both}@keyframes badgePop{0%{transform:scale(0)}70%{transform:scale(1.3)}100%{transform:scale(1)}}.badge-pop{animation:badgePop 0.3s ease both}@keyframes dropdownOpen{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes dropdownClose{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(4px)}}
+@keyframes bellShake{0%,100%{transform:rotate(0)}15%{transform:rotate(-12deg)}30%{transform:rotate(10deg)}45%{transform:rotate(-8deg)}60%{transform:rotate(6deg)}75%{transform:rotate(-4deg)}90%{transform:rotate(2deg)}}.bell-shake{animation:bellShake 0.5s ease both}@keyframes bellRing{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}.bell-ringing{animation:bellRing 0.4s ease infinite;transform-origin:top center;}@keyframes badgePop{0%{transform:scale(0)}70%{transform:scale(1.3)}100%{transform:scale(1)}}.badge-pop{animation:badgePop 0.3s ease both}@keyframes dropdownOpen{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes dropdownClose{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(4px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
@@ -7263,7 +7263,7 @@ Return only the email body text, no subject line.`;
                   </div>
                   <button
                     type="button"
-                    className={`icon-btn${bellShaking ? " bell-shake" : ""}`}
+                    className={`icon-btn${bellShaking ? " bell-shake" : ""}${notifOpen ? " bell-ringing" : ""}`}
                     title="Notifications & contract reviews"
                     onClick={openNotifications}
                     style={{
@@ -7457,7 +7457,7 @@ Return only the email body text, no subject line.`;
               </div>
               <button
                 type="button"
-                className={`icon-btn${bellShaking ? " bell-shake" : ""}`}
+                className={`icon-btn${bellShaking ? " bell-shake" : ""}${notifOpen ? " bell-ringing" : ""}`}
                 title="Notifications & contract reviews"
                 onClick={openNotifications}
                 style={{
@@ -7992,15 +7992,13 @@ Return only the email body text, no subject line.`;
                   className="btn-ghost"
                   style={{ fontSize: 11 }}
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (bellTab === "notifications") {
                       setNotifAI(null);
                       setNotifications(buildNotifications());
-                      void loadContractInbox();
-                    } else {
-                      void loadContractInbox();
                     }
-                    void loadBellDraftMatters();
+                    await loadContractInbox();
+                    await loadBellDraftMatters();
                   }}
                 >
                   ↺ Refresh
