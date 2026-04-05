@@ -56,6 +56,18 @@ export async function POST(request) {
   delete safePrefill.token;
   delete safePrefill.matter_ref;
 
+  if (Object.prototype.hasOwnProperty.call(safePrefill, "expected_price")) {
+    const ep = safePrefill.expected_price;
+    delete safePrefill.expected_price;
+    if (
+      (safePrefill.expected_sale_price == null || String(safePrefill.expected_sale_price).trim() === "") &&
+      ep != null &&
+      String(ep).trim() !== ""
+    ) {
+      safePrefill.expected_sale_price = ep;
+    }
+  }
+
   const insertPayload = {
     matter_ref: matterRef,
     ...safePrefill,
