@@ -859,6 +859,13 @@ function mergeNotesWithPurchaseWorkflow(notesStr, pwf) {
   return JSON.stringify(o);
 }
 
+function mergeNotesWithVendorFormToken(notesStr, token) {
+  const o = parseMatterNotesObject(notesStr);
+  if (token) o._vendorFormToken = token;
+  else delete o._vendorFormToken;
+  return JSON.stringify(o);
+}
+
 const PW_STEPS = [
   { n: 1, title: "Initial enquiry & engagement", tier: "Core", desc: "Confirm retainer, ID requirements, and client expectations.", mono: "SLA: respond within 1 business day", milestone: false },
   { n: 2, title: "Cost agreement & disclosure", tier: "Core", desc: "Issue costs agreement and obtain signed acceptance.", mono: "Fee estimate · scope · disbursements", milestone: false },
@@ -4471,6 +4478,15 @@ export default function App() {
   const [linkReviewModal, setLinkReviewModal] = useState(null);
   const [linkReviewSearch, setLinkReviewSearch] = useState("");
   const [reviewLinkToast, setReviewLinkToast] = useState(null);
+  const [vendorFormModal, setVendorFormModal] = useState(false);
+  const [vendorFormToken, setVendorFormToken] = useState("");
+  const [vendorFormUrl, setVendorFormUrl] = useState("");
+  const [vendorFormStatus, setVendorFormStatus] = useState(null);
+  const [vendorFormData, setVendorFormData] = useState(null);
+  const [vendorFormPrefill, setVendorFormPrefill] = useState({});
+  const [viewVendorFormModal, setViewVendorFormModal] = useState(false);
+  const [vendorSendEmailAutomatically, setVendorSendEmailAutomatically] = useState(true);
+  const [vendorFormGenerating, setVendorFormGenerating] = useState(false);
   const [bellDraftMatters, setBellDraftMatters] = useState([]);
   const [bellDraftBusy, setBellDraftBusy] = useState(null);
 
@@ -6998,6 +7014,63 @@ RESPONSE RULES:
     setContractReviewHistory([]);
     setEditingClient(false);
   }, [selectedMatter]);
+
+  useEffect(() => {
+    setVendorFormModal(false);
+    setViewVendorFormModal(false);
+  }, [selectedMatter]);
+
+  useEffect(() => {
+    if (!selMatterObj || selMatterObj.type !== "Sale") {
+      setVendorFormToken("");
+      setVendorFormUrl("");
+      setVendorFormStatus(null);
+      setVendorFormData(null);
+      return;
+    }
+    const notesStr = typeof selMatterObj.notes === "string" ? selMatterObj.notes : "";
+    const o = parseMatterNotesObject(notesStr);
+    const tok = o._vendorFormToken;
+    if (!tok) {
+      setVendorFormToken("");
+      setVendorFormUrl("");
+      setVendorFormStatus(null);
+      setVendorFormData(null);
+      return;
+    }
+    setVendorFormToken(tok);
+    setVendorFormStatus("pending");
+    setVendorFormData(null);
+    const base = (typeof process !== "undefined" && process.env.NEXT_PUBLIC_APP_URL
+      ? process.env.NEXT_PUBLIC_APP_URL
+      : ""
+    ).replace(/\/$/, "");
+    setVendorFormUrl(base ? `${base}/vendor-form/${tok}` : `/vendor-form/${tok}`);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/vendor-form/${encodeURIComponent(tok)}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          setVendorFormStatus("pending");
+          setVendorFormData(null);
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setVendorFormData(data);
+        setVendorFormStatus(data?.status === "submitted" ? "submitted" : "pending");
+      } catch {
+        if (!cancelled) {
+          setVendorFormStatus("pending");
+          setVendorFormData(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMatter, selMatterObj?.matter_ref, selMatterObj?.type, selMatterObj?.notes]);
 
   useEffect(() => {
     const matterRef = selMatterObj?.matter_ref || selMatterObj?.id;
@@ -9739,6 +9812,110 @@ Return only the email body text, no subject line.`;
                           }
                         </div>
                       </div>
+                      {selMatterObj?.type === "Sale" && (
+                      <div className="card">
+                        <div className="card-hdr" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                          <div className="card-title">📋 Vendor Instruction Form</div>
+                          {!vendorFormToken ? (
+                            <span className="tag tag-gray" style={{fontSize:10,flexShrink:0}}>Not Sent</span>
+                          ) : vendorFormStatus === "submitted" ? (
+                            <span className="tag tag-green" style={{fontSize:10,flexShrink:0}}>Submitted ✓</span>
+                          ) : (
+                            <span className="tag tag-amber" style={{fontSize:10,flexShrink:0}}>Pending</span>
+                          )}
+                        </div>
+                        <div style={{padding:"8px 16px 14px",display:"flex",flexDirection:"column",gap:10}}>
+                          {vendorFormUrl ? (
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <span style={{fontSize:11,color:"var(--text-3)",wordBreak:"break-all",flex:1,minWidth:0}}>{vendorFormUrl}</span>
+                              <button
+                                type="button"
+                                className="btn-ghost"
+                                style={{fontSize:11,padding:"4px 8px",flexShrink:0}}
+                                title="Copy link"
+                                onClick={() => {
+                                  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(vendorFormUrl).catch(() => {});
+                                }}
+                              >
+                                ⧉
+                              </button>
+                            </div>
+                          ) : null}
+                          {!vendorFormToken ? (
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              style={{fontSize:12,width:"100%"}}
+                              onClick={() => {
+                                const notesStr = typeof selMatterObj.notes === "string" ? selMatterObj.notes : "";
+                                const notes = parseMatterNotesObject(notesStr);
+                                const ag = String(selMatterObj.agent || "").trim();
+                                const agParts = ag ? ag.split(/\s+/) : [];
+                                setVendorFormPrefill({
+                                  vendor_email: selMatterObj.client_email || selMatterObj.email || "",
+                                  vendor_first_name: selMatterObj.client_first_name || "",
+                                  vendor_last_name: selMatterObj.client_last_name || "",
+                                  property_address: selMatterObj.address || "",
+                                  agent_first_name: agParts[0] || "",
+                                  agent_last_name: agParts.slice(1).join(" ") || "",
+                                  agent_phone: selMatterObj.agent_phone || selMatterObj.agentPhone || "",
+                                  agent_email: selMatterObj.agent_email || notes.agentEmail || "",
+                                  expected_price: selMatterObj.price != null && selMatterObj.price !== "" ? String(selMatterObj.price) : "",
+                                });
+                                setVendorSendEmailAutomatically(true);
+                                setVendorFormModal(true);
+                              }}
+                            >
+                              Send Form to Vendor
+                            </button>
+                          ) : (
+                            <div style={{display:"flex",gap:8}}>
+                              <button
+                                type="button"
+                                className="btn-ghost"
+                                style={{fontSize:12,flex:1}}
+                                onClick={() => {
+                                  const notesStr = typeof selMatterObj.notes === "string" ? selMatterObj.notes : "";
+                                  const notes = parseMatterNotesObject(notesStr);
+                                  const ag = String(selMatterObj.agent || "").trim();
+                                  const agParts = ag ? ag.split(/\s+/) : [];
+                                  setVendorFormPrefill({
+                                    vendor_email: selMatterObj.client_email || selMatterObj.email || "",
+                                    vendor_first_name: selMatterObj.client_first_name || "",
+                                    vendor_last_name: selMatterObj.client_last_name || "",
+                                    property_address: selMatterObj.address || "",
+                                    agent_first_name: agParts[0] || "",
+                                    agent_last_name: agParts.slice(1).join(" ") || "",
+                                    agent_phone: selMatterObj.agent_phone || selMatterObj.agentPhone || "",
+                                    agent_email: selMatterObj.agent_email || notes.agentEmail || "",
+                                    expected_price: selMatterObj.price != null && selMatterObj.price !== "" ? String(selMatterObj.price) : "",
+                                  });
+                                  setVendorSendEmailAutomatically(true);
+                                  setVendorFormModal(true);
+                                }}
+                              >
+                                Resend Link
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                style={{fontSize:12,flex:1}}
+                                onClick={async () => {
+                                  if (!vendorFormToken) return;
+                                  setViewVendorFormModal(true);
+                                  try {
+                                    const res = await fetch(`/api/vendor-form/${encodeURIComponent(vendorFormToken)}`);
+                                    if (res.ok) setVendorFormData(await res.json());
+                                  } catch (_) {}
+                                }}
+                              >
+                                View Responses
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      )}
                       <div className="card">
                         <div className="card-hdr"><div className="card-title">Special Conditions</div></div>
                         <div style={{padding:"10px 16px",fontSize:12,color:"var(--text-2)",lineHeight:1.7,background:"#fffbeb",borderRadius:"0 0 var(--radius-lg) var(--radius-lg)",borderTop:"1px solid #fde68a"}}>
@@ -13351,6 +13528,173 @@ Return only the email body text, no subject line.`;
       )}
       {reviewLinkToast && (
         <div style={{position:"fixed",bottom:24,right:24,zIndex:1001,background:"var(--green)",color:"var(--white)",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"var(--shadow-lg)",animation:"toastFade 3.5s ease forwards",maxWidth:360}}>{reviewLinkToast}</div>
+      )}
+
+      {vendorFormModal && selMatterObj?.type === "Sale" && (
+        <div
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={() => !vendorFormGenerating && setVendorFormModal(false)}
+        >
+          <div
+            style={{background:"var(--white)",borderRadius:16,width:520,maxWidth:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"var(--shadow-xl)"}}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:500,color:"var(--text)"}}>Send Vendor Instruction Form</div>
+              <button type="button" className="modal-close" disabled={vendorFormGenerating} onClick={() => setVendorFormModal(false)}>✕</button>
+            </div>
+            <div style={{padding:"12px 20px 0",fontSize:13,color:"var(--text-3)",lineHeight:1.5}}>
+              We&apos;ll send a secure link to your vendor to fill in their details
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:20,display:"flex",flexDirection:"column",gap:10}}>
+              {[
+                ["Vendor email", "vendor_email", "email"],
+                ["Vendor first name", "vendor_first_name", "text"],
+                ["Vendor last name", "vendor_last_name", "text"],
+                ["Property address", "property_address", "text"],
+                ["Agent first name", "agent_first_name", "text"],
+                ["Agent last name", "agent_last_name", "text"],
+                ["Agent phone", "agent_phone", "text"],
+                ["Agent email", "agent_email", "email"],
+                ["Expected price", "expected_price", "text"],
+              ].map(([label, key, typ]) => (
+                <div key={key}>
+                  <label className="contact-field-label" style={{display:"block",marginBottom:4,fontSize:11}}>{label}</label>
+                  <input
+                    className="intake-input"
+                    type={typ}
+                    style={{width:"100%",fontSize:13}}
+                    value={vendorFormPrefill[key] ?? ""}
+                    onChange={(e) => setVendorFormPrefill((f) => ({ ...f, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                <input
+                  type="checkbox"
+                  id="vendor-send-email-auto"
+                  checked={vendorSendEmailAutomatically}
+                  onChange={(e) => setVendorSendEmailAutomatically(e.target.checked)}
+                />
+                <label htmlFor="vendor-send-email-auto" className="contact-field-label" style={{marginBottom:0,fontSize:12}}>Send via email automatically</label>
+              </div>
+            </div>
+            <div style={{padding:"12px 20px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button type="button" className="btn-ghost" disabled={vendorFormGenerating} onClick={() => setVendorFormModal(false)}>Cancel</button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={vendorFormGenerating}
+                onClick={async () => {
+                  if (!selMatterObj || vendorFormGenerating) return;
+                  const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+                  const p = vendorFormPrefill;
+                  const prefillData = {
+                    vendor_first_name: p.vendor_first_name?.trim() || "",
+                    vendor_last_name: p.vendor_last_name?.trim() || "",
+                    vendor_email: p.vendor_email?.trim() || "",
+                    property_address: p.property_address?.trim() || "",
+                    agent_first_name: p.agent_first_name?.trim() || "",
+                    agent_last_name: p.agent_last_name?.trim() || "",
+                    agent_phone: p.agent_phone?.trim() || "",
+                    agent_email: p.agent_email?.trim() || "",
+                    expected_sale_price: p.expected_price?.trim() || "",
+                  };
+                  setVendorFormGenerating(true);
+                  try {
+                    const res = await fetch("/api/vendor-form/generate", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ matterRef, prefillData }),
+                    });
+                    const j = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      alert(j.error || "Could not generate form link.");
+                      return;
+                    }
+                    const { token, formUrl } = j;
+                    if (!token) {
+                      alert("No token returned.");
+                      return;
+                    }
+                    const notesStr = typeof selMatterObj.notes === "string" ? selMatterObj.notes : "";
+                    const newNotes = mergeNotesWithVendorFormToken(notesStr, token);
+                    await supabase.from("matters").update({ notes: newNotes }).eq("matter_ref", matterRef);
+                    setMATTERS((prev) => prev.map((m) => (m.id === matterRef ? { ...m, notes: newNotes } : m)));
+                    const origin = typeof window !== "undefined" ? window.location.origin : "";
+                    const link = formUrl || (origin ? `${origin}/vendor-form/${token}` : `/vendor-form/${token}`);
+                    setVendorFormToken(token);
+                    setVendorFormUrl(link);
+                    setVendorFormStatus("pending");
+                    const vendorEmail = p.vendor_email?.trim();
+                    if (vendorSendEmailAutomatically && vendorEmail) {
+                      const addr = p.property_address?.trim() || selMatterObj.address || "your property";
+                      const firstName = p.vendor_first_name?.trim() || "there";
+                      await fetch("/api/email/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          to: vendorEmail,
+                          subject: `Action Required — Your Property Sale Details | ${addr}`,
+                          body: `Hi ${firstName},\n\nPlease click the link below to fill in your property details so we can prepare your sale contract.\n\n${link}\n\nThis link is secure and takes about 5 minutes to complete.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+                          matterId: matterRef,
+                        }),
+                      });
+                    }
+                    setVendorFormModal(false);
+                    setReviewLinkToast("Form link sent to vendor ✓");
+                    setTimeout(() => setReviewLinkToast(null), 3500);
+                  } finally {
+                    setVendorFormGenerating(false);
+                  }
+                }}
+              >
+                {vendorFormGenerating ? "Working…" : "Generate & Send Link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewVendorFormModal && (
+        <div
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={() => setViewVendorFormModal(false)}
+        >
+          <div
+            style={{background:"var(--white)",borderRadius:16,width:640,maxWidth:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"var(--shadow-xl)"}}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontFamily:"var(--font-display)",fontSize:18,fontWeight:500,color:"var(--text)"}}>Vendor form responses</div>
+              <button type="button" className="modal-close" onClick={() => setViewVendorFormModal(false)}>✕</button>
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:20}}>
+              {!vendorFormData ? (
+                <div style={{fontSize:13,color:"var(--text-3)"}}>Loading…</div>
+              ) : (
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px 24px"}}>
+                  {Object.entries(vendorFormData)
+                    .filter(([k]) => k !== "token")
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => (
+                      <div key={k} style={{fontSize:12}}>
+                        <div style={{color:"var(--text-3)",marginBottom:4}}>
+                          {String(k).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </div>
+                        <div style={{fontWeight:600,color:"var(--text)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                          {typeof v === "boolean" ? (v ? "Yes" : "No") : v == null || v === "" ? "—" : String(v)}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+            <div style={{padding:"12px 20px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end"}}>
+              <button type="button" className="btn-ghost" onClick={() => setViewVendorFormModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {linkReviewModal && (
