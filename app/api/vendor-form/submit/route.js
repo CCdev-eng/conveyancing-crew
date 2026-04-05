@@ -1,13 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 
-function parseMatterNotesObject(notesStr) {
-  if (!notesStr || typeof notesStr !== "string" || !notesStr.trim().startsWith("{")) return {};
-  try {
-    const p = JSON.parse(notesStr);
-    return p && typeof p === "object" && !Array.isArray(p) ? p : {};
-  } catch {
-    return {};
-  }
+function s(v) {
+  if (v == null || v === "") return "—";
+  return String(v).trim() || "—";
 }
 
 function yn(v) {
@@ -16,21 +11,13 @@ function yn(v) {
   return "—";
 }
 
-function s(v) {
-  if (v == null || v === "") return "—";
-  return String(v).trim() || "—";
-}
-
-/** Staff / Gitu — structured sections */
-function buildSubmittedSummaryStaff(d, matterRef) {
+function buildStaffEmailBody(d, matterRef) {
   const agentName = [d.agent_first_name, d.agent_last_name].filter(Boolean).join(" ").trim();
-  const lines = [
+  return [
     `A vendor instruction form has been submitted for matter ${matterRef}.`,
     "",
-    `Open the app at https://conveyancing-crew.vercel.app, locate this matter, and check the Workflow tab for next steps.`,
-    "",
     "──────── VENDOR DETAILS ────────",
-    `Name: ${s(d.vendor_first_name)} ${s(d.vendor_last_name)}`.trim(),
+    `Name: ${s(d.vendor_first_name)} ${s(d.vendor_last_name)}`,
     `DOB: ${s(d.vendor_dob)}`,
     `Email: ${s(d.vendor_email)}`,
     `Phone: ${s(d.vendor_phone)}`,
@@ -79,15 +66,15 @@ function buildSubmittedSummaryStaff(d, matterRef) {
     "──────── SPECIAL CONDITIONS & NOTES ────────",
     `Special conditions: ${s(d.special_conditions)}`,
     `Additional notes: ${s(d.additional_notes)}`,
-  ];
-  return lines.join("\n");
+  ].join("\n");
 }
 
-/** Client — friendlier wording */
-function buildSubmittedSummaryClient(d, matterRef, firstName) {
+function buildClientEmailBody(d, matterRef) {
   const agentName = [d.agent_first_name, d.agent_last_name].filter(Boolean).join(" ").trim();
-  const hi = firstName && String(firstName).trim() ? String(firstName).trim() : "there";
-  const lines = [
+  const hi = d.vendor_first_name && String(d.vendor_first_name).trim()
+    ? String(d.vendor_first_name).trim()
+    : "there";
+  return [
     `Hi ${hi},`,
     "",
     "Thank you for completing your vendor instruction form. We have received your details and will begin preparing your sale contract shortly.",
@@ -148,13 +135,7 @@ function buildSubmittedSummaryClient(d, matterRef, firstName) {
     "Gitu Kaur",
     "Conveyancing Crew",
     "gitu@conveyancingcrew.com.au",
-  ];
-  return lines.join("\n");
-}
-
-function internalAppOrigin() {
-  const u = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-  return u.replace(/\/$/, "") || "http://localhost:3000";
+  ].join("\n");
 }
 
 /**
@@ -162,13 +143,10 @@ function internalAppOrigin() {
  * Public — no auth. Body: { token, formData, partial? }
  */
 export async function POST(request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    return Response.json(
-      { error: "Supabase URL or service role key not configured" },
-      { status: 500 }
-    );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    return Response.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
   let body;
@@ -186,7 +164,7 @@ export async function POST(request) {
     return Response.json({ error: "formData must be an object" }, { status: 400 });
   }
 
-  const supabase = createClient(url, key);
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
   const { data: row, error: lookupError } = await supabase
     .from("vendor_instructions")
@@ -204,12 +182,11 @@ export async function POST(request) {
   const matter_ref = row.matter_ref;
   const { token: _t, matter_ref: _m, ...restForm } = formData;
   const isPartial = partial === true;
-  const submittedAt = new Date().toISOString();
 
   const updatePayload = { ...restForm };
   if (!isPartial) {
     updatePayload.status = "submitted";
-    updatePayload.submitted_at = submittedAt;
+    updatePayload.submitted_at = new Date().toISOString();
   }
 
   const { error: updateError } = await supabase
@@ -222,98 +199,60 @@ export async function POST(request) {
   }
 
   if (!isPartial) {
+    const submittedAt = updatePayload.submitted_at;
     const d = formData;
-    const base = internalAppOrigin();
-    const fn = s(d.vendor_first_name);
-    const ln = s(d.vendor_last_name);
-    const prop = s(d.property_address);
-    const subjectGitu = `✅ Vendor Form Submitted — ${fn} ${ln} | ${prop}`.replace(/\s+\|\s+—$/, "").trim();
-    const summaryStaff = buildSubmittedSummaryStaff(d, matter_ref);
-    const summaryClient = buildSubmittedSummaryClient(d, matter_ref, d.vendor_first_name);
+    const appBase = (process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+    const vendorName = [d.vendor_first_name, d.vendor_last_name].filter(Boolean).join(" ").trim() || "Vendor";
     const vendorTo = String(d.vendor_email || "").trim();
 
     void (async () => {
       try {
-        const { data: matterRow, error: mErr } = await supabase
-          .from("matters")
-          .select("notes, client_name")
-          .eq("matter_ref", matter_ref)
-          .maybeSingle();
-        if (mErr) {
-          console.error("[vendor-form/submit] matters select", mErr);
-        } else {
-          const notesObj = parseMatterNotesObject(
-            typeof matterRow?.notes === "string" ? matterRow.notes : ""
-          );
-          notesObj._vendorFormStatus = "submitted";
-          notesObj._vendorFormSubmitted = true;
-          notesObj._vendorFormSubmittedAt = submittedAt;
-
-          const matterPatch = { notes: JSON.stringify(notesObj) };
-          const agentCombined = [d.agent_first_name, d.agent_last_name]
-            .map((x) => (x != null ? String(x).trim() : ""))
-            .filter(Boolean)
-            .join(" ")
-            .trim();
-          if (agentCombined) matterPatch.agent = agentCombined;
-          const ap = String(d.agent_phone ?? "").trim();
-          if (ap) matterPatch.agent_phone = ap;
-          const ae = String(d.agent_email ?? "").trim();
-          if (ae) matterPatch.agent_email = ae;
-          const epRaw = d.expected_price;
-          if (epRaw != null && String(epRaw).trim() !== "") {
-            const digits = String(epRaw).replace(/[^0-9]/g, "");
-            if (digits) matterPatch.price = parseInt(digits, 10);
-          }
-
-          const { error: upMatters } = await supabase.from("matters").update(matterPatch).eq("matter_ref", matter_ref);
-          if (upMatters) console.error("[vendor-form/submit] matters update", upMatters);
-        }
-      } catch (e) {
-        console.error("[vendor-form/submit] matter side effects", e);
-      }
-
-      try {
-        const clientNameForTask =
-          [d.vendor_first_name, d.vendor_last_name].filter(Boolean).join(" ").trim() || "Vendor";
         const { error: taskErr } = await supabase.from("tasks").insert({
           matter_ref,
-          client_name: clientNameForTask,
           task: "Vendor form submitted — review and update matter details",
           urgency: "high",
           done: false,
           due_date: submittedAt.slice(0, 10),
-          notes: `Auto-created: vendor ${clientNameForTask} submitted their instruction form`,
+          notes: `Auto-created: vendor ${String(d.vendor_first_name || "").trim()} ${String(d.vendor_last_name || "").trim()} submitted their instruction form`.trim(),
         });
         if (taskErr) console.error("[vendor-form/submit] tasks insert", taskErr);
       } catch (e) {
         console.error("[vendor-form/submit] task", e);
       }
 
-      await Promise.allSettled([
-        fetch(`${base}/api/email/send`, {
+      try {
+        const staffRes = await fetch(`${appBase}/api/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             to: "gitu@conveyancingcrew.com.au",
-            subject: subjectGitu,
-            body: summaryStaff,
+            subject: `✅ Vendor Form Submitted — ${vendorName} | ${s(d.property_address)}`,
+            body: buildStaffEmailBody(d, matter_ref),
             matterId: matter_ref,
           }),
-        }),
-        vendorTo
-          ? fetch(`${base}/api/email/send`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                to: vendorTo,
-                subject: "Your property sale details received — Conveyancing Crew",
-                body: summaryClient,
-                matterId: matter_ref,
-              }),
-            })
-          : Promise.resolve(),
-      ]);
+        });
+        if (!staffRes.ok) console.error("[vendor-form/submit] staff email", await staffRes.text());
+      } catch (e) {
+        console.error("[vendor-form/submit] staff email", e);
+      }
+
+      if (vendorTo) {
+        try {
+          const clientRes = await fetch(`${appBase}/api/email/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: vendorTo,
+              subject: "Your property sale details received — Conveyancing Crew",
+              body: buildClientEmailBody(d, matter_ref),
+              matterId: matter_ref,
+            }),
+          });
+          if (!clientRes.ok) console.error("[vendor-form/submit] client email", await clientRes.text());
+        } catch (e) {
+          console.error("[vendor-form/submit] client email", e);
+        }
+      }
     })();
   }
 
