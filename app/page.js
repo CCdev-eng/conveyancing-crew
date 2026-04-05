@@ -818,7 +818,9 @@ function mapMatterFromRow(row) {
     deposit: row.deposit,
     depositPaid: row.deposit_paid,
     lender: row.lender,
-    agent: row.agent,
+    agent: row.agent_name ?? row.agent ?? "",
+    agent_name: row.agent_name ?? row.agent ?? "",
+    agent_email: row.agent_email ?? "",
     agentPhone: row.agent_phone,
     searches: row.searches,
     pexa: row.pexa ? { workspaceId: row.pexa.workspaceId } : undefined,
@@ -9837,8 +9839,22 @@ Return only the email body text, no subject line.`;
                             ["Matter Type",selMatterObj.type],["Status",selMatterObj.stage],
                             ["Settlement",fmt(selMatterObj.settlement)],["Property Value",selMatterObj.price],
                             ["Client email",selMatterObj.client_email || selMatterObj.email || "—"],["State",selMatterObj.state],
-                            ["Lender",selMatterObj.lender],["Deposit",selMatterObj.deposit+" "+(selMatterObj.depositPaid?"✓ Paid":"⚠ Unpaid")],
-                            ["Agent",selMatterObj.agent],["Phone",selMatterObj.agentPhone],
+                            ["Lender",selMatterObj.lender],
+                            [
+                              "Deposit",
+                              (() => {
+                                const d = selMatterObj.deposit;
+                                if (d == null || d === "") return "—";
+                                const s = String(d).trim();
+                                if (!s) return "—";
+                                return s + " " + (selMatterObj.depositPaid ? "✓ Paid" : "⚠ Unpaid");
+                              })(),
+                            ],
+                            ["Agent", selMatterObj.agent_name || selMatterObj.agent || "—"],
+                            ["Phone", selMatterObj.agentPhone],
+                            ...(selMatterObj.type === "Sale"
+                              ? [["Agent email", selMatterObj.agent_email || "—"]]
+                              : []),
                           ].map(([k,v])=>(
                             <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border-2)",fontSize:12,gap:8}}>
                               <span style={{color:"var(--text-3)"}}>{k}</span>
