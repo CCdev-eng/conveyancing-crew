@@ -2066,7 +2066,7 @@ function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMat
   );
 }
 
-function SaleWorkflow({ matter, supabase, isMobile }) {
+function SaleWorkflow({ matter, supabase, isMobile, onOpenVendorForm }) {
   const matterRef = matter?.matter_ref || matter?.id;
   const outerPadY = isMobile ? 16 : 20;
 
@@ -2098,7 +2098,7 @@ function SaleWorkflow({ matter, supabase, isMobile }) {
   const SALE_STEPS_CONFIG = [
     { key: "sw_01", num: "01", phase: 1, phaseLabel: "Pre-Exchange", title: "Enquiry Received", what: "Record how the enquiry came in", tier: "A", tierNote: "Auto-detected from email · tick manually for phone", action: null, autoComplete: true },
     { key: "sw_02", num: "02", phase: 1, title: "Intro Email Sent to Vendor", what: "Send intro email so the vendor can share our details with the agent", tier: "B", action: { type: "email", template: "sw_intro", label: "Send Intro Email", icon: "✉️" } },
-    { key: "sw_03", num: "03", phase: 1, title: "Vendor & Property Details Gathered", what: "Collect vendor, property, agent and mortgage details", tier: "D", action: null },
+    { key: "sw_03", num: "03", phase: 1, title: "Vendor & Property Details Gathered", what: "Collect vendor, property, agent and mortgage details", tier: "D", action: { type: "vendor_form", label: "Send Vendor Form to Client", icon: "📋" } },
     { key: "sw_04", num: "04", phase: 1, title: "Vendor ID Verified (VOI)", what: "Complete vendor verification before preparing the contract", tier: "D", tierNote: "Verify via InfoTrack or in person", action: null },
     { key: "sw_05", num: "05", phase: 1, title: "Section 32 / Vendor Statement Prepared", what: "Prepare vendor statement and prescribed documents for your state", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" }, isMilestone: true },
     { key: "sw_06", num: "06", phase: 1, title: "Contract Searches Ordered & Collated", what: "Order and collate title, council, water, land tax and strata searches as required", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📦" } },
@@ -2306,6 +2306,7 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
     if (type === "email") { openEmailModal(template, step.key); return; }
     if (type === "url") { window.open(url, "_blank"); return; }
     if (type === "ai") { openAiPanel(aiType, step.key); return; }
+    if (type === "vendor_form") { onOpenVendorForm?.(); return; }
   };
 
   const Chk = ({ stepKey, size = 20 }) => {
@@ -4324,6 +4325,7 @@ export default function App() {
   const [intakeAutoFillSubjectsExpanded, setIntakeAutoFillSubjectsExpanded] = useState(false);
   /** Which client/entity fields were last populated by email auto-fill (for ✦ badges); cleared when user edits. */
   const [intakeAutoFilledFields, setIntakeAutoFilledFields] = useState({});
+  const [intakeSendVendorForm, setIntakeSendVendorForm] = useState(false);
   const [intakeCreating, setIntakeCreating] = useState(false);
   const addressInputRef = useRef(null);
   const autocompleteAttachedRef = useRef(false);
@@ -6359,6 +6361,7 @@ RESPONSE RULES:
     setIntakeAutoFillError("");
     setIntakeAutoFillSubjectsExpanded(false);
     setIntakeAutoFilledFields({});
+    setIntakeSendVendorForm(false);
     setPendingReviewLink(null);
     setContractReviewHistory([]);
     setModal("intake");
@@ -6403,12 +6406,29 @@ RESPONSE RULES:
     setIntakeAutoFillError("");
     setIntakeAutoFillSubjectsExpanded(false);
     setIntakeAutoFilledFields({});
+    setIntakeSendVendorForm(false);
     setIntakeAddress("");
     setIntakeState("NSW");
     setIntakeSuburb("");
     setIntakePostcode("");
     setIntakeExtracting(false);
   };
+
+  const prevIntakeStepForVendorRef = useRef(-1);
+  useEffect(() => {
+    if (intakeMatterType !== "Sale") {
+      prevIntakeStepForVendorRef.current = intakeStep;
+      return;
+    }
+    const prev = prevIntakeStepForVendorRef.current;
+    prevIntakeStepForVendorRef.current = intakeStep;
+    if (intakeStep === 4 && prev !== 4) {
+      setIntakeSendVendorForm(!!String(intakeClientEmail || "").trim());
+    }
+    if (intakeStep === 4 && !String(intakeClientEmail || "").trim()) {
+      setIntakeSendVendorForm(false);
+    }
+  }, [intakeMatterType, intakeStep, intakeClientEmail]);
 
   const createIntakeMatter = async () => {
     if (!intakeMatterType) return;
@@ -6620,6 +6640,50 @@ RESPONSE RULES:
         try {
           const { data: taskRows } = await supabase.from("tasks").select("*").order("created_at", { ascending: false });
           if (taskRows) setTasks(taskRows);
+        } catch (_) {}
+      }
+      if (
+        intakeMatterType === "Sale" &&
+        intakeSendVendorForm &&
+        String(intakeClientEmail || "").trim()
+      ) {
+        try {
+          const genRes = await fetch("/api/vendor-form/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              matterRef: matter_ref,
+              prefillData: {
+                vendor_first_name: intakeClientFirstName?.trim() || "",
+                vendor_last_name: intakeClientLastName?.trim() || "",
+                vendor_email: intakeClientEmail?.trim() || "",
+                vendor_phone: intakeClientPhone?.trim() || "",
+                property_address: intakeAddress || "",
+              },
+            }),
+          });
+          const genJ = await genRes.json().catch(() => ({}));
+          if (genRes.ok && genJ.token) {
+            const origin = typeof window !== "undefined" ? window.location.origin : "";
+            const link = genJ.formUrl || (origin ? `${origin}/vendor-form/${genJ.token}` : `/vendor-form/${genJ.token}`);
+            const newNotes = mergeNotesWithVendorFormToken(row.notes, genJ.token);
+            await supabase.from("matters").update({ notes: newNotes }).eq("matter_ref", matter_ref);
+            row.notes = newNotes;
+            const addr = String(intakeAddress || "").trim() || "your property";
+            const firstName = intakeClientFirstName?.trim() || "there";
+            await fetch("/api/email/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                to: intakeClientEmail.trim(),
+                subject: `Action Required — Your Property Sale Details | ${addr}`,
+                body: `Hi ${firstName},\n\nPlease click the link below to fill in your property details so we can prepare your sale contract.\n\n${link}\n\nThis link is secure and takes about 5 minutes to complete.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+                matterId: matter_ref,
+              }),
+            });
+            setReviewLinkToast("Matter created & vendor form sent ✓");
+            setTimeout(() => setReviewLinkToast(null), 3500);
+          }
         } catch (_) {}
       }
       const mapped = mapMatterFromRow(row);
@@ -9814,110 +9878,6 @@ Return only the email body text, no subject line.`;
                           }
                         </div>
                       </div>
-                      {selMatterObj?.type === "Sale" && (
-                      <div className="card">
-                        <div className="card-hdr" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-                          <div className="card-title">📋 Vendor Instruction Form</div>
-                          {!vendorFormToken ? (
-                            <span className="tag tag-gray" style={{fontSize:10,flexShrink:0}}>Not Sent</span>
-                          ) : vendorFormStatus === "submitted" ? (
-                            <span className="tag tag-green" style={{fontSize:10,flexShrink:0}}>Submitted ✓</span>
-                          ) : (
-                            <span className="tag tag-amber" style={{fontSize:10,flexShrink:0}}>Pending</span>
-                          )}
-                        </div>
-                        <div style={{padding:"8px 16px 14px",display:"flex",flexDirection:"column",gap:10}}>
-                          {vendorFormUrl ? (
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <span style={{fontSize:11,color:"var(--text-3)",wordBreak:"break-all",flex:1,minWidth:0}}>{vendorFormUrl}</span>
-                              <button
-                                type="button"
-                                className="btn-ghost"
-                                style={{fontSize:11,padding:"4px 8px",flexShrink:0}}
-                                title="Copy link"
-                                onClick={() => {
-                                  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(vendorFormUrl).catch(() => {});
-                                }}
-                              >
-                                ⧉
-                              </button>
-                            </div>
-                          ) : null}
-                          {!vendorFormToken ? (
-                            <button
-                              type="button"
-                              className="btn-primary"
-                              style={{fontSize:12,width:"100%"}}
-                              onClick={() => {
-                                const notesStr = typeof selMatterObj.notes === "string" ? selMatterObj.notes : "";
-                                const notes = parseMatterNotesObject(notesStr);
-                                const ag = String(selMatterObj.agent || "").trim();
-                                const agParts = ag ? ag.split(/\s+/) : [];
-                                setVendorFormPrefill({
-                                  vendor_email: selMatterObj.client_email || selMatterObj.email || "",
-                                  vendor_first_name: selMatterObj.client_first_name || "",
-                                  vendor_last_name: selMatterObj.client_last_name || "",
-                                  property_address: selMatterObj.address || "",
-                                  agent_first_name: agParts[0] || "",
-                                  agent_last_name: agParts.slice(1).join(" ") || "",
-                                  agent_phone: selMatterObj.agent_phone || selMatterObj.agentPhone || "",
-                                  agent_email: selMatterObj.agent_email || notes.agentEmail || "",
-                                  expected_price: selMatterObj.price != null && selMatterObj.price !== "" ? String(selMatterObj.price) : "",
-                                });
-                                setVendorSendEmailAutomatically(true);
-                                setVendorFormModal(true);
-                              }}
-                            >
-                              Send Form to Vendor
-                            </button>
-                          ) : (
-                            <div style={{display:"flex",gap:8}}>
-                              <button
-                                type="button"
-                                className="btn-ghost"
-                                style={{fontSize:12,flex:1}}
-                                onClick={() => {
-                                  const notesStr = typeof selMatterObj.notes === "string" ? selMatterObj.notes : "";
-                                  const notes = parseMatterNotesObject(notesStr);
-                                  const ag = String(selMatterObj.agent || "").trim();
-                                  const agParts = ag ? ag.split(/\s+/) : [];
-                                  setVendorFormPrefill({
-                                    vendor_email: selMatterObj.client_email || selMatterObj.email || "",
-                                    vendor_first_name: selMatterObj.client_first_name || "",
-                                    vendor_last_name: selMatterObj.client_last_name || "",
-                                    property_address: selMatterObj.address || "",
-                                    agent_first_name: agParts[0] || "",
-                                    agent_last_name: agParts.slice(1).join(" ") || "",
-                                    agent_phone: selMatterObj.agent_phone || selMatterObj.agentPhone || "",
-                                    agent_email: selMatterObj.agent_email || notes.agentEmail || "",
-                                    expected_price: selMatterObj.price != null && selMatterObj.price !== "" ? String(selMatterObj.price) : "",
-                                  });
-                                  setVendorSendEmailAutomatically(true);
-                                  setVendorFormModal(true);
-                                }}
-                              >
-                                Resend Link
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-primary"
-                                style={{fontSize:12,flex:1}}
-                                onClick={async () => {
-                                  if (!vendorFormToken) return;
-                                  setViewVendorFormModal(true);
-                                  try {
-                                    const res = await fetch(`/api/vendor-form/${encodeURIComponent(vendorFormToken)}`);
-                                    if (res.ok) setVendorFormData(await res.json());
-                                  } catch (_) {}
-                                }}
-                              >
-                                View Responses
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      )}
                       <div className="card">
                         <div className="card-hdr"><div className="card-title">Special Conditions</div></div>
                         <div style={{padding:"10px 16px",fontSize:12,color:"var(--text-2)",lineHeight:1.7,background:"#fffbeb",borderRadius:"0 0 var(--radius-lg) var(--radius-lg)",borderTop:"1px solid #fde68a"}}>
@@ -9951,6 +9911,27 @@ Return only the email body text, no subject line.`;
             matter={selMatterObj}
             supabase={supabase}
             isMobile={isMobile}
+            onOpenVendorForm={() => {
+              const m = selMatterObj;
+              if (!m || m.type !== "Sale") return;
+              const notesStr = typeof m.notes === "string" ? m.notes : "";
+              const notes = parseMatterNotesObject(notesStr);
+              const ag = String(m.agent || "").trim();
+              const agParts = ag ? ag.split(/\s+/) : [];
+              setVendorFormPrefill({
+                vendor_email: m.client_email || m.email || "",
+                vendor_first_name: m.client_first_name || "",
+                vendor_last_name: m.client_last_name || "",
+                property_address: m.address || "",
+                agent_first_name: agParts[0] || "",
+                agent_last_name: agParts.slice(1).join(" ") || "",
+                agent_phone: m.agent_phone || m.agentPhone || "",
+                agent_email: m.agent_email || notes.agentEmail || "",
+                expected_price: m.price != null && m.price !== "" ? String(m.price) : "",
+              });
+              setVendorSendEmailAutomatically(true);
+              setVendorFormModal(true);
+            }}
           />
         )
     : selMatterObj?.type === "Contract Review"
@@ -15609,6 +15590,33 @@ JOINT PURCHASER RULES:
                         ))}
                     </div>
                   </div>
+                  {sale && (
+                    <div style={{ marginBottom: 14, padding: "12px 14px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          cursor: String(intakeClientEmail || "").trim() ? "pointer" : "default",
+                          fontSize: 13,
+                          color: "var(--text)",
+                          marginBottom: !String(intakeClientEmail || "").trim() ? 6 : 0,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          style={{ marginTop: 2 }}
+                          checked={!!String(intakeClientEmail || "").trim() && intakeSendVendorForm}
+                          disabled={!String(intakeClientEmail || "").trim()}
+                          onChange={(e) => setIntakeSendVendorForm(e.target.checked)}
+                        />
+                        <span>Send vendor instruction form to client after creating matter</span>
+                      </label>
+                      {!String(intakeClientEmail || "").trim() ? (
+                        <div style={{ fontSize: 11, color: "var(--text-3)", marginLeft: 26 }}>Add client email above to enable this</div>
+                      ) : null}
+                    </div>
+                  )}
                   {!intakeClientFirstName && !intakeClientLastName && (
                     <div
                       style={{

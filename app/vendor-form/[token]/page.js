@@ -261,6 +261,67 @@ function buildPayload(form) {
   return rest;
 }
 
+function pickStepFormData(stepIndex, form) {
+  const pick = (keys) => {
+    const o = {};
+    keys.forEach((k) => {
+      if (form[k] !== undefined) o[k] = form[k];
+    });
+    return o;
+  };
+  switch (stepIndex) {
+    case 0:
+      return pick([
+        "first_name",
+        "last_name",
+        "date_of_birth",
+        "email",
+        "mobile",
+        "current_address",
+      ]);
+    case 1:
+      return pick(["has_co_vendor", "co_vendor_full_name", "co_vendor_date_of_birth"]);
+    case 2:
+      return pick(["property_address", "property_address_locked", "title_hold_type", "entity_name", "abn_acn"]);
+    case 3:
+      return pick(["has_mortgage", "lender_name", "loan_account_number", "estimated_payout_amount"]);
+    case 4:
+      return pick([
+        "possession_type",
+        "tenant_name",
+        "lease_expiry_date",
+        "weekly_rent",
+        "building_works_last_7_years",
+        "building_works_details",
+        "owner_builder_work",
+        "has_pool_spa",
+        "smoke_alarms_compliant",
+      ]);
+    case 5:
+      return pick(["inclusions", "exclusions"]);
+    case 6:
+      return pick([
+        "agent_first_name",
+        "agent_last_name",
+        "agency_name",
+        "agent_phone",
+        "agent_email",
+        "sale_method",
+        "expected_sale_price",
+        "expected_listing_date",
+      ]);
+    case 7:
+      return pick(["special_conditions", "additional_notes"]);
+    default:
+      return {};
+  }
+}
+
+function stripLockedForApi(obj) {
+  const { property_address_locked, token: _t, matter_ref: _m, ...rest } = obj;
+  return rest;
+}
+
 function isFormComplete(f) {
   if (!String(f.first_name || "").trim() || !String(f.last_name || "").trim()) return false;
   if (!String(f.email || "").trim() || !String(f.mobile || "").trim()) return false;
@@ -313,6 +374,7 @@ export default function VendorFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitDone, setSubmitDone] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [savingStep, setSavingStep] = useState(false);
 
   const update = useCallback((patch) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -350,7 +412,7 @@ export default function VendorFormPage() {
           return;
         }
         setRowStatus(data.status || null);
-        setForm((f) => mergePrefill({ ...emptyForm(), ...f }, data));
+        setForm(() => mergePrefill(emptyForm(), data));
         setLoadState("ready");
       } catch {
         if (!cancelled) {
@@ -450,6 +512,26 @@ export default function VendorFormPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleGoNext = async () => {
+    if (!canGoNext || !token) return;
+    const slice = stripLockedForApi(pickStepFormData(step, form));
+    if (Object.keys(slice).length > 0) {
+      setSavingStep(true);
+      try {
+        await fetch("/api/vendor-form/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, formData: slice, partial: true }),
+        });
+      } catch (_) {
+        /* non-blocking */
+      } finally {
+        setSavingStep(false);
+      }
+    }
+    setStep((s) => Math.min(8, s + 1));
   };
 
   const shell = {
@@ -889,8 +971,8 @@ export default function VendorFormPage() {
           ) : (
             <div style={{ flex: 1 }} />
           )}
-          <button type="button" style={btnPrimary} disabled={!canGoNext} onClick={() => setStep((s) => Math.min(8, s + 1))}>
-            Next →
+          <button type="button" style={btnPrimary} disabled={!canGoNext || savingStep} onClick={handleGoNext}>
+            {savingStep ? "Saving…" : "Next →"}
           </button>
         </div>
       )}

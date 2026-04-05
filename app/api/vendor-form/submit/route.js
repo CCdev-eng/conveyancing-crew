@@ -16,7 +16,7 @@ function buildAgentName(formData) {
 
 /**
  * POST /api/vendor-form/submit
- * Public — no auth. Body: { token, formData }
+ * Public — no auth. Body: { token, formData, partial? }
  */
 export async function POST(request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -35,7 +35,7 @@ export async function POST(request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { token, formData } = body || {};
+  const { token, formData, partial } = body || {};
   if (!token || typeof token !== "string") {
     return Response.json({ error: "token is required" }, { status: 400 });
   }
@@ -59,38 +59,43 @@ export async function POST(request) {
   }
 
   const { token: _t, matter_ref: _m, ...restForm } = formData;
+  const isPartial = partial === true;
   const submittedAt = new Date().toISOString();
+
+  const updatePayload = { ...restForm };
+  if (!isPartial) {
+    updatePayload.status = "submitted";
+    updatePayload.submitted_at = submittedAt;
+  }
 
   const { error: updateError } = await supabase
     .from("vendor_instructions")
-    .update({
-      ...restForm,
-      status: "submitted",
-      submitted_at: submittedAt,
-    })
+    .update(updatePayload)
     .eq("token", token);
 
   if (updateError) {
     return Response.json({ error: updateError.message }, { status: 500 });
   }
 
-  const matterPatch = {};
-  const agentName = buildAgentName(formData);
-  if (agentName) matterPatch.agent = agentName;
-  if (formData.agent_phone != null && String(formData.agent_phone).trim() !== "") {
-    matterPatch.agent_phone = String(formData.agent_phone).trim();
-  }
-  if (formData.agent_email != null && String(formData.agent_email).trim() !== "") {
-    matterPatch.agent_email = String(formData.agent_email).trim();
-  }
+  if (!isPartial) {
+    const matterPatch = {};
+    const agentName = buildAgentName(formData);
+    if (agentName) matterPatch.agent = agentName;
+    if (formData.agent_phone != null && String(formData.agent_phone).trim() !== "") {
+      matterPatch.agent_phone = String(formData.agent_phone).trim();
+    }
+    if (formData.agent_email != null && String(formData.agent_email).trim() !== "") {
+      matterPatch.agent_email = String(formData.agent_email).trim();
+    }
 
-  if (Object.keys(matterPatch).length > 0) {
-    const { error: matterError } = await supabase
-      .from("matters")
-      .update(matterPatch)
-      .eq("matter_ref", row.matter_ref);
-    if (matterError) {
-      return Response.json({ error: matterError.message }, { status: 500 });
+    if (Object.keys(matterPatch).length > 0) {
+      const { error: matterError } = await supabase
+        .from("matters")
+        .update(matterPatch)
+        .eq("matter_ref", row.matter_ref);
+      if (matterError) {
+        return Response.json({ error: matterError.message }, { status: 500 });
+      }
     }
   }
 
