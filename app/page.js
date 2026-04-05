@@ -5090,6 +5090,19 @@ Maximum 300 words.`,
   }, [fetchTasks]);
 
   useEffect(() => {
+    const newHighTasks = (tasks || []).filter(
+      (t) =>
+        !t.done &&
+        (t.urgency === "critical" || t.urgency === "high") &&
+        t.due_date === new Date().toISOString().split("T")[0]
+    );
+    if (newHighTasks.length > 0) {
+      setBellSeen(false);
+      bellSeenRef.current = false;
+    }
+  }, [tasks]);
+
+  useEffect(() => {
     const fetchInvoices = async () => {
       const { data, error } = await supabase.from("invoices").select("*").order("created_at", { ascending: false });
       if (error) {
@@ -6187,6 +6200,7 @@ If no matches found return: []`
     setBellTab("notifications");
     setBellSeen(true);
     bellSeenRef.current = true;
+    void fetchTasks();
     setContractInboxUnread(0);
     setNotifUnreadCount(0);
     setNotifications([]);
@@ -8008,10 +8022,15 @@ Return only the email body text, no subject line.`;
                   >
                     {notifOpen ? "🔔" : "🔔"}
                     {(() => {
-                      const totalBadge =
+                      const bellBadgeCount =
                         contractInboxUnread +
-                        notifications.filter((n) => n.urgency === "critical" || n.urgency === "high").length;
-                      return totalBadge > 0 && !bellSeen ? (
+                        (tasks || []).filter(
+                          (t) =>
+                            !t.done &&
+                            (t.urgency === "critical" || t.urgency === "high") &&
+                            t.due_date === new Date().toISOString().split("T")[0]
+                        ).length;
+                      return bellBadgeCount > 0 && !bellSeen ? (
                       <span
                         className="badge-pop"
                         style={{
@@ -8034,7 +8053,7 @@ Return only the email body text, no subject line.`;
                           boxShadow: "0 0 0 2px white",
                         }}
                       >
-                        {totalBadge > 9 ? "9+" : totalBadge}
+                        {bellBadgeCount > 9 ? "9+" : bellBadgeCount}
                       </span>
                       ) : null;
                     })()}
@@ -8207,10 +8226,15 @@ Return only the email body text, no subject line.`;
               >
                 {notifOpen ? "🔔" : "🔔"}
                 {(() => {
-                  const totalBadge =
+                  const bellBadgeCount =
                     contractInboxUnread +
-                    notifications.filter((n) => n.urgency === "critical" || n.urgency === "high").length;
-                  return totalBadge > 0 && !bellSeen ? (
+                    (tasks || []).filter(
+                      (t) =>
+                        !t.done &&
+                        (t.urgency === "critical" || t.urgency === "high") &&
+                        t.due_date === new Date().toISOString().split("T")[0]
+                    ).length;
+                  return bellBadgeCount > 0 && !bellSeen ? (
                   <span
                     className="badge-pop"
                     style={{
@@ -8233,7 +8257,7 @@ Return only the email body text, no subject line.`;
                       boxShadow: "0 0 0 2px white",
                     }}
                   >
-                    {totalBadge > 9 ? "9+" : totalBadge}
+                    {bellBadgeCount > 9 ? "9+" : bellBadgeCount}
                   </span>
                   ) : null;
                 })()}
