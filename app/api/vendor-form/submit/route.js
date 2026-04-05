@@ -8,6 +8,8 @@ export async function POST(request) {
     const body = await request.json()
     const { token, formData, partial } = body
 
+    console.log("[submit] token:", token, "partial:", partial, "formData keys:", formData ? Object.keys(formData).join(",") : "none")
+
     if (!token) return NextResponse.json({ error: "No token" }, { status: 400 })
 
     const supabase = createClient(
@@ -58,6 +60,8 @@ export async function POST(request) {
       })
       .eq("token", token)
 
+    console.log("[submit] vendor_instructions updated successfully")
+
     // 5. Insert task - do this synchronously before response
     const today = new Date().toISOString().split("T")[0]
     const vendorName = [payload.vendor_first_name || row.vendor_first_name, payload.vendor_last_name || row.vendor_last_name].filter(Boolean).join(" ") || "Vendor"
@@ -75,6 +79,7 @@ export async function POST(request) {
     } catch (taskErr) {
       console.error("[vendor-form/submit] task insert error:", taskErr.message)
     }
+    console.log("[submit] task insert attempted")
 
     // 6. Build email body for Gitu
     const staffBody = `A vendor instruction form has been submitted for matter ${matterRef}.
@@ -130,6 +135,7 @@ ${payload.additional_notes || row.additional_notes || "None"}`
     // 7. Send email to Gitu - synchronously before response
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://conveyancing-crew.vercel.app"
     try {
+      console.log("[submit] sending staff email to gitu")
       const staffEmailRes = await fetch(`${appUrl}/api/email/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -140,6 +146,7 @@ ${payload.additional_notes || row.additional_notes || "None"}`
           matterId: matterRef
         })
       })
+      console.log("[submit] staff email status:", staffEmailRes.status)
       if (!staffEmailRes.ok) {
         const errText = await staffEmailRes.text()
         console.error("[vendor-form/submit] staff email failed:", errText)
@@ -176,6 +183,7 @@ gitu@conveyancingcrew.com.au
 02 XXXX XXXX`
 
       try {
+        console.log("[submit] sending client email to:", vendorEmail)
         const clientEmailRes = await fetch(`${appUrl}/api/email/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -186,6 +194,7 @@ gitu@conveyancingcrew.com.au
             matterId: matterRef
           })
         })
+        console.log("[submit] client email status:", clientEmailRes.status)
         if (!clientEmailRes.ok) {
           const errText = await clientEmailRes.text()
           console.error("[vendor-form/submit] client email failed:", errText)
