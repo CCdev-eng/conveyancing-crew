@@ -6457,6 +6457,8 @@ RESPONSE RULES:
         if (intakeHasCoVendor && (intakeCoVendorFirstName || intakeCoVendorLastName)) {
           notesObj.co_vendor_name = [intakeCoVendorFirstName, intakeCoVendorLastName].filter(Boolean).join(" ").trim();
         }
+        delete notesObj.expected_sale_price;
+        delete notesObj.expected_price;
       } else if (intakeHasCoPurchaser && (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)) {
         notesObj.coPurchaser = [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim();
       }
