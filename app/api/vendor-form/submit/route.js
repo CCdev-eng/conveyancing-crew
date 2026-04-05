@@ -62,11 +62,19 @@ export async function POST(request) {
 
     console.log("[submit] vendor_instructions updated successfully")
 
+    // Re-fetch row to get all saved data including current submission
+    const { data: freshRow } = await supabase
+      .from("vendor_instructions")
+      .select("*")
+      .eq("token", token)
+      .single()
+    const fullRow = freshRow || row
+
     // 5. Insert task - do this synchronously before response
     const today = new Date().toISOString().split("T")[0]
-    const vendorName = [payload.vendor_first_name || row.vendor_first_name, payload.vendor_last_name || row.vendor_last_name].filter(Boolean).join(" ") || "Vendor"
-    const propertyAddress = payload.property_address || row.property_address || ""
-    const vendorEmail = payload.vendor_email || row.vendor_email || ""
+    const vendorName = [fullRow.vendor_first_name, fullRow.vendor_last_name].filter(Boolean).join(" ") || "Vendor"
+    const propertyAddress = fullRow.property_address || ""
+    const vendorEmail = fullRow.vendor_email || ""
 
     try {
       await supabase.from("tasks").insert({
@@ -81,20 +89,21 @@ export async function POST(request) {
     }
     console.log("[submit] task insert attempted")
 
-    // Update matters table with correct column names
+    // Update matters table - use row data which has ALL fields from partial saves
     try {
       const matterPatch = {}
-      const agentFirst = payload.agent_first_name || row.agent_first_name || ""
-      const agentLast = payload.agent_last_name || row.agent_last_name || ""
+      const agentFirst = fullRow.agent_first_name || ""
+      const agentLast = fullRow.agent_last_name || ""
       const agentFullName = [agentFirst, agentLast].filter(Boolean).join(" ").trim()
       if (agentFullName) matterPatch.agent_name = agentFullName
-      if (payload.agent_phone || row.agent_phone) matterPatch.agent_phone = payload.agent_phone || row.agent_phone
-      if (payload.agent_email || row.agent_email) matterPatch.agent_email = payload.agent_email || row.agent_email
-      if (payload.expected_price || row.expected_price) matterPatch.price = payload.expected_price || row.expected_price
-      if (payload.possession_type || row.possession_type) {
-        const tenanted = (payload.possession_type || row.possession_type) === "tenanted"
-        matterPatch.is_tenanted = tenanted
-      }
+      if (fullRow.agent_phone) matterPatch.agent_phone = fullRow.agent_phone
+      if (fullRow.agent_email) matterPatch.agent_email = fullRow.agent_email
+      if (fullRow.expected_price) matterPatch.price = String(fullRow.expected_price)
+      if (fullRow.possession_type) matterPatch.is_tenanted = fullRow.possession_type === "tenanted"
+      if (fullRow.special_conditions) matterPatch.special_conditions = fullRow.special_conditions
+
+      console.log("[submit] matterPatch:", JSON.stringify(matterPatch))
+
       if (Object.keys(matterPatch).length > 0) {
         matterPatch.updated_at = new Date().toISOString()
         const { error: matterErr } = await supabase
@@ -106,6 +115,8 @@ export async function POST(request) {
         } else {
           console.log("[submit] matter updated successfully:", Object.keys(matterPatch).join(","))
         }
+      } else {
+        console.log("[submit] matterPatch empty - no matter update needed")
       }
     } catch (matterUpdateErr) {
       console.error("[submit] matter update exception:", matterUpdateErr.message)
@@ -117,50 +128,50 @@ export async function POST(request) {
 VENDOR DETAILS
 Name: ${vendorName}
 Email: ${vendorEmail}
-Phone: ${payload.vendor_phone || row.vendor_phone || "—"}
-Address: ${payload.vendor_address || row.vendor_address || "—"}
-Date of Birth: ${payload.vendor_dob || row.vendor_dob || "—"}
+Phone: ${fullRow.vendor_phone || "—"}
+Address: ${fullRow.vendor_address || "—"}
+Date of Birth: ${fullRow.vendor_dob || "—"}
 
 CO-VENDOR
-${(payload.co_vendor_name || row.co_vendor_name) ? `Name: ${payload.co_vendor_name || row.co_vendor_name}\nDOB: ${payload.co_vendor_dob || row.co_vendor_dob || "—"}` : "None"}
+${fullRow.co_vendor_name ? `Name: ${fullRow.co_vendor_name}\nDOB: ${fullRow.co_vendor_dob || "—"}` : "None"}
 
 PROPERTY
 Address: ${propertyAddress}
-Ownership Type: ${payload.ownership_type || row.ownership_type || "—"}
-Entity Name: ${payload.entity_name || row.entity_name || "—"}
+Ownership Type: ${fullRow.ownership_type || "—"}
+Entity Name: ${fullRow.entity_name || "—"}
 
 MORTGAGE
-Has Mortgage: ${payload.has_mortgage || row.has_mortgage ? "Yes" : "No"}
-Lender: ${payload.lender_name || row.lender_name || "—"}
-Estimated Payout: ${payload.estimated_payout || row.estimated_payout || "—"}
+Has Mortgage: ${fullRow.has_mortgage ? "Yes" : "No"}
+Lender: ${fullRow.lender_name || "—"}
+Estimated Payout: ${fullRow.estimated_payout || "—"}
 
 PROPERTY DETAILS
-Possession: ${payload.possession_type || row.possession_type || "—"}
-Tenant Name: ${payload.tenant_name || row.tenant_name || "—"}
-Weekly Rent: ${payload.weekly_rent || row.weekly_rent || "—"}
-Building Works: ${payload.building_works_last_7_years || row.building_works_last_7_years ? "Yes - " + (payload.building_works_details || row.building_works_details || "") : "No"}
-Owner Builder: ${payload.owner_builder || row.owner_builder ? "Yes" : "No"}
-Pool/Spa: ${payload.pool_or_spa || row.pool_or_spa ? "Yes" : "No"}
-Smoke Alarms Compliant: ${(payload.smoke_alarms_compliant ?? row.smoke_alarms_compliant) === false ? "No" : "Yes"}
+Possession: ${fullRow.possession_type || "—"}
+Tenant Name: ${fullRow.tenant_name || "—"}
+Weekly Rent: ${fullRow.weekly_rent || "—"}
+Building Works: ${fullRow.building_works_last_7_years ? "Yes - " + (fullRow.building_works_details || "") : "No"}
+Owner Builder: ${fullRow.owner_builder ? "Yes" : "No"}
+Pool/Spa: ${fullRow.pool_or_spa ? "Yes" : "No"}
+Smoke Alarms Compliant: ${fullRow.smoke_alarms_compliant === false ? "No" : "Yes"}
 
 INCLUSIONS & EXCLUSIONS
-Inclusions: ${payload.inclusions || row.inclusions || "—"}
-Exclusions: ${payload.exclusions || row.exclusions || "—"}
+Inclusions: ${fullRow.inclusions || "—"}
+Exclusions: ${fullRow.exclusions || "—"}
 
 AGENT DETAILS
-Agent: ${[payload.agent_first_name || row.agent_first_name, payload.agent_last_name || row.agent_last_name].filter(Boolean).join(" ") || "—"}
-Agency: ${payload.agency_name || row.agency_name || "—"}
-Agent Phone: ${payload.agent_phone || row.agent_phone || "—"}
-Agent Email: ${payload.agent_email || row.agent_email || "—"}
-Sale Method: ${payload.sale_method || row.sale_method || "—"}
-Expected Price: ${payload.expected_price || row.expected_price || "—"}
-Listing Date: ${payload.expected_listing_date || row.expected_listing_date || "—"}
+Agent: ${[fullRow.agent_first_name, fullRow.agent_last_name].filter(Boolean).join(" ") || "—"}
+Agency: ${fullRow.agency_name || "—"}
+Agent Phone: ${fullRow.agent_phone || "—"}
+Agent Email: ${fullRow.agent_email || "—"}
+Sale Method: ${fullRow.sale_method || "—"}
+Expected Price: ${fullRow.expected_price || "—"}
+Listing Date: ${fullRow.expected_listing_date || "—"}
 
 SPECIAL CONDITIONS
-${payload.special_conditions || row.special_conditions || "None"}
+${fullRow.special_conditions || "None"}
 
 NOTES
-${payload.additional_notes || row.additional_notes || "None"}`
+${fullRow.additional_notes || "None"}`
 
     // 7. Send email to Gitu - synchronously before response
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://conveyancing-crew.vercel.app"
@@ -187,22 +198,22 @@ ${payload.additional_notes || row.additional_notes || "None"}`
 
     // 8. Send confirmation email to vendor - synchronously before response
     if (vendorEmail) {
-      const clientBody = `Hi ${payload.vendor_first_name || row.vendor_first_name || "there"},
+      const clientBody = `Hi ${fullRow.vendor_first_name || "there"},
 
 Thank you for completing your vendor instruction form. We have received your details and will begin preparing your sale contract shortly.
 
 Here is a record of the information you provided:
 
 Property: ${propertyAddress}
-Sale Method: ${payload.sale_method || row.sale_method || "—"}
-Expected Price: ${payload.expected_price || row.expected_price || "—"}
-Agent: ${[payload.agent_first_name || row.agent_first_name, payload.agent_last_name || row.agent_last_name].filter(Boolean).join(" ") || "—"}
-Agency: ${payload.agency_name || row.agency_name || "—"}
-Possession at Settlement: ${payload.possession_type || row.possession_type || "—"}
-Has Mortgage: ${payload.has_mortgage || row.has_mortgage ? "Yes" : "No"}
-${(payload.has_mortgage || row.has_mortgage) ? `Lender: ${payload.lender_name || row.lender_name || "—"}` : ""}
-Inclusions: ${payload.inclusions || row.inclusions || "—"}
-Exclusions: ${payload.exclusions || row.exclusions || "—"}
+Sale Method: ${fullRow.sale_method || "—"}
+Expected Price: ${fullRow.expected_price || "—"}
+Agent: ${[fullRow.agent_first_name, fullRow.agent_last_name].filter(Boolean).join(" ") || "—"}
+Agency: ${fullRow.agency_name || "—"}
+Possession at Settlement: ${fullRow.possession_type || "—"}
+Has Mortgage: ${fullRow.has_mortgage ? "Yes" : "No"}
+${fullRow.has_mortgage ? `Lender: ${fullRow.lender_name || "—"}` : ""}
+Inclusions: ${fullRow.inclusions || "—"}
+Exclusions: ${fullRow.exclusions || "—"}
 
 If any of the above information is incorrect or you need to make changes, please contact us at gitu@conveyancingcrew.com.au
 
