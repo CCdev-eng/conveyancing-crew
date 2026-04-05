@@ -529,7 +529,11 @@ export default function VendorFormPage() {
       const res = await fetch("/api/vendor-form/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, formData: buildVendorSubmitPayload(form) }),
+        body: JSON.stringify({
+          token,
+          formData: buildVendorSubmitPayload(form),
+          partial: false,
+        }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -545,7 +549,8 @@ export default function VendorFormPage() {
     }
   };
 
-  const handleGoNext = async () => {
+  /** Partial save only runs from the Next button onClick — not from useEffect or render. */
+  const handleGoNext = useCallback(async () => {
     if (!canGoNext || !token) return;
     const slice = pickPartialPayload(step, form);
     if (Object.keys(slice).length > 0) {
@@ -563,7 +568,7 @@ export default function VendorFormPage() {
       }
     }
     setStep((s) => Math.min(8, s + 1));
-  };
+  }, [canGoNext, token, step, form]);
 
   const shell = {
     minHeight: "100dvh",
