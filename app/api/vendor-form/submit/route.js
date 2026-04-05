@@ -1,19 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 
-function buildAgentName(formData) {
-  if (!formData || typeof formData !== "object") return null;
-  if (formData.agent_name != null && String(formData.agent_name).trim()) {
-    return String(formData.agent_name).trim();
-  }
-  if (formData.agent != null && String(formData.agent).trim()) {
-    return String(formData.agent).trim();
-  }
-  const first = formData.agent_first_name != null ? String(formData.agent_first_name).trim() : "";
-  const last = formData.agent_last_name != null ? String(formData.agent_last_name).trim() : "";
-  const combined = [first, last].filter(Boolean).join(" ").trim();
-  return combined || null;
-}
-
 /**
  * POST /api/vendor-form/submit
  * Public — no auth. Body: { token, formData, partial? }
@@ -75,28 +61,6 @@ export async function POST(request) {
 
   if (updateError) {
     return Response.json({ error: updateError.message }, { status: 500 });
-  }
-
-  if (!isPartial) {
-    const matterPatch = {};
-    const agentName = buildAgentName(formData);
-    if (agentName) matterPatch.agent = agentName;
-    if (formData.agent_phone != null && String(formData.agent_phone).trim() !== "") {
-      matterPatch.agent_phone = String(formData.agent_phone).trim();
-    }
-    if (formData.agent_email != null && String(formData.agent_email).trim() !== "") {
-      matterPatch.agent_email = String(formData.agent_email).trim();
-    }
-
-    if (Object.keys(matterPatch).length > 0) {
-      const { error: matterError } = await supabase
-        .from("matters")
-        .update(matterPatch)
-        .eq("matter_ref", row.matter_ref);
-      if (matterError) {
-        return Response.json({ error: matterError.message }, { status: 500 });
-      }
-    }
   }
 
   return Response.json({ success: true });
