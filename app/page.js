@@ -2067,48 +2067,48 @@ function SaleWorkflow({ matter, supabase, isMobile }) {
     sw_intro: (m) => ({
       to: m?.client_email || m?.email || "",
       subject: `Your Property Sale — ${m?.address || ""}`,
-      body: `Hi ${m?.client_first_name || m?.client_name?.split(" ")[0] || m?.client?.split(" ")[0] || "there"},\n\nThank you for engaging Conveyancing Crew to act as your conveyancer for the sale of ${m?.address || "your property"}.\n\nPlease advise your selling agent of our details as your conveyancer so we can be noted on the agency agreement and receive the contract and vendor statement for review. You can forward this email or provide the following:\n\nConveyancing Crew\nEmail: gitu@conveyancingcrew.com.au\n\nWe will liaise with the agent and purchaser's conveyancer on your behalf throughout the sale.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+      body: `Hi ${m?.client_first_name || m?.client_name?.split(" ")[0] || m?.client?.split(" ")[0] || "there"},\n\nThank you for engaging Conveyancing Crew to act for you on the sale of ${m?.address || "your property"}.\n\nPlease share our details with your selling agent so we can be noted as your conveyancer and receive contract documentation. You can forward this email or provide:\n\nConveyancing Crew — gitu@conveyancingcrew.com.au\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
     }),
     sw_contract_sent: (m) => ({
       to: "",
       toInputLabel: "Agent",
       subject: `Contract for Sale — ${m?.address || ""}`,
-      body: `Dear Agent,\n\nWe act for the vendor in the sale of ${m?.address || "the above property"}.\n\nPlease find attached the signed contract and vendor statement (Section 32 / Contract for Sale as applicable), which are ready for listing.\n\nKindly confirm receipt and advise if you require any further information.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+      body: `Dear Agent,\n\nWe act for the vendor in the sale of ${m?.address || "the above property"}.\n\nPlease find attached the contract and vendor statement, ready for listing.\n\nKindly confirm receipt.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
     }),
     sw_order_on_agent: (m) => ({
       to: "",
       toInputLabel: "Agent",
       subject: `Order on Agent — ${m?.address || ""}`,
-      body: `Dear Agent,\n\nSettlement of ${m?.address || "the above property"} has now completed.\n\nPlease be advised that you are authorised to release the deposit held in your trust account in accordance with the contract, and to release keys to the purchaser.\n\nThis email confirms settlement is complete. If you require any further documentation, please contact our office.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+      body: `Dear Agent,\n\nSettlement of ${m?.address || "the above property"} is confirmed complete.\n\nYou are authorised to release the deposit held in trust and to release keys to the purchaser in accordance with the contract.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
     }),
     sw_final: (m) => ({
       to: m?.client_email || m?.email || "",
       subject: `Settlement Complete & Final Invoice — ${m?.address || ""}`,
-      body: `Hi ${m?.client_first_name || m?.client_name?.split(" ")[0] || m?.client?.split(" ")[0] || "there"},\n\nCongratulations — settlement of ${m?.address || "your property"} has completed.\n\nNet sale proceeds should shortly reflect in your nominated account after discharge of your mortgage and agreed adjustments. Please retain our final invoice for your records (attached or to follow separately as agreed).\n\nIt has been a pleasure acting for you. If we can assist with anything further, please let us know.\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
+      body: `Hi ${m?.client_first_name || m?.client_name?.split(" ")[0] || m?.client?.split(" ")[0] || "there"},\n\nCongratulations on the successful sale of ${m?.address || "your property"} — settlement has completed.\n\nNet proceeds should reflect in your nominated account as agreed after mortgage discharge and adjustments. Our final invoice is noted for your records (attached or as arranged).\n\nKind regards,\nGitu Kaur\nConveyancing Crew`,
     }),
   };
 
   const SALE_STEPS_CONFIG = [
-    { key: "sw_01", num: "01", phase: 1, phaseLabel: "Pre-Exchange", title: "Enquiry Received", what: "Record how the enquiry came in — phone, email or referral", tier: "A", tierNote: "Auto-detected from email · tick manually for phone/walk-in", action: null, autoComplete: true },
-    { key: "sw_02", num: "02", phase: 1, title: "Intro Email Sent to Vendor", what: "Send intro email so vendor can share our details with the agent", tier: "B", action: { type: "email", template: "sw_intro", label: "Send Intro Email", icon: "✉️" } },
-    { key: "sw_03", num: "03", phase: 1, title: "Vendor & Property Details Gathered", what: "Gather vendor name, property address, agent details, expected sale price, mortgage details", tier: "D", tierNote: "Manual — call or email vendor", action: null },
-    { key: "sw_04", num: "04", phase: 1, title: "Vendor ID Verified (VOI)", what: "Verify vendor identity per ARNECC requirements before preparing contract", tier: "D", tierNote: "Manual — verify via InfoTrack or in person", action: null },
-    { key: "sw_05", num: "05", phase: 1, title: "Section 32 / Vendor Statement Prepared", what: "Prepare Vendor Statement (VIC) or Contract for Sale (NSW) including all prescribed documents", tier: "B", tierNote: "State-specific — VIC: Section 32 · NSW: Contract for Sale", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" }, isMilestone: true },
-    { key: "sw_06", num: "06", phase: 1, title: "Contract Searches Ordered & Collated", what: "Order title search, council, water, land tax and any strata searches via InfoTrack", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📦" } },
-    { key: "sw_07", num: "07", phase: 1, title: "Contract Sent to Agent / Listed for Sale", what: "Send signed contract and vendor statement to agent for listing", tier: "B", tierNote: "One click — email to agent", action: { type: "email", template: "sw_contract_sent", label: "Send to Agent", icon: "📤" } },
-    { key: "sw_08", num: "08", phase: 1, title: "Mortgage Discharge Initiated", what: "Contact vendor's lender to initiate discharge of mortgage. Obtain payout figure and confirm discharge authority lodged in PEXA", tier: "D", tierNote: "Manual — contact lender directly", action: null, isMilestone: true },
-    { key: "sw_09", num: "09", phase: 1, title: "Negotiations, Requisitions & Cooling-Off", what: "Handle purchaser requisitions, negotiate special conditions, monitor cooling-off period", tier: "D", tierNote: "Manual — address/email", action: null, isMilestone: true, dates: [{ key: "date_1", label: "Exchange Date" }, { key: "date_2", label: "Cooling-Off Ends", note: "Auto: exchange + 5 business days" }] },
-    { key: "sw_10", num: "10", phase: 2, phaseLabel: "Post-Exchange", title: "Deposit Received & Receipted", what: "Confirm deposit paid to agent's trust account and receipted", tier: "A", tierNote: "Auto-detected or confirm manually with agent", action: null },
-    { key: "sw_11", num: "11", phase: 2, title: "Land Tax Clearance Certificate Ordered", what: "Order land tax clearance via InfoTrack or request from client", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" } },
-    { key: "sw_12", num: "12", phase: 2, title: "FRGW Certificate Obtained", what: "Foreign Resident Gain Withholding certificate obtained if applicable", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📑" } },
-    { key: "sw_13", num: "13", phase: 2, title: "PEXA Workspace Joined & Discharge Lodged", what: "Join purchaser's PEXA workspace. Confirm discharge of mortgage lodged by lender", tier: "B", action: { type: "url", url: "https://www.pexa.com.au", label: "Open PEXA", icon: "🔗" }, isMilestone: true },
-    { key: "sw_14", num: "14", phase: 2, title: "Settlement Adjustment Sheet Agreed", what: "Calculate rates, water and strata adjustments. Agree figures with purchaser's conveyancer", tier: "C", action: { type: "ai", aiType: "sale_adjustment", label: "Generate Adjustment Sheet", icon: "🧮" } },
-    { key: "sw_15", num: "15", phase: 2, title: "Pre-Settlement Inspection Acknowledged", what: "Vendor notified of purchaser's right to pre-settlement inspection. Coordinate access with agent", tier: "D", tierNote: "Manual — notify vendor and agent", action: null },
-    { key: "sw_16", num: "16", phase: 3, phaseLabel: "Settlement", title: "Settlement Complete", what: "Settlement occurs in PEXA. Confirm funds received and title transferred", tier: "B", action: { type: "url", url: "https://www.pexa.com.au", label: "Open PEXA", icon: "🔗" }, isMilestone: true, dates: [{ key: "date_1", label: "Settlement Date" }] },
-    { key: "sw_17", num: "17", phase: 4, phaseLabel: "Post-Settlement", title: "Order on Agent Sent", what: "Authorise agent to release deposit and keys to purchaser", tier: "B", action: { type: "email", template: "sw_order_on_agent", label: "Send Order on Agent", icon: "🔑" } },
-    { key: "sw_18", num: "18", phase: 4, title: "Vendor Proceeds Confirmed", what: "Confirm net proceeds received into vendor's nominated account after mortgage discharge and adjustments", tier: "D", tierNote: "Manual — confirm with vendor", action: null },
-    { key: "sw_19", num: "19", phase: 4, title: "Authorities Notified", what: "Notify council, water, strata (if applicable) of change of ownership", tier: "D", tierNote: "Manual — standard letters", action: null },
-    { key: "sw_20", num: "20", phase: 4, title: "Invoice Issued & Matter Closed", what: "Issue final invoice to vendor and close matter", tier: "B", action: { type: "email", template: "sw_final", label: "Send Final Invoice", icon: "📊" }, isLast: true },
+    { key: "sw_01", num: "01", phase: 1, phaseLabel: "Pre-Exchange", title: "Enquiry Received", what: "Record how the enquiry came in", tier: "A", tierNote: "Auto-detected from email · tick manually for phone", action: null, autoComplete: true },
+    { key: "sw_02", num: "02", phase: 1, title: "Intro Email Sent to Vendor", what: "Send intro email so the vendor can share our details with the agent", tier: "B", action: { type: "email", template: "sw_intro", label: "Send Intro Email", icon: "✉️" } },
+    { key: "sw_03", num: "03", phase: 1, title: "Vendor & Property Details Gathered", what: "Collect vendor, property, agent and mortgage details", tier: "D", action: null },
+    { key: "sw_04", num: "04", phase: 1, title: "Vendor ID Verified (VOI)", what: "Complete vendor verification before preparing the contract", tier: "D", tierNote: "Verify via InfoTrack or in person", action: null },
+    { key: "sw_05", num: "05", phase: 1, title: "Section 32 / Vendor Statement Prepared", what: "Prepare vendor statement and prescribed documents for your state", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" }, isMilestone: true },
+    { key: "sw_06", num: "06", phase: 1, title: "Contract Searches Ordered & Collated", what: "Order and collate title, council, water, land tax and strata searches as required", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📦" } },
+    { key: "sw_07", num: "07", phase: 1, title: "Contract Sent to Agent", what: "Send contract and vendor statement to the agent", tier: "B", action: { type: "email", template: "sw_contract_sent", label: "Send to Agent", icon: "📤" } },
+    { key: "sw_08", num: "08", phase: 1, title: "Mortgage Discharge Initiated", what: "Contact the lender to initiate discharge and confirm PEXA arrangements", tier: "D", tierNote: "Contact lender directly", action: null, isMilestone: true },
+    { key: "sw_09", num: "09", phase: 1, title: "Negotiations, Requisitions & Cooling-Off", what: "Handle requisitions, special conditions and cooling-off", tier: "D", action: null, isMilestone: true, dates: [{ key: "date_1", label: "Exchange Date" }, { key: "date_2", label: "Cooling-Off Ends (auto: exchange + 5 business days)", labelPlain: true }] },
+    { key: "sw_10", num: "10", phase: 2, phaseLabel: "Post-Exchange", title: "Deposit Received & Receipted", what: "Confirm deposit received into the agent's trust account and receipted", tier: "A", tierNote: "Confirm with agent", action: null, autoComplete: true },
+    { key: "sw_11", num: "11", phase: 2, title: "Land Tax Clearance Certificate Ordered", what: "Order land tax clearance via InfoTrack or from the client", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" } },
+    { key: "sw_12", num: "12", phase: 2, title: "FRGW Certificate Obtained", what: "Obtain Foreign Resident Gain Withholding certificate if applicable", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📑" } },
+    { key: "sw_13", num: "13", phase: 2, title: "PEXA Workspace Joined & Discharge Lodged", what: "Join the purchaser's workspace and confirm discharge lodged", tier: "B", action: { type: "url", url: "https://www.pexa.com.au", label: "Open PEXA", icon: "🔗" }, isMilestone: true },
+    { key: "sw_14", num: "14", phase: 2, title: "Settlement Adjustment Sheet Agreed", what: "Agree rates, water and strata adjustments with the purchaser's conveyancer", tier: "C", action: { type: "ai", aiType: "sale_adjustment", label: "Generate Adjustment Sheet", icon: "🧮" } },
+    { key: "sw_15", num: "15", phase: 2, title: "Pre-Settlement Inspection Acknowledged", what: "Acknowledge pre-settlement inspection rights and coordinate access", tier: "D", tierNote: "Notify vendor and agent", action: null },
+    { key: "sw_16", num: "16", phase: 3, phaseLabel: "Settlement", title: "Settlement Complete", what: "Confirm PEXA settlement, funds and title transfer", tier: "B", action: { type: "url", url: "https://www.pexa.com.au", label: "Open PEXA", icon: "🔗" }, isMilestone: true, dates: [{ key: "date_1", label: "Settlement Date" }, { key: "time_1", label: "Settlement Time", inputType: "time" }] },
+    { key: "sw_17", num: "17", phase: 4, phaseLabel: "Post-Settlement", title: "Order on Agent Sent", what: "Authorise the agent to release deposit and keys", tier: "B", action: { type: "email", template: "sw_order_on_agent", label: "Send Order on Agent", icon: "🔑" } },
+    { key: "sw_18", num: "18", phase: 4, title: "Vendor Proceeds Confirmed", what: "Confirm net proceeds received after discharge and adjustments", tier: "D", tierNote: "Confirm with vendor", action: null },
+    { key: "sw_19", num: "19", phase: 4, title: "Authorities Notified", what: "Notify council, water and strata of the change of ownership", tier: "D", tierNote: "Council, water, strata letters", action: null },
+    { key: "sw_20", num: "20", phase: 4, title: "Invoice Issued & Matter Closed", what: "Issue final invoice and close the matter", tier: "B", action: { type: "email", template: "sw_final", label: "Send Final Invoice", icon: "📊" }, isLast: true },
   ];
 
   const [wfData, setWfData] = useState({});
@@ -2122,18 +2122,20 @@ function SaleWorkflow({ matter, supabase, isMobile }) {
   const [aiDraft, setAiDraft] = useState("");
 
   useEffect(() => {
-    if (!matterRef) return;
+    if (!matterRef) {
+      setWfData({});
+      setLoading(false);
+      return;
+    }
     loadAll();
   }, [matterRef]);
 
   const loadAll = async () => {
     setLoading(true);
     const { data } = await supabase.from("matter_workflow").select("*").eq("matter_ref", matterRef);
-    if (data) {
-      const map = {};
-      data.forEach((r) => { map[r.step_key] = r; });
-      setWfData(map);
-    }
+    const map = {};
+    (data || []).forEach((r) => { map[r.step_key] = r; });
+    setWfData(map);
     setLoading(false);
   };
 
@@ -2215,20 +2217,26 @@ function SaleWorkflow({ matter, supabase, isMobile }) {
     const price = matter?.price || matter?.value || matter?.purchase_price || "";
     const settle = matter?.settlement || "";
     const prompts = {
-      sale_adjustment: `You are a licensed Australian conveyancer. Generate a settlement adjustment sheet for the vendor covering council rates, water charges, strata levies (if applicable) adjusted to the settlement date, with a clear proceeds summary showing estimated net sale proceeds after mortgage discharge and agreed adjustments.
+      sale_adjustment: `You are a licensed Australian conveyancer. Generate a vendor settlement adjustment sheet covering council rates, water charges and strata levies (if applicable), each adjusted to the settlement date, with a net proceeds summary for the vendor.
 
 Property: ${addr}
 State: ${st}
-Sale price (contract): $${price || "TBC"}
+Sale price: $${price || "TBC"}
 Settlement date: ${settle || "TBC"}
 
-Use clear sections or a table format suitable to paste into an email or letter. Follow Australian conveyancing practice for the state where relevant. Sign off as Gitu Kaur, Conveyancing Crew.`,
+Format clearly for email or letter. Follow Australian conveyancing practice. Sign off as Gitu Kaur, Conveyancing Crew.`,
     };
+    const promptText = prompts[type];
+    if (!promptText) {
+      setAiDraft("Unknown AI action — please try again.");
+      setAiLoading(false);
+      return;
+    }
     try {
       const res = await fetch("/api/contract-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompts[type], mode: "draft" }),
+        body: JSON.stringify({ prompt: promptText, mode: "draft" }),
       });
       const data = await res.json();
       setAiDraft(data?.result || data?.text || data?.content || "Could not generate draft — please try again.");
@@ -2412,7 +2420,7 @@ Use clear sections or a table format suitable to paste into an email or letter. 
                       <div style={{ display: "flex", gap: 10, marginBottom: step.action ? 10 : 0, flexWrap: "wrap" }}>
                         {step.dates.map((d) => (
                           <div key={d.key} style={{ flex: 1, minWidth: 140 }}>
-                            <label style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 3 }}>
+                            <label style={{ fontFamily: "DM Mono, monospace", fontSize: 10, color: "#aaa", textTransform: d.inputType === "time" || d.labelPlain ? "none" : "uppercase", letterSpacing: d.inputType === "time" || d.labelPlain ? 0.3 : 0.8, display: "block", marginBottom: 3 }}>
                               {d.label} {d.note && <span style={{ color: "#1a7a4a", textTransform: "none", letterSpacing: 0 }}>· {d.note}</span>}
                             </label>
                             <input type={d.inputType || "date"} value={getDate(step.key, d.key)} onChange={(e) => saveDate(step.key, d.key, e.target.value)}
