@@ -6469,8 +6469,8 @@ RESPONSE RULES:
         if (fd) notesObj.referralFee = parseInt(fd, 10);
       }
       if (intakeMatterType === "Sale") {
-        const agName = [intakeAgentFirstName, intakeAgentLastName].filter(Boolean).join(" ").trim();
-        if (agName) notesObj.agentName = agName;
+        if (intakeAgentFirstName?.trim()) notesObj.agentFirstName = intakeAgentFirstName.trim();
+        if (intakeAgentLastName?.trim()) notesObj.agentLastName = intakeAgentLastName.trim();
         if (intakeAgencyName?.trim()) notesObj.agencyName = intakeAgencyName.trim();
         if (intakeAgentPhone?.trim()) notesObj.agentPhone = intakeAgentPhone.trim();
         if (intakeAgentEmail?.trim()) notesObj.agentEmail = intakeAgentEmail.trim();
@@ -6503,8 +6503,6 @@ RESPONSE RULES:
           (intakeCoPurchaserFirstName || intakeCoPurchaserLastName)
             ? [intakeCoPurchaserFirstName, intakeCoPurchaserLastName].filter(Boolean).join(" ").trim() || null
             : null,
-        agent: intakeMatterType === "Sale" ? [intakeAgentFirstName, intakeAgentLastName].filter(Boolean).join(" ").trim() || null : null,
-        agent_phone: intakeMatterType === "Sale" ? (intakeAgentPhone?.trim() || null) : null,
         type: intakeMatterType,
         address: intakeAddress || "",
         state: intakeState || "NSW",
