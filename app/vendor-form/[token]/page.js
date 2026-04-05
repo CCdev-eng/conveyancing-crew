@@ -257,8 +257,45 @@ function mergePrefill(form, row) {
 }
 
 function buildPayload(form) {
-  const { property_address_locked, ...rest } = form;
-  return rest;
+  return {
+    vendor_first_name: form.first_name,
+    vendor_last_name: form.last_name,
+    vendor_dob: form.date_of_birth,
+    vendor_email: form.email,
+    vendor_phone: form.mobile,
+    vendor_address: form.current_address,
+    co_vendor_name: form.co_vendor_full_name,
+    co_vendor_dob: form.co_vendor_date_of_birth,
+    property_address: form.property_address,
+    ownership_type: form.title_hold_type,
+    entity_name: form.entity_name,
+    entity_abn: form.abn_acn,
+    has_mortgage: form.has_mortgage,
+    lender_name: form.lender_name,
+    loan_account_number: form.loan_account_number,
+    estimated_payout: form.estimated_payout_amount,
+    possession_type: form.possession_type,
+    tenant_name: form.tenant_name,
+    tenant_lease_expiry: form.lease_expiry_date,
+    weekly_rent: form.weekly_rent,
+    building_works_last_7_years: form.building_works_last_7_years,
+    building_works_details: form.building_works_details,
+    owner_builder: form.owner_builder_work,
+    pool_or_spa: form.has_pool_spa,
+    smoke_alarms_compliant: form.smoke_alarms_compliant,
+    inclusions: form.inclusions,
+    exclusions: form.exclusions,
+    agent_first_name: form.agent_first_name,
+    agent_last_name: form.agent_last_name,
+    agency_name: form.agency_name,
+    agent_phone: form.agent_phone,
+    agent_email: form.agent_email,
+    sale_method: form.sale_method,
+    expected_price: form.expected_sale_price,
+    expected_listing_date: form.expected_listing_date,
+    special_conditions: form.special_conditions,
+    additional_notes: form.additional_notes,
+  };
 }
 
 function pickStepFormData(stepIndex, form) {
