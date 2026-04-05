@@ -159,191 +159,222 @@ function PossessionButtons({ value, onChange }) {
 
 function emptyForm() {
   return {
-    first_name: "",
-    last_name: "",
-    date_of_birth: "",
-    email: "",
-    mobile: "",
-    current_address: "",
-    has_co_vendor: null,
-    co_vendor_full_name: "",
-    co_vendor_date_of_birth: "",
-    property_address: "",
-    property_address_locked: false,
-    title_hold_type: "",
-    entity_name: "",
-    abn_acn: "",
-    has_mortgage: null,
-    lender_name: "",
-    loan_account_number: "",
-    estimated_payout_amount: "",
-    possession_type: "",
-    tenant_name: "",
-    lease_expiry_date: "",
-    weekly_rent: "",
-    building_works_last_7_years: null,
-    building_works_details: "",
-    owner_builder_work: null,
-    has_pool_spa: null,
-    smoke_alarms_compliant: true,
+    vendorFirstName: "",
+    vendorLastName: "",
+    vendorDob: "",
+    vendorEmail: "",
+    vendorPhone: "",
+    vendorAddress: "",
+    hasCoVendor: null,
+    coVendorName: "",
+    coVendorDob: "",
+    propertyAddress: "",
+    propertyAddressLocked: false,
+    ownershipType: "",
+    entityName: "",
+    entityAbn: "",
+    hasMortgage: null,
+    lenderName: "",
+    loanAccountNumber: "",
+    estimatedPayout: "",
+    possessionType: "",
+    tenantName: "",
+    tenantLeaseExpiry: "",
+    weeklyRent: "",
+    buildingWorks: null,
+    buildingWorksDetails: "",
+    ownerBuilder: null,
+    poolOrSpa: null,
+    smokeAlarms: true,
     inclusions: "",
     exclusions: "",
-    agent_first_name: "",
-    agent_last_name: "",
-    agency_name: "",
-    agent_phone: "",
-    agent_email: "",
-    sale_method: "",
-    expected_sale_price: "",
-    expected_listing_date: "",
-    special_conditions: "",
-    additional_notes: "",
+    agentFirstName: "",
+    agentLastName: "",
+    agencyName: "",
+    agentPhone: "",
+    agentEmail: "",
+    saleMethod: "",
+    expectedPrice: "",
+    expectedListingDate: "",
+    specialConditions: "",
+    additionalNotes: "",
   };
 }
 
 function mergePrefill(form, row) {
   if (!row || typeof row !== "object") return form;
   const next = { ...form };
-  const str = (k, alt) => {
-    const v = row[k] ?? row[alt];
-    if (v != null && v !== "") next[k] = String(v);
+  const str = (formKey, ...rowKeys) => {
+    let v;
+    for (const k of rowKeys) {
+      if (row[k] != null && row[k] !== "") {
+        v = row[k];
+        break;
+      }
+    }
+    if (v != null && v !== "") next[formKey] = String(v);
   };
-  str("first_name", "vendor_first_name");
-  str("last_name", "vendor_last_name");
-  str("date_of_birth");
-  str("email", "vendor_email");
-  str("mobile", "vendor_mobile");
-  str("current_address");
-  str("property_address", "address");
+  str("vendorFirstName", "vendor_first_name", "first_name");
+  str("vendorLastName", "vendor_last_name", "last_name");
+  str("vendorDob", "vendor_dob", "date_of_birth");
+  str("vendorEmail", "vendor_email", "email");
+  str("vendorPhone", "vendor_phone", "vendor_mobile", "mobile");
+  str("vendorAddress", "vendor_address", "current_address");
+  str("coVendorName", "co_vendor_name", "co_vendor_full_name");
+  str("coVendorDob", "co_vendor_dob", "co_vendor_date_of_birth");
+  if (row.has_co_vendor === true || row.has_co_vendor === false) next.hasCoVendor = row.has_co_vendor;
+  str("propertyAddress", "property_address", "address");
   if (row.property_address || row.address) {
-    next.property_address_locked = true;
+    next.propertyAddressLocked = true;
   }
-  str("co_vendor_full_name");
-  str("co_vendor_date_of_birth");
-  if (row.has_co_vendor === true || row.has_co_vendor === false) next.has_co_vendor = row.has_co_vendor;
-  str("title_hold_type");
-  str("entity_name");
-  str("abn_acn");
-  if (row.has_mortgage === true || row.has_mortgage === false) next.has_mortgage = row.has_mortgage;
-  str("lender_name");
-  str("loan_account_number");
-  str("estimated_payout_amount");
-  str("possession_type");
-  str("tenant_name");
-  str("lease_expiry_date");
-  str("weekly_rent");
+  str("ownershipType", "ownership_type", "title_hold_type");
+  str("entityName", "entity_name");
+  str("entityAbn", "entity_abn", "abn_acn");
+  if (row.has_mortgage === true || row.has_mortgage === false) next.hasMortgage = row.has_mortgage;
+  str("lenderName", "lender_name");
+  str("loanAccountNumber", "loan_account_number");
+  str("estimatedPayout", "estimated_payout", "estimated_payout_amount");
+  str("possessionType", "possession_type");
+  str("tenantName", "tenant_name");
+  str("tenantLeaseExpiry", "tenant_lease_expiry", "lease_expiry_date");
+  str("weeklyRent", "weekly_rent");
   if (row.building_works_last_7_years === true || row.building_works_last_7_years === false) {
-    next.building_works_last_7_years = row.building_works_last_7_years;
+    next.buildingWorks = row.building_works_last_7_years;
   }
-  str("building_works_details");
-  if (row.owner_builder_work === true || row.owner_builder_work === false) next.owner_builder_work = row.owner_builder_work;
-  if (row.has_pool_spa === true || row.has_pool_spa === false) next.has_pool_spa = row.has_pool_spa;
+  str("buildingWorksDetails", "building_works_details");
+  if (row.owner_builder === true || row.owner_builder === false) {
+    next.ownerBuilder = row.owner_builder;
+  } else if (row.owner_builder_work === true || row.owner_builder_work === false) {
+    next.ownerBuilder = row.owner_builder_work;
+  }
+  if (row.pool_or_spa === true || row.pool_or_spa === false) {
+    next.poolOrSpa = row.pool_or_spa;
+  } else if (row.has_pool_spa === true || row.has_pool_spa === false) {
+    next.poolOrSpa = row.has_pool_spa;
+  }
   if (row.smoke_alarms_compliant === true || row.smoke_alarms_compliant === false) {
-    next.smoke_alarms_compliant = row.smoke_alarms_compliant;
+    next.smokeAlarms = row.smoke_alarms_compliant;
   }
-  str("inclusions");
-  str("exclusions");
-  str("agent_first_name");
-  str("agent_last_name");
-  str("agency_name");
-  str("agent_phone");
-  str("agent_email");
-  str("sale_method");
-  str("expected_sale_price");
-  str("expected_listing_date");
-  str("special_conditions");
-  str("additional_notes");
+  str("inclusions", "inclusions");
+  str("exclusions", "exclusions");
+  str("agentFirstName", "agent_first_name");
+  str("agentLastName", "agent_last_name");
+  str("agencyName", "agency_name");
+  str("agentPhone", "agent_phone");
+  str("agentEmail", "agent_email");
+  str("saleMethod", "sale_method");
+  str("expectedPrice", "expected_price", "expected_sale_price");
+  str("expectedListingDate", "expected_listing_date");
+  str("specialConditions", "special_conditions");
+  str("additionalNotes", "additional_notes");
   return next;
 }
 
-function buildPayload(form) {
-  const { property_address_locked, ...rest } = form;
-  return rest;
-}
-
-function pickStepFormData(stepIndex, form) {
-  const pick = (keys) => {
-    const o = {};
-    keys.forEach((k) => {
-      if (form[k] !== undefined) o[k] = form[k];
-    });
-    return o;
+/** Payload keys must match vendor_instructions columns exactly — no extra keys. */
+function buildVendorSubmitPayload(form) {
+  return {
+    vendor_first_name: form.vendorFirstName,
+    vendor_last_name: form.vendorLastName,
+    vendor_dob: form.vendorDob,
+    vendor_email: form.vendorEmail,
+    vendor_phone: form.vendorPhone,
+    vendor_address: form.vendorAddress,
+    co_vendor_name: form.coVendorName,
+    co_vendor_dob: form.coVendorDob,
+    property_address: form.propertyAddress,
+    ownership_type: form.ownershipType,
+    entity_name: form.entityName,
+    entity_abn: form.entityAbn,
+    has_mortgage: form.hasMortgage,
+    lender_name: form.lenderName,
+    loan_account_number: form.loanAccountNumber,
+    estimated_payout: form.estimatedPayout,
+    possession_type: form.possessionType,
+    tenant_name: form.tenantName,
+    tenant_lease_expiry: form.tenantLeaseExpiry,
+    weekly_rent: form.weeklyRent,
+    building_works_last_7_years: form.buildingWorks,
+    building_works_details: form.buildingWorksDetails,
+    owner_builder: form.ownerBuilder,
+    pool_or_spa: form.poolOrSpa,
+    smoke_alarms_compliant: form.smokeAlarms,
+    inclusions: form.inclusions,
+    exclusions: form.exclusions,
+    agent_first_name: form.agentFirstName,
+    agent_last_name: form.agentLastName,
+    agency_name: form.agencyName,
+    agent_phone: form.agentPhone,
+    agent_email: form.agentEmail,
+    sale_method: form.saleMethod,
+    expected_price: form.expectedPrice,
+    expected_listing_date: form.expectedListingDate,
+    special_conditions: form.specialConditions,
+    additional_notes: form.additionalNotes,
   };
-  switch (stepIndex) {
-    case 0:
-      return pick([
-        "first_name",
-        "last_name",
-        "date_of_birth",
-        "email",
-        "mobile",
-        "current_address",
-      ]);
-    case 1:
-      return pick(["has_co_vendor", "co_vendor_full_name", "co_vendor_date_of_birth"]);
-    case 2:
-      return pick(["property_address", "property_address_locked", "title_hold_type", "entity_name", "abn_acn"]);
-    case 3:
-      return pick(["has_mortgage", "lender_name", "loan_account_number", "estimated_payout_amount"]);
-    case 4:
-      return pick([
-        "possession_type",
-        "tenant_name",
-        "lease_expiry_date",
-        "weekly_rent",
-        "building_works_last_7_years",
-        "building_works_details",
-        "owner_builder_work",
-        "has_pool_spa",
-        "smoke_alarms_compliant",
-      ]);
-    case 5:
-      return pick(["inclusions", "exclusions"]);
-    case 6:
-      return pick([
-        "agent_first_name",
-        "agent_last_name",
-        "agency_name",
-        "agent_phone",
-        "agent_email",
-        "sale_method",
-        "expected_sale_price",
-        "expected_listing_date",
-      ]);
-    case 7:
-      return pick(["special_conditions", "additional_notes"]);
-    default:
-      return {};
-  }
 }
 
-function stripLockedForApi(obj) {
-  const { property_address_locked, token: _t, matter_ref: _m, ...rest } = obj;
-  return rest;
+const PARTIAL_STEP_DB_KEYS = [
+  ["vendor_first_name", "vendor_last_name", "vendor_dob", "vendor_email", "vendor_phone", "vendor_address"],
+  ["co_vendor_name", "co_vendor_dob"],
+  ["property_address", "ownership_type", "entity_name", "entity_abn"],
+  ["has_mortgage", "lender_name", "loan_account_number", "estimated_payout"],
+  [
+    "possession_type",
+    "tenant_name",
+    "tenant_lease_expiry",
+    "weekly_rent",
+    "building_works_last_7_years",
+    "building_works_details",
+    "owner_builder",
+    "pool_or_spa",
+    "smoke_alarms_compliant",
+  ],
+  ["inclusions", "exclusions"],
+  [
+    "agent_first_name",
+    "agent_last_name",
+    "agency_name",
+    "agent_phone",
+    "agent_email",
+    "sale_method",
+    "expected_price",
+    "expected_listing_date",
+  ],
+  ["special_conditions", "additional_notes"],
+];
+
+function pickPartialPayload(stepIndex, form) {
+  const full = buildVendorSubmitPayload(form);
+  const keys = PARTIAL_STEP_DB_KEYS[stepIndex] || [];
+  const o = {};
+  keys.forEach((k) => {
+    if (full[k] !== undefined) o[k] = full[k];
+  });
+  return o;
 }
 
 function isFormComplete(f) {
-  if (!String(f.first_name || "").trim() || !String(f.last_name || "").trim()) return false;
-  if (!String(f.email || "").trim() || !String(f.mobile || "").trim()) return false;
-  if (f.has_co_vendor === null) return false;
-  if (f.has_co_vendor && !String(f.co_vendor_full_name || "").trim()) return false;
-  if (!f.title_hold_type) return false;
-  if ((f.title_hold_type === "company" || f.title_hold_type === "trust") && !String(f.entity_name || "").trim()) return false;
-  if (f.has_mortgage === null) return false;
-  if (f.has_mortgage && !String(f.lender_name || "").trim()) return false;
-  if (!f.possession_type) return false;
-  if (f.possession_type === "tenanted") {
-    if (!String(f.tenant_name || "").trim() || !String(f.lease_expiry_date || "").trim() || !String(f.weekly_rent || "").trim()) return false;
+  if (!String(f.vendorFirstName || "").trim() || !String(f.vendorLastName || "").trim()) return false;
+  if (!String(f.vendorEmail || "").trim() || !String(f.vendorPhone || "").trim()) return false;
+  if (f.hasCoVendor === null) return false;
+  if (f.hasCoVendor && !String(f.coVendorName || "").trim()) return false;
+  if (!f.ownershipType) return false;
+  if ((f.ownershipType === "company" || f.ownershipType === "trust") && !String(f.entityName || "").trim()) return false;
+  if (f.hasMortgage === null) return false;
+  if (f.hasMortgage && !String(f.lenderName || "").trim()) return false;
+  if (!f.possessionType) return false;
+  if (f.possessionType === "tenanted") {
+    if (!String(f.tenantName || "").trim() || !String(f.tenantLeaseExpiry || "").trim() || !String(f.weeklyRent || "").trim()) return false;
   }
-  if (f.building_works_last_7_years === null || f.owner_builder_work === null || f.has_pool_spa === null) return false;
-  if (f.building_works_last_7_years && !String(f.building_works_details || "").trim()) return false;
+  if (f.buildingWorks === null || f.ownerBuilder === null || f.poolOrSpa === null) return false;
+  if (f.buildingWorks && !String(f.buildingWorksDetails || "").trim()) return false;
   if (
-    !String(f.agent_first_name || "").trim() ||
-    !String(f.agent_last_name || "").trim() ||
-    !String(f.agent_email || "").trim() ||
-    !String(f.agent_phone || "").trim() ||
-    !f.sale_method ||
-    !String(f.expected_sale_price || "").trim()
+    !String(f.agentFirstName || "").trim() ||
+    !String(f.agentLastName || "").trim() ||
+    !String(f.agentEmail || "").trim() ||
+    !String(f.agentPhone || "").trim() ||
+    !f.saleMethod ||
+    !String(f.expectedPrice || "").trim()
   ) {
     return false;
   }
@@ -431,46 +462,46 @@ export default function VendorFormPage() {
   const canGoNext = useMemo(() => {
     if (step === 0) {
       return (
-        String(form.first_name || "").trim() &&
-        String(form.last_name || "").trim() &&
-        String(form.email || "").trim() &&
-        String(form.mobile || "").trim()
+        String(form.vendorFirstName || "").trim() &&
+        String(form.vendorLastName || "").trim() &&
+        String(form.vendorEmail || "").trim() &&
+        String(form.vendorPhone || "").trim()
       );
     }
     if (step === 1) {
-      if (form.has_co_vendor === null) return false;
-      if (form.has_co_vendor) {
-        return String(form.co_vendor_full_name || "").trim().length > 0;
+      if (form.hasCoVendor === null) return false;
+      if (form.hasCoVendor) {
+        return String(form.coVendorName || "").trim().length > 0;
       }
       return true;
     }
     if (step === 2) {
-      if (!form.title_hold_type) return false;
-      if (form.title_hold_type === "company" || form.title_hold_type === "trust") {
-        return String(form.entity_name || "").trim().length > 0;
+      if (!form.ownershipType) return false;
+      if (form.ownershipType === "company" || form.ownershipType === "trust") {
+        return String(form.entityName || "").trim().length > 0;
       }
       return true;
     }
     if (step === 3) {
-      if (form.has_mortgage === null) return false;
-      if (form.has_mortgage) {
-        return String(form.lender_name || "").trim().length > 0;
+      if (form.hasMortgage === null) return false;
+      if (form.hasMortgage) {
+        return String(form.lenderName || "").trim().length > 0;
       }
       return true;
     }
     if (step === 4) {
-      if (!form.possession_type) return false;
-      if (form.possession_type === "tenanted") {
+      if (!form.possessionType) return false;
+      if (form.possessionType === "tenanted") {
         return (
-          String(form.tenant_name || "").trim() &&
-          String(form.lease_expiry_date || "").trim() &&
-          String(form.weekly_rent || "").trim()
+          String(form.tenantName || "").trim() &&
+          String(form.tenantLeaseExpiry || "").trim() &&
+          String(form.weeklyRent || "").trim()
         );
       }
-      if (form.building_works_last_7_years === null || form.owner_builder_work === null || form.has_pool_spa === null) {
+      if (form.buildingWorks === null || form.ownerBuilder === null || form.poolOrSpa === null) {
         return false;
       }
-      if (form.building_works_last_7_years && !String(form.building_works_details || "").trim()) {
+      if (form.buildingWorks && !String(form.buildingWorksDetails || "").trim()) {
         return false;
       }
       return true;
@@ -478,12 +509,12 @@ export default function VendorFormPage() {
     if (step === 5) return true;
     if (step === 6) {
       return (
-        String(form.agent_first_name || "").trim() &&
-        String(form.agent_last_name || "").trim() &&
-        String(form.agent_email || "").trim() &&
-        String(form.agent_phone || "").trim() &&
-        form.sale_method &&
-        String(form.expected_sale_price || "").trim()
+        String(form.agentFirstName || "").trim() &&
+        String(form.agentLastName || "").trim() &&
+        String(form.agentEmail || "").trim() &&
+        String(form.agentPhone || "").trim() &&
+        form.saleMethod &&
+        String(form.expectedPrice || "").trim()
       );
     }
     if (step === 7) return true;
@@ -498,7 +529,7 @@ export default function VendorFormPage() {
       const res = await fetch("/api/vendor-form/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, formData: buildPayload(form) }),
+        body: JSON.stringify({ token, formData: buildVendorSubmitPayload(form) }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -516,7 +547,7 @@ export default function VendorFormPage() {
 
   const handleGoNext = async () => {
     if (!canGoNext || !token) return;
-    const slice = stripLockedForApi(pickStepFormData(step, form));
+    const slice = pickPartialPayload(step, form);
     if (Object.keys(slice).length > 0) {
       setSavingStep(true);
       try {
@@ -679,31 +710,31 @@ export default function VendorFormPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>First name *</label>
-                  <input style={inputStyle} value={form.first_name} onChange={(e) => update({ first_name: e.target.value })} autoComplete="given-name" />
+                  <input style={inputStyle} value={form.vendorFirstName} onChange={(e) => update({ vendorFirstName: e.target.value })} autoComplete="given-name" />
                 </div>
                 <div>
                   <label style={labelStyle}>Last name *</label>
-                  <input style={inputStyle} value={form.last_name} onChange={(e) => update({ last_name: e.target.value })} autoComplete="family-name" />
+                  <input style={inputStyle} value={form.vendorLastName} onChange={(e) => update({ vendorLastName: e.target.value })} autoComplete="family-name" />
                 </div>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Date of birth (optional)</label>
-                <input type="date" style={inputStyle} value={form.date_of_birth} onChange={(e) => update({ date_of_birth: e.target.value })} />
+                <input type="date" style={inputStyle} value={form.vendorDob} onChange={(e) => update({ vendorDob: e.target.value })} />
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Email *</label>
-                <input type="email" style={inputStyle} value={form.email} onChange={(e) => update({ email: e.target.value })} autoComplete="email" inputMode="email" />
+                <input type="email" style={inputStyle} value={form.vendorEmail} onChange={(e) => update({ vendorEmail: e.target.value })} autoComplete="email" inputMode="email" />
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Mobile *</label>
-                <input type="tel" style={inputStyle} value={form.mobile} onChange={(e) => update({ mobile: e.target.value })} autoComplete="tel" inputMode="tel" />
+                <input type="tel" style={inputStyle} value={form.vendorPhone} onChange={(e) => update({ vendorPhone: e.target.value })} autoComplete="tel" inputMode="tel" />
               </div>
               <div>
                 <label style={labelStyle}>Current address</label>
                 <textarea
                   style={{ ...inputStyle, minHeight: 88, resize: "vertical", lineHeight: 1.45 }}
-                  value={form.current_address}
-                  onChange={(e) => update({ current_address: e.target.value })}
+                  value={form.vendorAddress}
+                  onChange={(e) => update({ vendorAddress: e.target.value })}
                   placeholder="Street, suburb, state, postcode"
                 />
               </div>
@@ -713,16 +744,16 @@ export default function VendorFormPage() {
           {step === 1 && (
             <>
               <label style={{ ...labelStyle, marginBottom: 10 }}>Is there a co-owner of this property?</label>
-              <ToggleYesNo value={form.has_co_vendor} onChange={(v) => update({ has_co_vendor: v })} style={{ marginBottom: 18 }} />
-              {form.has_co_vendor && (
+              <ToggleYesNo value={form.hasCoVendor} onChange={(v) => update({ hasCoVendor: v })} style={{ marginBottom: 18 }} />
+              {form.hasCoVendor && (
                 <>
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>Co-vendor full name *</label>
-                    <input style={inputStyle} value={form.co_vendor_full_name} onChange={(e) => update({ co_vendor_full_name: e.target.value })} />
+                    <input style={inputStyle} value={form.coVendorName} onChange={(e) => update({ coVendorName: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>Co-vendor date of birth</label>
-                    <input type="date" style={inputStyle} value={form.co_vendor_date_of_birth} onChange={(e) => update({ co_vendor_date_of_birth: e.target.value })} />
+                    <input type="date" style={inputStyle} value={form.coVendorDob} onChange={(e) => update({ coVendorDob: e.target.value })} />
                   </div>
                 </>
               )}
@@ -736,29 +767,29 @@ export default function VendorFormPage() {
                 <input
                   style={{
                     ...inputStyle,
-                    background: form.property_address_locked ? "#f8fafc" : "#fff",
-                    color: form.property_address_locked ? MUTED : TEXT,
+                    background: form.propertyAddressLocked ? "#f8fafc" : "#fff",
+                    color: form.propertyAddressLocked ? MUTED : TEXT,
                   }}
-                  value={form.property_address}
-                  onChange={(e) => !form.property_address_locked && update({ property_address: e.target.value })}
-                  readOnly={form.property_address_locked}
+                  value={form.propertyAddress}
+                  onChange={(e) => !form.propertyAddressLocked && update({ propertyAddress: e.target.value })}
+                  readOnly={form.propertyAddressLocked}
                   placeholder="Property being sold"
                 />
-                {form.property_address_locked && (
+                {form.propertyAddressLocked && (
                   <p style={{ fontSize: 12, color: MUTED, margin: "8px 0 0" }}>Provided by your conveyancer — contact us if this needs changing.</p>
                 )}
               </div>
               <label style={{ ...labelStyle, marginBottom: 10 }}>How do you hold title?</label>
-              <TitleHoldButtons value={form.title_hold_type} onChange={(v) => update({ title_hold_type: v })} />
-              {(form.title_hold_type === "company" || form.title_hold_type === "trust") && (
+              <TitleHoldButtons value={form.ownershipType} onChange={(v) => update({ ownershipType: v })} />
+              {(form.ownershipType === "company" || form.ownershipType === "trust") && (
                 <div style={{ marginTop: 18 }}>
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>Entity name *</label>
-                    <input style={inputStyle} value={form.entity_name} onChange={(e) => update({ entity_name: e.target.value })} />
+                    <input style={inputStyle} value={form.entityName} onChange={(e) => update({ entityName: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>ABN / ACN</label>
-                    <input style={inputStyle} value={form.abn_acn} onChange={(e) => update({ abn_acn: e.target.value })} inputMode="numeric" />
+                    <input style={inputStyle} value={form.entityAbn} onChange={(e) => update({ entityAbn: e.target.value })} inputMode="numeric" />
                   </div>
                 </div>
               )}
@@ -768,20 +799,20 @@ export default function VendorFormPage() {
           {step === 3 && (
             <>
               <label style={{ ...labelStyle, marginBottom: 10 }}>Is there a mortgage on this property?</label>
-              <ToggleYesNo value={form.has_mortgage} onChange={(v) => update({ has_mortgage: v })} style={{ marginBottom: 18 }} />
-              {form.has_mortgage && (
+              <ToggleYesNo value={form.hasMortgage} onChange={(v) => update({ hasMortgage: v })} style={{ marginBottom: 18 }} />
+              {form.hasMortgage && (
                 <>
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>Lender name *</label>
-                    <input style={inputStyle} value={form.lender_name} onChange={(e) => update({ lender_name: e.target.value })} />
+                    <input style={inputStyle} value={form.lenderName} onChange={(e) => update({ lenderName: e.target.value })} />
                   </div>
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>Loan account number (optional)</label>
-                    <input style={inputStyle} value={form.loan_account_number} onChange={(e) => update({ loan_account_number: e.target.value })} />
+                    <input style={inputStyle} value={form.loanAccountNumber} onChange={(e) => update({ loanAccountNumber: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>Estimated payout amount (optional)</label>
-                    <input style={inputStyle} value={form.estimated_payout_amount} onChange={(e) => update({ estimated_payout_amount: e.target.value })} inputMode="decimal" placeholder="$" />
+                    <input style={inputStyle} value={form.estimatedPayout} onChange={(e) => update({ estimatedPayout: e.target.value })} inputMode="decimal" placeholder="$" />
                   </div>
                 </>
               )}
@@ -791,37 +822,37 @@ export default function VendorFormPage() {
           {step === 4 && (
             <>
               <label style={{ ...labelStyle, marginBottom: 10 }}>Possession at settlement</label>
-              <PossessionButtons value={form.possession_type} onChange={(v) => update({ possession_type: v })} />
-              {form.possession_type === "tenanted" && (
+              <PossessionButtons value={form.possessionType} onChange={(v) => update({ possessionType: v })} />
+              {form.possessionType === "tenanted" && (
                 <div style={{ marginTop: 18 }}>
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>Tenant name *</label>
-                    <input style={inputStyle} value={form.tenant_name} onChange={(e) => update({ tenant_name: e.target.value })} />
+                    <input style={inputStyle} value={form.tenantName} onChange={(e) => update({ tenantName: e.target.value })} />
                   </div>
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>Lease expiry date *</label>
-                    <input type="date" style={inputStyle} value={form.lease_expiry_date} onChange={(e) => update({ lease_expiry_date: e.target.value })} />
+                    <input type="date" style={inputStyle} value={form.tenantLeaseExpiry} onChange={(e) => update({ tenantLeaseExpiry: e.target.value })} />
                   </div>
                   <div style={{ marginBottom: 18 }}>
                     <label style={labelStyle}>Weekly rent *</label>
-                    <input style={inputStyle} value={form.weekly_rent} onChange={(e) => update({ weekly_rent: e.target.value })} inputMode="decimal" />
+                    <input style={inputStyle} value={form.weeklyRent} onChange={(e) => update({ weeklyRent: e.target.value })} inputMode="decimal" />
                   </div>
                 </div>
               )}
               <label style={{ ...labelStyle, marginBottom: 10 }}>Any building works or permits in the last 7 years?</label>
-              <ToggleYesNo value={form.building_works_last_7_years} onChange={(v) => update({ building_works_last_7_years: v })} style={{ marginBottom: 12 }} />
-              {form.building_works_last_7_years && (
+              <ToggleYesNo value={form.buildingWorks} onChange={(v) => update({ buildingWorks: v })} style={{ marginBottom: 12 }} />
+              {form.buildingWorks && (
                 <div style={{ marginBottom: 18 }}>
                   <label style={labelStyle}>Please describe *</label>
-                  <textarea style={{ ...inputStyle, minHeight: 88 }} value={form.building_works_details} onChange={(e) => update({ building_works_details: e.target.value })} />
+                  <textarea style={{ ...inputStyle, minHeight: 88 }} value={form.buildingWorksDetails} onChange={(e) => update({ buildingWorksDetails: e.target.value })} />
                 </div>
               )}
               <label style={{ ...labelStyle, marginBottom: 10 }}>Was any work done by an owner builder?</label>
-              <ToggleYesNo value={form.owner_builder_work} onChange={(v) => update({ owner_builder_work: v })} style={{ marginBottom: 18 }} />
+              <ToggleYesNo value={form.ownerBuilder} onChange={(v) => update({ ownerBuilder: v })} style={{ marginBottom: 18 }} />
               <label style={{ ...labelStyle, marginBottom: 10 }}>Is there a pool or spa?</label>
-              <ToggleYesNo value={form.has_pool_spa} onChange={(v) => update({ has_pool_spa: v })} style={{ marginBottom: 18 }} />
+              <ToggleYesNo value={form.poolOrSpa} onChange={(v) => update({ poolOrSpa: v })} style={{ marginBottom: 18 }} />
               <label style={{ ...labelStyle, marginBottom: 10 }}>Are smoke alarms compliant?</label>
-              <ToggleYesNo value={form.smoke_alarms_compliant} onChange={(v) => update({ smoke_alarms_compliant: v })} />
+              <ToggleYesNo value={form.smokeAlarms} onChange={(v) => update({ smokeAlarms: v })} />
             </>
           )}
 
@@ -853,34 +884,34 @@ export default function VendorFormPage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={labelStyle}>Agent first name *</label>
-                  <input style={inputStyle} value={form.agent_first_name} onChange={(e) => update({ agent_first_name: e.target.value })} autoComplete="off" />
+                  <input style={inputStyle} value={form.agentFirstName} onChange={(e) => update({ agentFirstName: e.target.value })} autoComplete="off" />
                 </div>
                 <div>
                   <label style={labelStyle}>Agent last name *</label>
-                  <input style={inputStyle} value={form.agent_last_name} onChange={(e) => update({ agent_last_name: e.target.value })} autoComplete="off" />
+                  <input style={inputStyle} value={form.agentLastName} onChange={(e) => update({ agentLastName: e.target.value })} autoComplete="off" />
                 </div>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Agency name</label>
-                <input style={inputStyle} value={form.agency_name} onChange={(e) => update({ agency_name: e.target.value })} />
+                <input style={inputStyle} value={form.agencyName} onChange={(e) => update({ agencyName: e.target.value })} />
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Agent phone *</label>
-                <input type="tel" style={inputStyle} value={form.agent_phone} onChange={(e) => update({ agent_phone: e.target.value })} inputMode="tel" />
+                <input type="tel" style={inputStyle} value={form.agentPhone} onChange={(e) => update({ agentPhone: e.target.value })} inputMode="tel" />
               </div>
               <div style={{ marginBottom: 18 }}>
                 <label style={labelStyle}>Agent email *</label>
-                <input type="email" style={inputStyle} value={form.agent_email} onChange={(e) => update({ agent_email: e.target.value })} inputMode="email" />
+                <input type="email" style={inputStyle} value={form.agentEmail} onChange={(e) => update({ agentEmail: e.target.value })} inputMode="email" />
               </div>
               <label style={{ ...labelStyle, marginBottom: 10 }}>Sale method *</label>
-              <SaleMethodButtons value={form.sale_method} onChange={(v) => update({ sale_method: v })} />
+              <SaleMethodButtons value={form.saleMethod} onChange={(v) => update({ saleMethod: v })} />
               <div style={{ marginTop: 18 }}>
                 <label style={labelStyle}>Expected sale price *</label>
-                <input style={inputStyle} value={form.expected_sale_price} onChange={(e) => update({ expected_sale_price: e.target.value })} inputMode="decimal" placeholder="e.g. 850000" />
+                <input style={inputStyle} value={form.expectedPrice} onChange={(e) => update({ expectedPrice: e.target.value })} inputMode="decimal" placeholder="e.g. 850000" />
               </div>
               <div style={{ marginTop: 14 }}>
                 <label style={labelStyle}>Expected listing date (optional)</label>
-                <input type="date" style={inputStyle} value={form.expected_listing_date} onChange={(e) => update({ expected_listing_date: e.target.value })} />
+                <input type="date" style={inputStyle} value={form.expectedListingDate} onChange={(e) => update({ expectedListingDate: e.target.value })} />
               </div>
             </>
           )}
@@ -889,11 +920,11 @@ export default function VendorFormPage() {
             <>
               <div style={{ marginBottom: 18 }}>
                 <label style={labelStyle}>Any special conditions or instructions for your conveyancer?</label>
-                <textarea style={{ ...inputStyle, minHeight: 110, lineHeight: 1.45 }} value={form.special_conditions} onChange={(e) => update({ special_conditions: e.target.value })} />
+                <textarea style={{ ...inputStyle, minHeight: 110, lineHeight: 1.45 }} value={form.specialConditions} onChange={(e) => update({ specialConditions: e.target.value })} />
               </div>
               <div>
                 <label style={labelStyle}>Additional notes (optional)</label>
-                <textarea style={{ ...inputStyle, minHeight: 88, lineHeight: 1.45 }} value={form.additional_notes} onChange={(e) => update({ additional_notes: e.target.value })} />
+                <textarea style={{ ...inputStyle, minHeight: 88, lineHeight: 1.45 }} value={form.additionalNotes} onChange={(e) => update({ additionalNotes: e.target.value })} />
               </div>
             </>
           )}
@@ -906,46 +937,46 @@ export default function VendorFormPage() {
           <p style={{ fontSize: 14, color: MUTED, lineHeight: 1.5, margin: "0 0 18px" }}>Please check everything before you submit.</p>
           <div style={{ fontSize: 14, color: TEXT, lineHeight: 1.65 }}>
             {[
-              ["Name", `${form.first_name} ${form.last_name}`.trim()],
-              ["Date of birth", form.date_of_birth || "—"],
-              ["Email", form.email || "—"],
-              ["Mobile", form.mobile || "—"],
-              ["Current address", form.current_address || "—"],
+              ["Name", `${form.vendorFirstName} ${form.vendorLastName}`.trim()],
+              ["Date of birth", form.vendorDob || "—"],
+              ["Email", form.vendorEmail || "—"],
+              ["Mobile", form.vendorPhone || "—"],
+              ["Current address", form.vendorAddress || "—"],
               [
                 "Co-owner",
-                form.has_co_vendor == null
+                form.hasCoVendor == null
                   ? "—"
-                  : form.has_co_vendor
-                    ? `Yes — ${form.co_vendor_full_name}${form.co_vendor_date_of_birth ? ` (DOB ${form.co_vendor_date_of_birth})` : ""}`
+                  : form.hasCoVendor
+                    ? `Yes — ${form.coVendorName}${form.coVendorDob ? ` (DOB ${form.coVendorDob})` : ""}`
                     : "No",
               ],
-              ["Property", form.property_address || "—"],
-              ["Title held as", form.title_hold_type || "—"],
+              ["Property", form.propertyAddress || "—"],
+              ["Title held as", form.ownershipType || "—"],
               [
                 "Entity / ABN",
                 (() => {
-                  if (!form.entity_name && !form.abn_acn) return "—";
-                  const parts = [form.entity_name, form.abn_acn].filter(Boolean);
+                  if (!form.entityName && !form.entityAbn) return "—";
+                  const parts = [form.entityName, form.entityAbn].filter(Boolean);
                   return parts.join(" · ") || "—";
                 })(),
               ],
-              ["Mortgage", form.has_mortgage == null ? "—" : form.has_mortgage ? `Yes — ${form.lender_name}` : "No"],
-              ["Possession", form.possession_type || "—"],
-              ["Tenancy details", form.possession_type === "tenanted" ? `${form.tenant_name}, expires ${form.lease_expiry_date}, ${form.weekly_rent}/wk` : "—"],
-              ["Building works (7 yrs)", form.building_works_last_7_years == null ? "—" : form.building_works_last_7_years ? form.building_works_details : "No"],
-              ["Owner builder work", form.owner_builder_work == null ? "—" : form.owner_builder_work ? "Yes" : "No"],
-              ["Pool / spa", form.has_pool_spa == null ? "—" : form.has_pool_spa ? "Yes" : "No"],
-              ["Smoke alarms compliant", form.smoke_alarms_compliant ? "Yes" : "No"],
+              ["Mortgage", form.hasMortgage == null ? "—" : form.hasMortgage ? `Yes — ${form.lenderName}` : "No"],
+              ["Possession", form.possessionType || "—"],
+              ["Tenancy details", form.possessionType === "tenanted" ? `${form.tenantName}, expires ${form.tenantLeaseExpiry}, ${form.weeklyRent}/wk` : "—"],
+              ["Building works (7 yrs)", form.buildingWorks == null ? "—" : form.buildingWorks ? form.buildingWorksDetails : "No"],
+              ["Owner builder work", form.ownerBuilder == null ? "—" : form.ownerBuilder ? "Yes" : "No"],
+              ["Pool / spa", form.poolOrSpa == null ? "—" : form.poolOrSpa ? "Yes" : "No"],
+              ["Smoke alarms compliant", form.smokeAlarms ? "Yes" : "No"],
               ["Inclusions", form.inclusions || "—"],
               ["Exclusions", form.exclusions || "—"],
-              ["Agent", `${form.agent_first_name} ${form.agent_last_name}`.trim()],
-              ["Agency", form.agency_name || "—"],
-              ["Agent contact", `${form.agent_phone} · ${form.agent_email}`],
-              ["Sale method", form.sale_method === "auction" ? "Auction" : form.sale_method === "private_treaty" ? "Private Treaty" : "—"],
-              ["Expected price", form.expected_sale_price || "—"],
-              ["Listing date", form.expected_listing_date || "—"],
-              ["Special conditions", form.special_conditions || "—"],
-              ["Notes", form.additional_notes || "—"],
+              ["Agent", `${form.agentFirstName} ${form.agentLastName}`.trim()],
+              ["Agency", form.agencyName || "—"],
+              ["Agent contact", `${form.agentPhone} · ${form.agentEmail}`],
+              ["Sale method", form.saleMethod === "auction" ? "Auction" : form.saleMethod === "private_treaty" ? "Private Treaty" : "—"],
+              ["Expected price", form.expectedPrice || "—"],
+              ["Listing date", form.expectedListingDate || "—"],
+              ["Special conditions", form.specialConditions || "—"],
+              ["Notes", form.additionalNotes || "—"],
             ].map(([k, v]) => (
               <div key={k} style={{ padding: "10px 0", borderBottom: `1px solid ${BORDER}` }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>{k}</div>
