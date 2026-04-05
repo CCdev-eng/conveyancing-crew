@@ -18,7 +18,8 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(awk 'NR>=967 && NR<=1545' app/page.js)",
-      "Bash(npx supabase:*)"
+      "Bash(npx supabase:*)",
+      "Bash(cp:*)"
     ]
   }
 }

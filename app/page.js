@@ -4242,6 +4242,8 @@ export default function App() {
   const [selectedCommId, setSelectedCommId] = useState(1);
   const [commTab, setCommTab] = useState("all");
   const [tasks, setTasks] = useState([]);
+  /** Increment to re-run the tasks fetch effect (e.g. after vendor form submission detected). */
+  const [tasksRefreshNonce, setTasksRefreshNonce] = useState(0);
   const [comms, setComms] = useState([]);
   const [referrers, setReferrers] = useState([]);
   const [referralsList, setReferralsList] = useState([]);
@@ -5069,7 +5071,7 @@ Maximum 300 words.`,
       if (data) setTasks(data);
     };
     fetchTasks();
-  }, []);
+  }, [tasksRefreshNonce]);
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -7123,7 +7125,12 @@ RESPONSE RULES:
         const data = await res.json();
         if (cancelled) return;
         setVendorFormData(data);
-        setVendorFormStatus(data?.status === "submitted" ? "submitted" : "pending");
+        const submitted = data?.status === "submitted";
+        setVendorFormStatus(submitted ? "submitted" : "pending");
+        if (submitted) {
+          void fetchMatters();
+          setTasksRefreshNonce((n) => n + 1);
+        }
       } catch {
         if (!cancelled) {
           setVendorFormStatus("pending");
@@ -7134,7 +7141,7 @@ RESPONSE RULES:
     return () => {
       cancelled = true;
     };
-  }, [selectedMatter, selMatterObj?.matter_ref, selMatterObj?.type, selMatterObj?.notes]);
+  }, [selectedMatter, selMatterObj?.matter_ref, selMatterObj?.type, selMatterObj?.notes, fetchMatters]);
 
   useEffect(() => {
     const matterRef = selMatterObj?.matter_ref || selMatterObj?.id;
