@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import {
   runContractReviewEngine,
@@ -10,8 +11,36 @@ export const maxDuration = 300;
 
 export async function POST(request) {
   try {
-    const { storagePath, matterContext, bucketName } = await request.json();
+    const body = await request.json();
+    const { storagePath, matterContext, bucketName, prompt, type } = body;
     const bucket = bucketName || "matter-documents";
+
+    if (
+      typeof prompt === "string" &&
+      prompt.trim() &&
+      !storagePath
+    ) {
+      if (!process.env.ANTHROPIC_API_KEY) {
+        console.error("[ContractReview API] ANTHROPIC_API_KEY is not set");
+        return NextResponse.json(
+          { error: "Server is not configured for contract review" },
+          { status: 500 }
+        );
+      }
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const max_tokens = type === "sale_contract_prep" ? 4000 : 2048;
+      const response = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const result =
+        (response.content || [])
+          .filter((b) => b.type === "text")
+          .map((b) => b.text)
+          .join("\n") || "";
+      return NextResponse.json({ result });
+    }
 
     if (!storagePath) {
       return NextResponse.json({ error: "No storage path provided" }, { status: 400 });

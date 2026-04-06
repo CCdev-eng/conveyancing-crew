@@ -2380,7 +2380,11 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
       const res = await fetch("/api/contract-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptText, mode: "draft" }),
+        body: JSON.stringify(
+          type === "sale_contract_prep"
+            ? { prompt: promptText, type: "sale_contract_prep" }
+            : { prompt: promptText, mode: "draft" }
+        ),
       });
       const data = await res.json();
       setAiDraft(data?.result || data?.text || data?.content || "Could not generate draft — please try again.");
