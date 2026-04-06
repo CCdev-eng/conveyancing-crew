@@ -91,6 +91,22 @@ export async function POST(request) {
     }
     console.log("[submit] task insert attempted")
 
+    try {
+      await supabase.from("notifications").insert({
+        type: "vendor_form_submitted",
+        title: "Vendor form submitted",
+        body: `${vendorName} has completed their vendor instruction form`,
+        matter_ref: matterRef,
+        property_address: fullRow.property_address || "",
+        client_name: vendorName,
+        action_url: `/matters/${matterRef}`,
+        is_read: false
+      })
+      console.log("[submit] notification inserted")
+    } catch (notifErr) {
+      console.error("[submit] notification insert error:", notifErr.message)
+    }
+
     // Update matters table - use row data which has ALL fields from partial saves
     try {
       const matterPatch = {}
