@@ -2272,10 +2272,15 @@ IMPORTANT: Add this disclaimer at the end:
   const [aiPanel, setAiPanel] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiDraft, setAiDraft] = useState("");
+  const [savedContractDraft, setSavedContractDraft] = useState(null);
+  const [savedContractDraftUpdatedAt, setSavedContractDraftUpdatedAt] = useState(null);
+  const [showContractPrepCachedNote, setShowContractPrepCachedNote] = useState(false);
 
   useEffect(() => {
     if (!matterRef) {
       setWfData({});
+      setSavedContractDraft(null);
+      setSavedContractDraftUpdatedAt(null);
       setLoading(false);
       return;
     }
@@ -2288,6 +2293,15 @@ IMPORTANT: Add this disclaimer at the end:
     const map = {};
     (data || []).forEach((r) => { map[r.step_key] = r; });
     setWfData(map);
+    const row05b = map.sw_05b;
+    const draft = row05b?.ai_draft != null ? String(row05b.ai_draft).trim() : "";
+    if (draft) {
+      setSavedContractDraft(row05b.ai_draft);
+      setSavedContractDraftUpdatedAt(row05b.ai_draft_updated_at || null);
+    } else {
+      setSavedContractDraft(null);
+      setSavedContractDraftUpdatedAt(null);
+    }
     setLoading(false);
   };
 
@@ -2360,10 +2374,17 @@ IMPORTANT: Add this disclaimer at the end:
     setSending(false);
   };
 
-  const openAiPanel = async (type, stepKey) => {
+  const openAiPanel = async (type, stepKey, forceRegenerate = false) => {
     setAiPanel({ type, stepKey });
     setAiLoading(true);
     setAiDraft("");
+    setShowContractPrepCachedNote(false);
+    if (type === "sale_contract_prep" && !forceRegenerate && savedContractDraft && String(savedContractDraft).trim()) {
+      setAiDraft(String(savedContractDraft));
+      setShowContractPrepCachedNote(true);
+      setAiLoading(false);
+      return;
+    }
     let promptText = "";
     if (type === "sale_contract_prep") {
       const { data: vi } = await supabase.from("vendor_instructions").select("*").eq("matter_ref", matterRef).maybeSingle();
@@ -2401,7 +2422,26 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
         ),
       });
       const data = await res.json();
-      setAiDraft(data?.result || data?.text || data?.content || "Could not generate draft — please try again.");
+      const draftText = data?.result || data?.text || data?.content || "Could not generate draft — please try again.";
+      setAiDraft(draftText);
+      if (type === "sale_contract_prep") {
+        const ts = new Date().toISOString();
+        await supabase.from("matter_workflow").upsert(
+          {
+            matter_ref: matterRef,
+            step_key: "sw_05b",
+            ai_draft: draftText,
+            ai_draft_updated_at: ts,
+          },
+          { onConflict: "matter_ref,step_key" }
+        );
+        setSavedContractDraft(draftText);
+        setSavedContractDraftUpdatedAt(ts);
+        setWfData((p) => ({
+          ...p,
+          sw_05b: { ...(p.sw_05b || {}), ai_draft: draftText, ai_draft_updated_at: ts },
+        }));
+      }
     } catch { setAiDraft("Error generating draft. Please try again."); }
     setAiLoading(false);
   };
@@ -2757,14 +2797,26 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                   <div style={{ fontSize: 13, color: "#8a96b0" }}>Generating draft…</div>
                 </div>
               ) : (
-                <textarea value={aiDraft} onChange={(e) => setAiDraft(e.target.value)} rows={20} style={{ width: "100%", border: "1.5px solid #dce3f0", borderRadius: 8, padding: "12px", fontSize: 13, color: "#1a2744", resize: "vertical", fontFamily: "DM Sans, sans-serif", lineHeight: 1.6, boxSizing: "border-box" }} placeholder="AI draft will appear here…" />
+                <>
+                  <textarea value={aiDraft} onChange={(e) => setAiDraft(e.target.value)} rows={20} style={{ width: "100%", border: "1.5px solid #dce3f0", borderRadius: 8, padding: "12px", fontSize: 13, color: "#1a2744", resize: "vertical", fontFamily: "DM Sans, sans-serif", lineHeight: 1.6, boxSizing: "border-box" }} placeholder="AI draft will appear here…" />
+                  {aiPanel?.type === "sale_contract_prep" && showContractPrepCachedNote && (
+                    <div style={{ fontSize: 12, color: "#8a96b0", marginTop: 10, lineHeight: 1.45 }}>
+                      Generated{" "}
+                      {savedContractDraftUpdatedAt
+                        ? new Date(savedContractDraftUpdatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+                        : "previously"}
+                      {" "}
+                      — click Regenerate to create a new summary
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div style={{ padding: "16px 24px", borderTop: "1.5px solid #dce3f0", display: "flex", gap: 10 }}>
               <button type="button" onClick={sendAiDraft} disabled={aiLoading || !aiDraft} style={{ flex: 1, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "10px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 Use This Draft →
               </button>
-              <button type="button" onClick={() => openAiPanel(aiPanel.type, aiPanel.stepKey)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Regenerate</button>
+              <button type="button" onClick={() => openAiPanel(aiPanel.type, aiPanel.stepKey, true)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Regenerate</button>
               <button type="button" onClick={() => setAiPanel(null)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
