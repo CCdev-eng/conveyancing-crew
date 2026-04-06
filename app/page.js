@@ -827,17 +827,31 @@ function mapMatterFromRow(row) {
   };
 }
 
-function matterByRefForNotif(MATTERS, ref) {
-  if (ref == null || ref === "") return null;
-  const r = String(ref);
-  return (MATTERS || []).find((m) => String(m.matter_ref || m.id) === r) || null;
+function formatNotificationTimeAgo(iso) {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  const h = Math.floor(s / 3600);
+  if (s < 86400) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.floor(s / 86400);
+  if (s < 604800) return `${d} day${d === 1 ? "" : "s"} ago`;
+  return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 }
 
-function stripTaskUndefinedSuffix(text) {
-  return String(text || "")
-    .trim()
-    .replace(/\s[—–-]\s*undefined\s*$/i, "")
-    .trim();
+function notificationRowIcon(type) {
+  switch (String(type || "").toLowerCase()) {
+    case "vendor_form_submitted":
+      return "📋";
+    case "settlement_due":
+      return "📅";
+    case "task_overdue":
+      return "⚠️";
+    default:
+      return "🔔";
+  }
 }
 
 function parseMatterNotesObject(notesStr) {
@@ -2603,6 +2617,7 @@ body{font-family:var(--font-body);background:var(--surface);color:var(--text);ov
 .contract-review-risk-critical{animation:riskPulse 2s ease infinite}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
 @keyframes toastFade{0%,70%{opacity:1}100%{opacity:0}}
+@keyframes notifToastFade{0%,85%{opacity:1}100%{opacity:0}}
 .fade-up{animation:fadeUp 0.35s ease both}
 .fade-up-1{animation:fadeUp 0.35s 0.05s ease both}
 .fade-up-2{animation:fadeUp 0.35s 0.1s ease both}
@@ -4479,21 +4494,16 @@ export default function App() {
     notifOpenRef.current = notifOpen;
   }, [notifOpen]);
   const [bellTab, setBellTab] = useState("notifications");
-  const [bellSeen, setBellSeen] = useState(false);
-  const bellSeenRef = React.useRef(false);
-  useEffect(() => {
-    bellSeenRef.current = bellSeen;
-  }, [bellSeen]);
   const [bellClosing, setBellClosing] = useState(false);
   const [bellShaking, setBellShaking] = useState(false);
   const [prevUnread, setPrevUnread] = useState(0);
   const [notifications, setNotifications] = useState([]);
-  const [notifAI, setNotifAI] = useState(null);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastVisible, setToastVisible] = useState(false);
   const notifRef = useRef(null);
   const [contractInboxItems, setContractInboxItems] = useState([]);
   const [contractInboxUnread, setContractInboxUnread] = useState(0);
-  /** Count from buildNotifications (tasks due / overdue, settlements); cleared when bell notifications opened. */
-  const [notifUnreadCount, setNotifUnreadCount] = useState(0);
   const [linkReviewModal, setLinkReviewModal] = useState(null);
   const [linkReviewSearch, setLinkReviewSearch] = useState("");
   const [reviewLinkToast, setReviewLinkToast] = useState(null);
@@ -4832,10 +4842,6 @@ Maximum 300 words.`,
     }
   }, [page, aiAutoMode]);
 
-  useEffect(() => {
-    setNotifAI(null);
-  }, [calendarEvents, tasks]);
-
   const loadContractInbox = useCallback(async () => {
     try {
       console.log("[ContractInbox] Starting load...");
@@ -4859,27 +4865,10 @@ Maximum 300 words.`,
 
       if (data) {
         setContractInboxItems(data);
-        const newComplete = data.filter(
-          (d) => d.status === "complete" && !d.is_read && !d.is_actioned
-        ).length;
-        if (newComplete === 0) {
-          bellSeenRef.current = true;
-          setBellSeen(true);
-        } else if (!notifOpenRef.current) {
-          bellSeenRef.current = false;
-          setBellSeen(false);
-        }
-
         const unread = data.filter((d) => !d.is_read).length;
-
-        if (bellSeenRef.current) {
-          setContractInboxUnread(0);
-        } else {
-          setContractInboxUnread(unread);
-        }
-
+        setContractInboxUnread(unread);
         setPrevUnread((prev) => {
-          if (unread > prev && !bellSeenRef.current) {
+          if (unread > prev) {
             setBellShaking(true);
             setTimeout(() => setBellShaking(false), 600);
           }
@@ -4943,6 +4932,22 @@ Maximum 300 words.`,
     if (data) setTasks(data);
   }, []);
 
+  const fetchNotifications = useCallback(async () => {
+    const { data } = await supabase
+      .from("notifications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (data) {
+      setNotifications(data);
+      setNotifUnread(data.filter((n) => !n.is_read).length);
+      if (data.filter((n) => !n.is_read).length > 0) {
+        setBellShaking(true);
+        setTimeout(() => setBellShaking(false), 600);
+      }
+    }
+  }, [supabase]);
+
   useEffect(() => {
     console.log("[ContractInbox] About to call loadContractInbox...");
     loadContractInbox();
@@ -4969,36 +4974,38 @@ Maximum 300 words.`,
         console.log("[ContractInbox] Subscription status:", status);
       });
 
-    const tasksChannel = supabase
-      .channel("tasks-realtime-" + Date.now())
+    const notifChannel = supabase
+      .channel("notifications-realtime")
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
-          table: "tasks",
+          table: "notifications",
         },
         (payload) => {
-          console.log("[Tasks] Realtime new task:", payload.new?.task);
-          setTasks((prev) => [payload.new, ...prev]);
-          if (payload.new?.urgency === "critical" || payload.new?.urgency === "high") {
-            setBellSeen(false);
-            bellSeenRef.current = false;
-            setBellShaking(true);
-            setTimeout(() => setBellShaking(false), 600);
-          }
+          setNotifications((prev) => [payload.new, ...prev]);
+          setNotifUnread((prev) => prev + 1);
+          setBellShaking(true);
+          setTimeout(() => setBellShaking(false), 1000);
+          setToastMessage(
+            `🔔 ${payload.new.title} — ${payload.new.property_address || payload.new.client_name || ""}`
+          );
+          setToastVisible(true);
+          setTimeout(() => setToastVisible(false), 5000);
         }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(inboxChannel);
-      supabase.removeChannel(tasksChannel);
+      supabase.removeChannel(notifChannel);
     };
   }, [loadContractInbox, user?.id]);
 
   useEffect(() => {
     fetchMatters();
+    void fetchNotifications();
     /* Contract inbox: loaded once on mount via separate effect + realtime (see loadContractInbox). */
 
     let oauthDelayTimeoutId;
@@ -5055,7 +5062,7 @@ Maximum 300 words.`,
       if (oauthDelayTimeoutId) clearTimeout(oauthDelayTimeoutId);
       if (xeroPhase2TimeoutId) clearTimeout(xeroPhase2TimeoutId);
     };
-  }, [fetchMatters, xeroConnected]);
+  }, [fetchMatters, fetchNotifications, xeroConnected]);
 
   useEffect(() => {
     const fetchCalendarEvents = async () => {
@@ -5111,19 +5118,6 @@ Maximum 300 words.`,
   useEffect(() => {
     void fetchTasks();
   }, [fetchTasks]);
-
-  useEffect(() => {
-    const newHighTasks = (tasks || []).filter(
-      (t) =>
-        !t.done &&
-        (t.urgency === "critical" || t.urgency === "high") &&
-        t.due_date === new Date().toISOString().split("T")[0]
-    );
-    if (newHighTasks.length > 0) {
-      setBellSeen(false);
-      bellSeenRef.current = false;
-    }
-  }, [tasks]);
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -6079,137 +6073,7 @@ If no matches found return: []`
     setSearchOpen(results.length > 0);
   };
 
-  const buildNotifications = useCallback(() => {
-    const notifs = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    (calendarEvents || [])
-      .filter((e) => e.event_type === "settlement")
-      .forEach((e) => {
-        const d = new Date(e.date + "T00:00:00");
-        const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-        if (days >= 0 && days <= 7) {
-          const mat = matterByRefForNotif(MATTERS, e.matter_ref);
-          const clientLabel = mat?.client_name || mat?.client || e.client_name || "—";
-          const addr = (mat && mat.address) || e.title || "—";
-          const timePart = e.time ? " · " + e.time : "";
-          notifs.push({
-            id: "settle-" + e.id,
-            type: "settlement",
-            urgency: days <= 1 ? "critical" : days <= 3 ? "high" : "medium",
-            title:
-              days === 0
-                ? "Settlement TODAY"
-                : days === 1
-                  ? "Settlement TOMORROW"
-                  : "Settlement in " + days + " days",
-            body: e.title + (e.time ? " at " + e.time : ""),
-            matter_ref: e.matter_ref,
-            date: e.date,
-            icon: "🏠",
-            cardTitle:
-              days === 0
-                ? "Settlement today"
-                : days === 1
-                  ? "Settlement tomorrow"
-                  : `Settlement in ${days} days`,
-            cardAddress: addr,
-            cardClient: clientLabel,
-            cardExtra: (e.title || "") + timePart,
-          });
-        }
-      });
-    (tasks || [])
-      .filter((t) => !t.done && t.due_date)
-      .forEach((t) => {
-        const d = new Date(t.due_date + "T00:00:00");
-        const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-        const ref = t.matter_ref || t.matter;
-        const mat = matterByRefForNotif(MATTERS, ref);
-        const isVendor = String(t.task || "").toLowerCase().includes("vendor form submitted");
-        const clientFromMatter = mat?.client_name || mat?.client;
-        const clientLabel = clientFromMatter || t.client_name || t.client || "";
-        const addrFromMatter = (mat && mat.address) || String(t.notes || "").trim() || "";
-
-        if (days < 0) {
-          if (isVendor) {
-            notifs.push({
-              id: "vendor-task-" + t.id,
-              type: "vendor_form",
-              urgency: "high",
-              title: "Vendor form submitted",
-              body: t.task,
-              matter_ref: ref,
-              date: t.due_date,
-              icon: "",
-              cardTitle: "📋 Vendor form submitted",
-              cardAddress: addrFromMatter || "—",
-              cardClient: clientLabel || "—",
-              cardExtra: "",
-            });
-          } else {
-            const taskLine = stripTaskUndefinedSuffix(t.task);
-            notifs.push({
-              id: "task-" + t.id,
-              type: "task_overdue",
-              urgency: "high",
-              title: "Overdue task",
-              body: taskLine,
-              matter_ref: ref,
-              date: t.due_date,
-              icon: "⚠️",
-              cardTitle: taskLine || "Overdue task",
-              cardAddress: addrFromMatter || "—",
-              cardClient: clientLabel || "—",
-              cardExtra: "",
-            });
-          }
-        } else if (days === 0) {
-          if (isVendor) {
-            notifs.push({
-              id: "vendor-task-" + t.id,
-              type: "vendor_form",
-              urgency: t.urgency === "critical" ? "critical" : "high",
-              title: "Vendor form submitted",
-              body: t.task,
-              matter_ref: ref,
-              date: t.due_date,
-              icon: "",
-              cardTitle: "📋 Vendor form submitted",
-              cardAddress: addrFromMatter || "—",
-              cardClient: clientLabel || "—",
-              cardExtra: "",
-            });
-          } else {
-            const taskLine = stripTaskUndefinedSuffix(t.task);
-            notifs.push({
-              id: "task-today-" + t.id,
-              type: "task_today",
-              urgency: t.urgency === "critical" ? "critical" : "high",
-              title: "Task due today",
-              body: taskLine,
-              matter_ref: ref,
-              date: t.due_date,
-              icon: "📋",
-              cardTitle: "Task due today",
-              cardAddress: addrFromMatter || "—",
-              cardClient: clientLabel || "—",
-              cardExtra: taskLine,
-            });
-          }
-        }
-      });
-    const urgencyOrder = { critical: 0, high: 1, medium: 2, low: 3 };
-    notifs.sort((a, b) => (urgencyOrder[a.urgency] || 3) - (urgencyOrder[b.urgency] || 3));
-    return notifs;
-  }, [tasks, calendarEvents, MATTERS]);
-
-  useEffect(() => {
-    if (notifOpen) return;
-    setNotifUnreadCount(buildNotifications().length);
-  }, [buildNotifications, notifOpen]);
-
-  /** Toggle bell panel. Notifications from tasks / calendar / matters; contract inbox from Supabase via loadContractInbox. */
+  /** Toggle bell panel; marks app notifications read; contract inbox unchanged. */
   const openNotifications = async () => {
     if (notifOpen) {
       setBellClosing(true);
@@ -6220,16 +6084,16 @@ If no matches found return: []`
       return;
     }
     setNotifOpen(true);
+    notifOpenRef.current = true;
     setBellTab("notifications");
-    setBellSeen(true);
-    bellSeenRef.current = true;
+    if (notifUnread > 0) {
+      setNotifUnread(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      await supabase.from("notifications").update({ is_read: true }).eq("is_read", false);
+    }
     void fetchTasks();
+    await fetchNotifications();
     setContractInboxUnread(0);
-    setNotifUnreadCount(0);
-    setNotifications([]);
-    const notifs = buildNotifications();
-    setNotifications(notifs);
-    setNotifAI(null);
     void loadContractInbox();
     void loadBellDraftMatters();
     supabase
@@ -8045,15 +7909,8 @@ Return only the email body text, no subject line.`;
                   >
                     {notifOpen ? "🔔" : "🔔"}
                     {(() => {
-                      const bellBadgeCount =
-                        contractInboxUnread +
-                        (tasks || []).filter(
-                          (t) =>
-                            !t.done &&
-                            (t.urgency === "critical" || t.urgency === "high") &&
-                            t.due_date === new Date().toISOString().split("T")[0]
-                        ).length;
-                      return bellBadgeCount > 0 && !bellSeen ? (
+                      const bellBadgeTotal = notifUnread + contractInboxUnread;
+                      return bellBadgeTotal > 0 ? (
                       <span
                         className="badge-pop"
                         style={{
@@ -8076,7 +7933,7 @@ Return only the email body text, no subject line.`;
                           boxShadow: "0 0 0 2px white",
                         }}
                       >
-                        {bellBadgeCount > 9 ? "9+" : bellBadgeCount}
+                        {bellBadgeTotal > 9 ? "9+" : bellBadgeTotal}
                       </span>
                       ) : null;
                     })()}
@@ -8249,15 +8106,8 @@ Return only the email body text, no subject line.`;
               >
                 {notifOpen ? "🔔" : "🔔"}
                 {(() => {
-                  const bellBadgeCount =
-                    contractInboxUnread +
-                    (tasks || []).filter(
-                      (t) =>
-                        !t.done &&
-                        (t.urgency === "critical" || t.urgency === "high") &&
-                        t.due_date === new Date().toISOString().split("T")[0]
-                    ).length;
-                  return bellBadgeCount > 0 && !bellSeen ? (
+                  const bellBadgeTotal = notifUnread + contractInboxUnread;
+                  return bellBadgeTotal > 0 ? (
                   <span
                     className="badge-pop"
                     style={{
@@ -8280,7 +8130,7 @@ Return only the email body text, no subject line.`;
                       boxShadow: "0 0 0 2px white",
                     }}
                   >
-                    {bellBadgeCount > 9 ? "9+" : bellBadgeCount}
+                    {bellBadgeTotal > 9 ? "9+" : bellBadgeTotal}
                   </span>
                   ) : null;
                 })()}
@@ -8580,7 +8430,7 @@ Return only the email body text, no subject line.`;
                   }}
                 >
                   🔔 Notifications
-                  {notifUnreadCount > 0 && !notifOpen && (
+                  {notifUnread > 0 && !notifOpen && (
                     <span
                       style={{
                         marginLeft: 8,
@@ -8592,7 +8442,7 @@ Return only the email body text, no subject line.`;
                         fontWeight: 700,
                       }}
                     >
-                      {notifUnreadCount > 9 ? "9+" : notifUnreadCount}
+                      {notifUnread > 9 ? "9+" : notifUnread}
                     </span>
                   )}
                 </button>
@@ -8647,104 +8497,95 @@ Return only the email body text, no subject line.`;
               <div style={{ overflow: "auto", flex: 1, minHeight: 0, maxHeight: isMobile ? "min(52dvh, 480px)" : 520 }}>
                 {bellTab === "notifications" && (
                   <div>
-                    <div
-                      style={{
-                        padding: "12px 16px",
-                        background: "var(--gold-light)",
-                        borderBottom: "1px solid var(--gold-dim)",
-                        maxHeight: 200,
-                        overflowY: "auto",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 9,
-                          fontFamily: "var(--font-mono)",
-                          color: "var(--text-3)",
-                          textTransform: "uppercase",
-                          letterSpacing: "1.5px",
-                          marginBottom: 8,
-                        }}
-                      >
-                        ✦ Suggested Next Actions
+                    {notifications.length === 0 ? (
+                      <div style={{ padding: 48, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>
+                        No notifications yet
                       </div>
-                      {notifAI ? (
-                        <div style={{ fontSize: 12, lineHeight: 1.8, color: "var(--text-2)", whiteSpace: "pre-wrap" }}>
-                          {notifAI}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-                          The list below is built from your tasks, calendar, and matters — no server call required.
-                        </div>
-                      )}
-                    </div>
-                {notifications.length === 0 ? (
-                    <div style={{ padding: 24, textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
-                      <div style={{ fontSize: 24, marginBottom: 8 }}>🎉</div>
-                      All caught up — no urgent notifications
-                    </div>
-                  ) : (
-                    notifications.map((n) => {
-                      const matter = MATTERS.find(
-                        (m) => m.matter_ref === n.matter_ref || m.id === n.matter_ref
-                      );
-                      const bodyText = String(n.body ?? "")
-                        .replace(/\s*—\s*undefined/g, "")
-                        .replace(/\s*—\s*null/g, "")
-                        .trim();
-                      return (
-                        <div
-                          key={n.id}
-                          style={{
-                            padding: "12px 16px",
-                            borderBottom: "1px solid var(--border-2)",
-                            cursor: "pointer",
-                            transition: "background 0.12s",
-                            borderLeft:
-                              "3px solid " +
-                              (n.urgency === "critical" ? "var(--red)" : n.urgency === "high" ? "var(--amber)" : "var(--border)"),
-                            background: "var(--white)",
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
-                          onClick={() => {
-                            if (n.matter_ref) {
-                              setSelectedMatter(n.matter_ref);
-                              setPage("matter_workspace");
-                              setMatterTab("Overview");
-                              setNotifOpen(false);
-                            }
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 4 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{n.title}</span>
-                            <span
-                              className={`tag ${n.urgency === "critical" ? "tag-red" : n.urgency === "high" ? "tag-amber" : "tag-gray"}`}
-                              style={{ fontSize: 9, flexShrink: 0, textTransform: "capitalize" }}
-                            >
-                              {n.urgency}
-                            </span>
+                    ) : (
+                      notifications.map((n, idx) => {
+                        const matter = MATTERS.find(
+                          (m) => m.matter_ref === n.matter_ref || m.id === n.matter_ref
+                        );
+                        const addr =
+                          (n.property_address && String(n.property_address).trim()) ||
+                          (matter?.address && String(matter.address).trim()) ||
+                          "";
+                        const clientLine =
+                          (n.client_name && String(n.client_name).trim()) ||
+                          (matter && (matter.client_name || matter.client)) ||
+                          "";
+                        const bodyText = String(n.body ?? "").trim();
+                        return (
+                          <div
+                            key={n.id ?? idx}
+                            style={{
+                              padding: "14px 16px",
+                              borderBottom: "1px solid var(--border-2)",
+                              cursor: n.matter_ref ? "pointer" : "default",
+                              transition: "background 0.12s",
+                              background: "var(--white)",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (n.matter_ref) e.currentTarget.style.background = "var(--surface)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "var(--white)";
+                            }}
+                            onClick={() => {
+                              if (!n.matter_ref) return;
+                              const m = MATTERS.find(
+                                (x) => x.matter_ref === n.matter_ref || x.id === n.matter_ref
+                              );
+                              if (m) {
+                                setSelectedMatter(m.matter_ref || m.id);
+                                setPage("matter_workspace");
+                                setMatterTab("Overview");
+                                setNotifOpen(false);
+                              }
+                            }}
+                          >
+                            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                              <span style={{ fontSize: 22, lineHeight: 1.2, flexShrink: 0 }}>
+                                {notificationRowIcon(n.type)}
+                              </span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4, lineHeight: 1.3 }}>
+                                  {n.title}
+                                </div>
+                                {bodyText ? (
+                                  <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.5, marginBottom: 4 }}>
+                                    {bodyText}
+                                  </div>
+                                ) : null}
+                                {addr ? (
+                                  <div style={{ fontSize: 11, color: "#245eb0", lineHeight: 1.45, marginBottom: 2 }}>{addr}</div>
+                                ) : null}
+                                {clientLine ? (
+                                  <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45 }}>{clientLine}</div>
+                                ) : null}
+                                <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6, fontFamily: "var(--font-mono)" }}>
+                                  {formatNotificationTimeAgo(n.created_at)}
+                                </div>
+                              </div>
+                              <div style={{ flexShrink: 0, width: 10, display: "flex", justifyContent: "center", paddingTop: 4 }}>
+                                {!n.is_read ? (
+                                  <span
+                                    style={{
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: "50%",
+                                      background: "#245eb0",
+                                      boxShadow: "0 0 0 2px rgba(36, 94, 176, 0.2)",
+                                    }}
+                                    title="Unread"
+                                  />
+                                ) : null}
+                              </div>
+                            </div>
                           </div>
-                          {bodyText ? (
-                            <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5, marginBottom: 4 }}>{bodyText}</div>
-                          ) : null}
-                          {matter?.address ? (
-                            <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45 }}>{matter.address}</div>
-                          ) : null}
-                          {matter && (matter.client_name || matter.client) ? (
-                            <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45, marginTop: 2 }}>
-                              {matter.client_name || matter.client}
-                            </div>
-                          ) : null}
-                          {n.matter_ref ? (
-                            <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-3)", marginTop: 6, letterSpacing: "0.02em" }}>
-                              {n.matter_ref}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  )}
+                        );
+                      })
+                    )}
                   </div>
                 )}
                 {bellTab === "reviews" && (
@@ -8781,8 +8622,7 @@ Return only the email body text, no subject line.`;
                   type="button"
                   onClick={async () => {
                     if (bellTab === "notifications") {
-                      setNotifAI(null);
-                      setNotifications(buildNotifications());
+                      await fetchNotifications();
                     }
                     await loadContractInbox();
                     await loadBellDraftMatters();
@@ -13691,6 +13531,28 @@ Return only the email body text, no subject line.`;
       {reviewLinkToast && (
         <div style={{position:"fixed",bottom:24,right:24,zIndex:1001,background:"var(--green)",color:"var(--white)",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"var(--shadow-lg)",animation:"toastFade 3.5s ease forwards",maxWidth:360}}>{reviewLinkToast}</div>
       )}
+      {toastVisible && toastMessage ? (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 1002,
+            background: "#245eb0",
+            color: "#fff",
+            padding: "12px 18px",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 500,
+            maxWidth: 380,
+            lineHeight: 1.45,
+            boxShadow: "var(--shadow-lg)",
+            animation: "notifToastFade 5s ease forwards",
+          }}
+        >
+          {toastMessage}
+        </div>
+      ) : null}
 
       {vendorFormModal && selMatterObj?.type === "Sale" && (
         <div
