@@ -1,3 +1,9 @@
+/**
+ * Supabase migrations (run in SQL editor if missing):
+ *
+ * ALTER TABLE contract_review_inbox ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMPTZ;
+ * ALTER TABLE contract_review_inbox ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
+ */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -195,6 +201,55 @@ async function linkOrCreateMatterFromContractReview(supabase, reviewResult, inbo
   }
 }
 
+const NOTIFY_DEDUP_MS = 24 * 60 * 60 * 1000;
+
+/** Increment retry_count and set row to failed in one update. */
+async function failInboxRow(supabase, inboxRowId, errorMessage, extra = {}) {
+  if (!inboxRowId || !supabase) return;
+  const { data: cur } = await supabase
+    .from("contract_review_inbox")
+    .select("retry_count")
+    .eq("id", inboxRowId)
+    .maybeSingle();
+  const nextRetry = (cur?.retry_count || 0) + 1;
+  await supabase
+    .from("contract_review_inbox")
+    .update({
+      status: "failed",
+      error_message: errorMessage,
+      retry_count: nextRetry,
+      updated_at: new Date().toISOString(),
+      ...extra,
+    })
+    .eq("id", inboxRowId);
+}
+
+/** One notification per inbox row per 24h (uses last_notified_at). */
+async function sendContractReviewEmailWithDedup(supabase, inboxRowId, emailSubject, sendFn) {
+  if (inboxRowId && supabase) {
+    const { data: row } = await supabase
+      .from("contract_review_inbox")
+      .select("last_notified_at")
+      .eq("id", inboxRowId)
+      .maybeSingle();
+    const last = row?.last_notified_at ? new Date(row.last_notified_at).getTime() : 0;
+    if (last && Date.now() - last < NOTIFY_DEDUP_MS) {
+      console.log("[ContractCron] Email dedup skip - already notified:", emailSubject);
+      return;
+    }
+  }
+  await sendFn();
+  if (inboxRowId && supabase) {
+    await supabase
+      .from("contract_review_inbox")
+      .update({
+        last_notified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", inboxRowId);
+  }
+}
+
 async function markEmailRead(accessToken, emailId) {
   const graphUser = encodeURIComponent(CONTRACTS_MAILBOX);
   try {
@@ -211,7 +266,7 @@ async function markEmailRead(accessToken, emailId) {
   }
 }
 
-async function sendReviewResultEmail(accessToken, email, documentName, r) {
+async function sendReviewResultEmail(accessToken, email, documentName, r, supabase, inboxRowId) {
   const graphUser = encodeURIComponent(CONTRACTS_MAILBOX);
   const riskColors = { LOW: "#16a34a", MEDIUM: "#ca8a04", HIGH: "#dc2626", CRITICAL: "#7f1d1d" };
   const riskBg = { LOW: "#f0fdf4", MEDIUM: "#fffbeb", HIGH: "#fef2f2", CRITICAL: "#fff1f2" };
@@ -652,19 +707,20 @@ async function sendReviewResultEmail(accessToken, email, documentName, r) {
     ];
   }
 
-  await fetch(`https://graph.microsoft.com/v1.0/users/${graphUser}/sendMail`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ message }),
+  await sendContractReviewEmailWithDedup(supabase, inboxRowId, email.subject, async () => {
+    await fetch(`https://graph.microsoft.com/v1.0/users/${graphUser}/sendMail`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message }),
+    });
+    console.log("[ContractCron] Rich review email sent to", GITU_NOTIFY_EMAIL);
   });
-
-  console.log("[ContractCron] Rich review email sent to", GITU_NOTIFY_EMAIL);
 }
 
-async function sendFailureEmail(accessToken, subjectLine, plainBody) {
+async function sendFailureEmail(accessToken, subjectLine, plainBody, supabase, inboxRowId, emailSubjectForDedup) {
   const graphUserEnc = encodeURIComponent(CONTRACTS_MAILBOX);
   const esc = (s) =>
     String(s || "")
@@ -677,19 +733,22 @@ async function sendFailureEmail(accessToken, subjectLine, plainBody) {
     .filter(Boolean)
     .map((p) => `<p>${esc(p)}</p>`)
     .join("");
-  await fetch(`https://graph.microsoft.com/v1.0/users/${graphUserEnc}/sendMail`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: {
-        subject: String(subjectLine || "").slice(0, 250),
-        body: {
-          contentType: "HTML",
-          content: `<div style="font-family:sans-serif;max-width:640px">${paragraphs}<p style="color:#666;font-size:13px">Conveyancing Crew · AI Contract Review</p></div>`,
+  const dedupKey = emailSubjectForDedup ?? subjectLine;
+  await sendContractReviewEmailWithDedup(supabase, inboxRowId, dedupKey, async () => {
+    await fetch(`https://graph.microsoft.com/v1.0/users/${graphUserEnc}/sendMail`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: {
+          subject: String(subjectLine || "").slice(0, 250),
+          body: {
+            contentType: "HTML",
+            content: `<div style="font-family:sans-serif;max-width:640px">${paragraphs}<p style="color:#666;font-size:13px">Conveyancing Crew · AI Contract Review</p></div>`,
+          },
+          toRecipients: [{ emailAddress: { address: GITU_NOTIFY_EMAIL } }],
         },
-        toRecipients: [{ emailAddress: { address: GITU_NOTIFY_EMAIL } }],
-      },
-    }),
+      }),
+    });
   });
 }
 
@@ -778,7 +837,7 @@ export async function GET(request) {
       try {
         const { data: existing, error: existingErr } = await supabase
           .from("contract_review_inbox")
-          .select("id, status, error_message, created_at")
+          .select("id, status, error_message, created_at, retry_count, last_notified_at")
           .eq("email_id", email.id)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -791,8 +850,12 @@ export async function GET(request) {
         }
 
         if (existing) {
-          if (existing.status === "complete" || existing.status === "processing") {
-            console.log("[ContractCron] Skipping — status is:", existing.status, "|", email.subject);
+          if (["complete", "discarded", "terminal_failure"].includes(existing.status)) {
+            if (existing.status === "terminal_failure") {
+              console.log("[ContractCron] Skipping terminal_failure:", email.subject);
+            } else {
+              console.log("[ContractCron] Skipping:", existing.status, email.subject);
+            }
             results.skipped++;
             continue;
           }
@@ -800,21 +863,7 @@ export async function GET(request) {
           if (existing.status === "failed") {
             const ageMs = new Date() - new Date(existing.created_at || 0);
             const olderThan24h = ageMs > 24 * 60 * 60 * 1000;
-            /*
-             * Run in Supabase SQL editor (one-off). Copy the SQL below as-is:
-             *
-UPDATE contract_review_inbox
-SET status = 'failed',
-    error_message = 'Permanently failed - will not retry'
-WHERE status = 'failed'
-AND (
-  error_message ILIKE '%fetch failed%' OR
-  error_message ILIKE '%PDF too large%' OR
-  error_message ILIKE '%100 page limit%' OR
-  error_message ILIKE '%Timed out%'
-);
-             */
-            const isTerminal =
+            const errorPatternTerminal =
               existing.error_message?.includes("No attachments and not a forwarded email") ||
               existing.error_message?.includes("No PDF header found") ||
               existing.error_message?.includes("PDF too large") ||
@@ -823,19 +872,34 @@ AND (
               existing.error_message?.includes("Timed out - reset manually") ||
               existing.error_message?.includes("requires login or are expired") ||
               existing.error_message?.includes("Could not download") ||
-              (existing.error_message?.includes("none could be downloaded") && olderThan24h) ||
-              olderThan24h; // Any failure older than 24h is terminal
+              (existing.error_message?.includes("none could be downloaded") && olderThan24h);
+            const isTerminal =
+              (existing.retry_count || 0) >= 3 ||
+              olderThan24h ||
+              existing.status === "terminal_failure" ||
+              errorPatternTerminal;
             if (isTerminal) {
-              console.log(
-                "[ContractCron] Skipping terminal failure:",
-                email.subject,
-                "|",
-                existing.error_message?.slice(0, 80),
-              );
+              if ((existing.retry_count || 0) >= 3) {
+                console.log("[ContractCron] Marking terminal after 3 retries:", email.subject);
+                await supabase
+                  .from("contract_review_inbox")
+                  .update({
+                    status: "terminal_failure",
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", existing.id);
+              } else {
+                console.log(
+                  "[ContractCron] Skipping terminal failure:",
+                  email.subject,
+                  "|",
+                  existing.error_message?.slice(0, 80),
+                );
+              }
               results.skipped++;
               continue;
             }
-            console.log("[ContractCron] Retrying failed record:", email.subject);
+            console.log("[ContractCron] Retry", (existing.retry_count || 0) + 1, "/3 for:", email.subject);
             inboxRecord = existing;
             await supabase
               .from("contract_review_inbox")
@@ -880,14 +944,7 @@ AND (
 
         if (!email.hasAttachments && !isForwardedEmail(email.subject)) {
           console.log("[ContractCron] No attachments and not forwarded, skipping");
-          await supabase
-            .from("contract_review_inbox")
-            .update({
-              status: "failed",
-              error_message: "No attachments and not a forwarded email",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", inboxRecord.id);
+          await failInboxRow(supabase, inboxRecord.id, "No attachments and not a forwarded email");
           results.skipped++;
           continue;
         }
@@ -962,6 +1019,7 @@ AND (
               document_type: "pdf",
               status: "failed",
               error_message: "ANTHROPIC_API_KEY is not configured",
+              retry_count: 1,
               is_read: false,
             });
             results.failed++;
@@ -1070,7 +1128,7 @@ AND (
                 console.error("[ContractCron] contract_review_inbox update failed:", attSaveErr);
               }
 
-              await sendReviewResultEmail(accessToken, email, att.name, attResult);
+              await sendReviewResultEmail(accessToken, email, att.name, attResult, supabase, attRecord.id);
 
               console.log(
                 "[ContractCron] ✓ Reviewed:",
@@ -1081,14 +1139,7 @@ AND (
               envProcessed++;
             } catch (attErr) {
               console.error("[ContractCron] Failed to review:", att.name, attErr.message);
-              await supabase
-                .from("contract_review_inbox")
-                .update({
-                  status: "failed",
-                  error_message: attErr.message,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", attRecord.id);
+              await failInboxRow(supabase, attRecord.id, attErr.message);
               envFailed++;
             }
           }
@@ -1598,37 +1649,29 @@ AND (
 <p><strong>Tip:</strong> Make sure the original email is in your Inbox (not archived) and was received within the last 60 days.</p>
 <p>Conveyancing Crew · AI Contract Review</p>`;
 
-            const { error: failUpdateErr } = await supabase
-              .from("contract_review_inbox")
-              .update({
-                document_name: "(forwarded — original not found)",
-                document_type: "pdf",
-                status: "failed",
-                error_message: failureMessagePlain,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", inboxRecord.id);
+            await failInboxRow(supabase, inboxRecord.id, failureMessagePlain, {
+              document_name: "(forwarded — original not found)",
+              document_type: "pdf",
+            });
 
-            if (failUpdateErr) {
-              console.error("[ContractCron] Failed to update failure row:", failUpdateErr);
-            }
-
-            await fetch(`https://graph.microsoft.com/v1.0/users/${graphUser}/sendMail`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                message: {
-                  subject: `⚠ Contract Review: Could not find original email`,
-                  body: {
-                    contentType: "HTML",
-                    content: failureHtml,
-                  },
-                  toRecipients: [{ emailAddress: { address: microsoftMailbox } }],
+            await sendContractReviewEmailWithDedup(supabase, inboxRecord.id, email.subject, async () => {
+              await fetch(`https://graph.microsoft.com/v1.0/users/${graphUser}/sendMail`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "Content-Type": "application/json",
                 },
-              }),
+                body: JSON.stringify({
+                  message: {
+                    subject: `⚠ Contract Review: Could not find original email`,
+                    body: {
+                      contentType: "HTML",
+                      content: failureHtml,
+                    },
+                    toRecipients: [{ emailAddress: { address: microsoftMailbox } }],
+                  },
+                }),
+              });
             });
 
             results.failed++;
@@ -1671,14 +1714,11 @@ AND (
           );
         } else {
           console.log("[ContractCron] No PDF/DOCX on envelope and not a forward — skipping");
-          await supabase
-            .from("contract_review_inbox")
-            .update({
-              status: "failed",
-              error_message: "No contract attachment on envelope and email was not forwarded",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", inboxRecord.id);
+          await failInboxRow(
+            supabase,
+            inboxRecord.id,
+            "No contract attachment on envelope and email was not forwarded"
+          );
           await markEmailRead(accessToken, email.id);
           results.skipped++;
           continue;
@@ -1887,16 +1927,12 @@ AND (
           const cleanSubject = String(linkHelpSubject || subject || email.subject || "(no subject)");
 
           if (uniqueLinks.length === 0) {
-            await supabase
-              .from("contract_review_inbox")
-              .update({
-                status: "failed",
-                error_message:
-                  "No contract attachment or link found in email chain. Chain senders: " +
-                  chainSenders.map((s) => s.email).join(", "),
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", inboxRecord.id);
+            await failInboxRow(
+              supabase,
+              inboxRecord.id,
+              "No contract attachment or link found in email chain. Chain senders: " +
+                chainSenders.map((s) => s.email).join(", ")
+            );
 
             await sendFailureEmail(
               accessToken,
@@ -1904,7 +1940,10 @@ AND (
               `Could not find a contract in this email or its forward chain.\n\n` +
                 `Chain senders searched: ${chainSenders.map((s) => `${s.name} <${s.email}>`).join(", ") || "(none)"}\n\n` +
                 `Please forward the original email with the contract PDF attached directly ` +
-                `to contractreview@conveyancingcrew.com.au`
+                `to contractreview@conveyancingcrew.com.au`,
+              supabase,
+              inboxRecord.id,
+              email.subject
             );
             results.skipped++;
             continue;
@@ -2144,17 +2183,13 @@ AND (
           if (!base64Content) {
             console.log("[ContractCron] All download attempts failed for Kenthurst");
 
-            await supabase
-              .from("contract_review_inbox")
-              .update({
-                status: "failed",
-                error_message:
-                  "Found " +
-                  uniqueLinks.length +
-                  " links in email chain but none could be downloaded. Links require login or are expired.",
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", inboxRecord.id);
+            await failInboxRow(
+              supabase,
+              inboxRecord.id,
+              "Found " +
+                uniqueLinks.length +
+                " links in email chain but none could be downloaded. Links require login or are expired."
+            );
 
             await sendFailureEmail(
               accessToken,
@@ -2162,7 +2197,10 @@ AND (
               `Found ${uniqueLinks.length} links in the email chain but could not download the contract.\n\n` +
                 `The links appear to be from a real estate agent portal (agentbox) that requires login.\n\n` +
                 `Please download the contract PDF manually from the agent portal and ` +
-                `forward it as an email attachment to contractreview@conveyancingcrew.com.au`
+                `forward it as an email attachment to contractreview@conveyancingcrew.com.au`,
+              supabase,
+              inboxRecord.id,
+              email.subject
             );
             results.skipped++;
             continue;
@@ -2268,7 +2306,7 @@ AND (
           console.error("[ContractCron] contract_review_inbox update failed:", reviewSaveErr);
         }
 
-        await sendReviewResultEmail(accessToken, email, documentName, reviewResult);
+        await sendReviewResultEmail(accessToken, email, documentName, reviewResult, supabase, inboxRecord.id);
 
         results.processed++;
         console.log("[ContractCron] ✓ Completed:", email.subject);
@@ -2277,30 +2315,24 @@ AND (
         results.failed++;
 
         if (inboxRecord?.id) {
-          await supabase
-            .from("contract_review_inbox")
-            .update({
-              status: "failed",
-              error_message: err.message,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", inboxRecord.id);
+          await failInboxRow(supabase, inboxRecord.id, err.message);
         }
 
         try {
           const graphUserNotify = encodeURIComponent(CONTRACTS_MAILBOX);
-          await fetch(`https://graph.microsoft.com/v1.0/users/${graphUserNotify}/sendMail`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message: {
-                subject: `⚠ Contract Review Failed: ${email.subject}`,
-                body: {
-                  contentType: "HTML",
-                  content: `
+          await sendContractReviewEmailWithDedup(supabase, inboxRecord?.id, email.subject, async () => {
+            await fetch(`https://graph.microsoft.com/v1.0/users/${graphUserNotify}/sendMail`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                message: {
+                  subject: `⚠ Contract Review Failed: ${email.subject}`,
+                  body: {
+                    contentType: "HTML",
+                    content: `
                   <p>Hi Gitu,</p>
                   <p>Contract review failed for: <strong>${String(email.subject || "").replace(/</g, "&lt;")}</strong></p>
                   <p><strong>Document:</strong> ${documentName || "Unknown"}</p>
@@ -2308,10 +2340,11 @@ AND (
                   <p>Please review manually in the app.</p>
                   <p>Conveyancing Crew · AI Contract Review</p>
                 `,
+                  },
+                  toRecipients: [{ emailAddress: { address: GITU_NOTIFY_EMAIL } }],
                 },
-                toRecipients: [{ emailAddress: { address: GITU_NOTIFY_EMAIL } }],
-              },
-            }),
+              }),
+            });
           });
         } catch (emailErr) {
           console.error("[ContractCron] Failed to send failure notification:", emailErr.message);
