@@ -4866,14 +4866,16 @@ Maximum 300 words.`,
       if (data) {
         setContractInboxItems(data);
         const unread = data.filter((d) => !d.is_read).length;
-        setContractInboxUnread(unread);
-        setPrevUnread((prev) => {
-          if (unread > prev) {
-            setBellShaking(true);
-            setTimeout(() => setBellShaking(false), 600);
-          }
-          return unread;
-        });
+        if (!notifOpenRef.current) {
+          setContractInboxUnread(unread);
+          setPrevUnread((prev) => {
+            if (unread > prev) {
+              setBellShaking(true);
+              setTimeout(() => setBellShaking(false), 600);
+            }
+            return unread;
+          });
+        }
         console.log("[ContractInbox] Set", data.length, "items,", unread, "unread");
       } else {
         console.log("[ContractInbox] No data returned");
@@ -6080,12 +6082,16 @@ If no matches found return: []`
       setTimeout(() => {
         setBellClosing(false);
         setNotifOpen(false);
+        notifOpenRef.current = false;
+        void loadContractInbox();
       }, 120);
       return;
     }
     setNotifOpen(true);
     notifOpenRef.current = true;
     setBellTab("notifications");
+    setContractInboxUnread(0);
+    await supabase.from("contract_review_inbox").update({ is_read: true }).eq("is_read", false);
     if (notifUnread > 0) {
       setNotifUnread(0);
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
@@ -6093,15 +6099,8 @@ If no matches found return: []`
     }
     void fetchTasks();
     await fetchNotifications();
-    setContractInboxUnread(0);
-    void loadContractInbox();
+    await loadContractInbox();
     void loadBellDraftMatters();
-    supabase
-      .from("contract_review_inbox")
-      .update({ is_read: true })
-      .eq("is_read", false)
-      .eq("status", "complete")
-      .then(() => {});
   };
 
   const generateMorningBrief = async () => {
