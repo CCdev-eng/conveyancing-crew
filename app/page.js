@@ -2456,6 +2456,41 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
     if (type === "vendor_form") { onOpenVendorForm?.(); return; }
   };
 
+  const downloadContractPrepDocx = async () => {
+    if (!matterRef) return;
+    try {
+      const res = await fetch("/api/vendor-form/generate-contract-docx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matterRef }),
+      });
+      if (!res.ok) {
+        let msg = "Download failed.";
+        try {
+          const j = await res.json();
+          if (j?.error) msg = j.error;
+        } catch { /* ignore */ }
+        alert(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition");
+      let filename = `Contract-Prep-${matterRef}.docx`;
+      const m = cd && /filename="([^"]+)"/.exec(cd);
+      if (m) filename = m[1];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Download failed.");
+    }
+  };
+
   const Chk = ({ stepKey, size = 20 }) => {
     const done = isCompleted(stepKey);
     return (
@@ -2589,6 +2624,28 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                       <button type="button" onClick={() => handleAction(step)} style={{ display: "flex", alignItems: "center", gap: 7, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s" }}
                         onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }} onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}>
                         <span>{step.action.icon}</span> {step.action.label}
+                      </button>
+                    )}
+                    {step.key === "sw_05b" && isExp && (
+                      <button
+                        type="button"
+                        onClick={downloadContractPrepDocx}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 7,
+                          marginTop: 10,
+                          background: "#fff",
+                          color: "#245eb0",
+                          border: "1.5px solid #245eb0",
+                          borderRadius: 7,
+                          padding: "8px 16px",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        📥 Download Contract DOCX
                       </button>
                     )}
                     {step.key === "sw_05b" && isExp && (
