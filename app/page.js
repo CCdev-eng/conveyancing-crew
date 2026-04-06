@@ -2374,17 +2374,19 @@ IMPORTANT: Add this disclaimer at the end:
     setSending(false);
   };
 
-  const openAiPanel = async (type, stepKey, forceRegenerate = false) => {
+  const openLoadPreviousContractSummary = () => {
+    if (!savedContractDraft || !String(savedContractDraft).trim()) return;
+    setAiPanel({ type: "sale_contract_prep", stepKey: "sw_05b" });
+    setAiLoading(false);
+    setAiDraft(String(savedContractDraft));
+    setShowContractPrepCachedNote(true);
+  };
+
+  const openAiPanel = async (type, stepKey) => {
     setAiPanel({ type, stepKey });
     setAiLoading(true);
     setAiDraft("");
     setShowContractPrepCachedNote(false);
-    if (type === "sale_contract_prep" && !forceRegenerate && savedContractDraft && String(savedContractDraft).trim()) {
-      setAiDraft(String(savedContractDraft));
-      setShowContractPrepCachedNote(true);
-      setAiLoading(false);
-      return;
-    }
     let promptText = "";
     if (type === "sale_contract_prep") {
       const { data: vi } = await supabase.from("vendor_instructions").select("*").eq("matter_ref", matterRef).maybeSingle();
@@ -2679,10 +2681,40 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                     )}
 
                     {!done && step.action && (
-                      <button type="button" onClick={() => handleAction(step)} style={{ display: "flex", alignItems: "center", gap: 7, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s" }}
-                        onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }} onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}>
-                        <span>{step.action.icon}</span> {step.action.label}
-                      </button>
+                      step.key === "sw_05b" ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+                          <button type="button" onClick={() => handleAction(step)} style={{ display: "flex", alignItems: "center", gap: 7, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s" }}
+                            onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }} onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}>
+                            <span>{step.action.icon}</span> {step.action.label}
+                          </button>
+                          {savedContractDraft && String(savedContractDraft).trim() && (
+                            <button
+                              type="button"
+                              onClick={openLoadPreviousContractSummary}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                background: "#fff",
+                                color: "#6b7280",
+                                border: "1.5px solid #c5cad6",
+                                borderRadius: 6,
+                                padding: "5px 10px",
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: "pointer",
+                              }}
+                            >
+                              📄 Load Previous Summary
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => handleAction(step)} style={{ display: "flex", alignItems: "center", gap: 7, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s" }}
+                          onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }} onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}>
+                          <span>{step.action.icon}</span> {step.action.label}
+                        </button>
+                      )
                     )}
                     {step.key === "sw_05b" && isExp && (
                       <button
@@ -2812,8 +2844,6 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                       {savedContractDraftUpdatedAt
                         ? new Date(savedContractDraftUpdatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
                         : "previously"}
-                      {" "}
-                      — click Regenerate to create a new summary
                     </div>
                   )}
                 </>
@@ -2823,7 +2853,7 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
               <button type="button" onClick={sendAiDraft} disabled={aiLoading || !aiDraft} style={{ flex: 1, background: "#245eb0", color: "#fff", border: "none", borderRadius: 7, padding: "10px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 Use This Draft →
               </button>
-              <button type="button" onClick={() => openAiPanel(aiPanel.type, aiPanel.stepKey, true)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Regenerate</button>
+              <button type="button" onClick={() => openAiPanel(aiPanel.type, aiPanel.stepKey)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Regenerate</button>
               <button type="button" onClick={() => setAiPanel(null)} style={{ background: "#f4f6fb", color: "#8a96b0", border: "1.5px solid #dce3f0", borderRadius: 7, padding: "10px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
