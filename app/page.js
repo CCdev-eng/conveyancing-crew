@@ -896,6 +896,13 @@ function mergeNotesWithVendorFormToken(notesStr, token) {
   return JSON.stringify(o);
 }
 
+function mergeNotesWithSearchOrders(notesStr, mutateOrders) {
+  const o = parseMatterNotesObject(notesStr);
+  const prev = o._searchOrders && typeof o._searchOrders === "object" && !Array.isArray(o._searchOrders) ? o._searchOrders : {};
+  o._searchOrders = mutateOrders({ ...prev });
+  return JSON.stringify(o);
+}
+
 const PW_STEPS = [
   { n: 1, title: "Initial enquiry & engagement", tier: "Core", desc: "Confirm retainer, ID requirements, and client expectations.", mono: "SLA: respond within 1 business day", milestone: false },
   { n: 2, title: "Cost agreement & disclosure", tier: "Core", desc: "Issue costs agreement and obtain signed acceptance.", mono: "Fee estimate · scope · disbursements", milestone: false },
@@ -1542,6 +1549,32 @@ function ContractReviewWorkflow({ matter, supabase }) {
     </div>
   );
 }
+
+function buildSearchURL(portal, matter) {
+  const address = encodeURIComponent(matter?.address || "");
+
+  const urls = {
+    nsw_planning: `https://www.planningportal.nsw.gov.au/spatialviewer/#/find-a-property/address?address=${address}`,
+    nsw_land_tax: `https://www.revenue.nsw.gov.au/taxes-duties-levies-royalties/land-tax`,
+    nsw_sydney_water: `https://www.sydneywater.com.au/accounts-billing/managing-your-account/buying-and-selling-a-property/certificates-documents-diagrams.html`,
+    nsw_title_search: `https://www.infotrack.com.au/products/property-certificates/title-search/`,
+    nsw_ecos: `https://www.infotrack.com.au/products/ecos/`,
+    nsw_council: `https://www.olg.nsw.gov.au/public/councils/the-role-of-councils/`,
+
+    vic_title_search: `https://www.land.vic.gov.au/land-titles/search-for-land-information`,
+    vic_planning: `https://www.planning.vic.gov.au/maps-and-spatial-data/planning-maps`,
+    vic_vicroads: `https://www.vicroads.vic.gov.au/registration/buy-sell-or-transfer-a-vehicle/buy-a-vehicle/get-a-vehicle-history-report`,
+    vic_water: `https://www.yvrwater.com.au/residential/moving-house/`,
+    vic_ecos: `https://www.infotrack.com.au/products/ecos/liv-contract/`,
+    vic_land_info: `https://www.land.vic.gov.au`,
+
+    pexa: `https://www.pexa.com.au`,
+    infotrack: `https://www.infotrack.com.au`,
+  };
+
+  return urls[portal] || "https://www.infotrack.com.au";
+}
+
 function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMatterNotesSaved }) {
   const matterRef = matter?.matter_ref || matter?.id;
 
@@ -2748,26 +2781,26 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                           {(isMatterVicForPrep(matter)
                             ? [
-                                { label: "🏛️ Title — Land Vic $25", href: "https://www.land.vic.gov.au" },
-                                { label: "🚗 VicRoads Cert — $32", href: "https://www.vicroads.vic.gov.au" },
-                                { label: "💧 Water Cert — $28 (approx. by suburb)", href: "https://www.yvrwater.com.au" },
-                                { label: "📋 Land Info Cert", href: "https://www.land.vic.gov.au/land-titles/search-for-land-information" },
-                                { label: "📄 eCOS VIC Contract", href: "https://www.infotrack.com.au/products/ecos/liv-contract/" },
-                                { label: "🔍 Planning Overlay", href: "https://www.planning.vic.gov.au/maps-and-spatial-data/planning-maps" },
+                                { label: "🏛️ Title — Land Vic $25", portal: "vic_title_search" },
+                                { label: "🚗 VicRoads Cert — $32", portal: "vic_vicroads" },
+                                { label: "💧 Water Cert — $28 (approx. by suburb)", portal: "vic_water" },
+                                { label: "📋 Land Info Cert", portal: "vic_land_info" },
+                                { label: "📄 eCOS VIC Contract", portal: "vic_ecos" },
+                                { label: "🔍 Planning Overlay", portal: "vic_planning" },
                               ]
                             : [
-                                { label: "🏛️ Council s603 — $100 direct", href: "https://www.olg.nsw.gov.au" },
-                                { label: "💧 Water Certificate — $40 direct", href: "https://www.sydneywater.com.au/accounts-billing/managing-your-account/buying-and-selling-a-property/certificates-documents-diagrams.html" },
-                                { label: "💰 Land Tax Clearance — $15 direct", href: "https://www.revenue.nsw.gov.au" },
-                                { label: "📄 Title Search — InfoTrack", href: "https://www.infotrack.com.au" },
-                                { label: "📋 eCOS Contract — InfoTrack", href: "https://www.infotrack.com.au/products/ecos/" },
-                                { label: "🔍 Section 10.7 — Council", href: "https://www.planningportal.nsw.gov.au" },
+                                { label: "🏛️ Council s603 — $100 direct", portal: "nsw_council" },
+                                { label: "💧 Water Certificate — $40 direct", portal: "nsw_sydney_water" },
+                                { label: "💰 Land Tax Clearance — $15 direct", portal: "nsw_land_tax" },
+                                { label: "📄 Title Search — InfoTrack", portal: "nsw_title_search" },
+                                { label: "📋 eCOS Contract — InfoTrack", portal: "nsw_ecos" },
+                                { label: "🔍 Section 10.7 — Council", portal: "nsw_planning" },
                               ]
                           ).map((lnk) => (
                             <button
-                              key={lnk.href + lnk.label}
+                              key={lnk.portal + lnk.label}
                               type="button"
-                              onClick={() => window.open(lnk.href, "_blank")}
+                              onClick={() => window.open(buildSearchURL(lnk.portal, matter), "_blank")}
                               style={{
                                 fontSize: 11,
                                 padding: "6px 10px",
@@ -2864,28 +2897,6 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
     </div>
   );
 }
-
-
-const SEARCH_TYPES_BY_MATTER = {
-  NSW_Purchase: [
-    { id: "title", name: "Title Search", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Current title search for the property." },
-    { id: "council", name: "Council Rates", provider: "InfoTrack", turnaround: "1–3 business days", desc: "Rates and charges certificate." },
-    { id: "water", name: "Water/Sewer", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Water and sewer search." },
-    { id: "strata", name: "Strata Report", provider: "InfoTrack", turnaround: "2–5 business days", desc: "Strata search for units." },
-    { id: "stamp", name: "Stamp Duty Assessment", provider: "InfoTrack", turnaround: "Same day", desc: "Stamp duty estimate/assessment." },
-  ],
-  VIC_Purchase: [
-    { id: "title", name: "Title Search", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Current title search for the property." },
-    { id: "council", name: "Council Rates", provider: "InfoTrack", turnaround: "1–3 business days", desc: "Rates and charges certificate." },
-    { id: "water", name: "Water/Sewer", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Water and sewer search." },
-    { id: "landtax", name: "Land Tax Clearance", provider: "Landata", turnaround: "2–5 business days", desc: "Land tax clearance certificate." },
-    { id: "frgw", name: "FRGW Certificate", provider: "Landata", turnaround: "3–7 business days", desc: "Section 32 / FRGW certificate." },
-  ],
-  Sale: [
-    { id: "title", name: "Title Search", provider: "InfoTrack", turnaround: "1–2 business days", desc: "Current title for contract." },
-    { id: "landtax", name: "Land Tax Clearance", provider: "InfoTrack", turnaround: "2–5 business days", desc: "Land tax clearance for settlement." },
-  ],
-};
 
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
@@ -4607,6 +4618,7 @@ export default function App() {
   const [documents, setDocuments] = useState([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadingSearchOrder, setUploadingSearchOrder] = useState(false);
   const [contractReviewLoading, setContractReviewLoading] = useState(false);
   const [contractReviewResult, setContractReviewResult] = useState(null);
   const [contractReviewError, setContractReviewError] = useState("");
@@ -4620,7 +4632,6 @@ export default function App() {
   const [contractReviewHistory, setContractReviewHistory] = useState([]);
   const [editingClient, setEditingClient] = useState(false);
   const [editClientForm, setEditClientForm] = useState({});
-  const [matterSearches, setMatterSearches] = useState({});
   const [matterEmails, setMatterEmails] = useState([]);
   const [matterEmailsLoading, setMatterEmailsLoading] = useState(false);
   const [composeTo, setComposeTo] = useState("");
@@ -4689,6 +4700,8 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const aiEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const searchOrderUploadRef = useRef(null);
+  const searchOrderUploadNameRef = useRef(null);
   const composeBodyRef = useRef(null);
   const modalRef = useRef(null);
   const matterModalRef = useRef(null);
@@ -7062,6 +7075,54 @@ RESPONSE RULES:
       if (e.target) {
         e.target.value = "";
       }
+    }
+  };
+
+  const handleSearchOrderUploadClick = (searchName) => {
+    searchOrderUploadNameRef.current = searchName;
+    searchOrderUploadRef.current?.click();
+  };
+
+  const handleSearchOrderFileChange = async (e) => {
+    const searchName = searchOrderUploadNameRef.current;
+    const file = e.target.files && e.target.files[0];
+    if (e.target) e.target.value = "";
+    searchOrderUploadNameRef.current = null;
+    if (!file || !searchName || !selMatterObj) return;
+    const isPdf =
+      String(file.type || "").toLowerCase().includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      alert("Please upload a PDF file.");
+      return;
+    }
+    const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+    const safeSearch = String(searchName).replace(/[^a-zA-Z0-9]/g, "_").slice(0, 60);
+    const sanitizedName = file.name.trim().replace(/\s+/g, "_");
+    const filePath = `${matterRef}/search-results/${safeSearch}_${sanitizedName}`;
+    setUploadingSearchOrder(true);
+    try {
+      const { error } = await supabase.storage.from("matter-documents").upload(filePath, file, { upsert: true });
+      if (error) {
+        console.error(error);
+        alert(error.message || "Upload failed");
+        return;
+      }
+      const notesPayload = mergeNotesWithSearchOrders(selMatterObj.notes, (orders) => ({
+        ...orders,
+        [searchName]: {
+          ...(orders[searchName] || {}),
+          status: "received",
+          uploaded_at: new Date().toISOString(),
+          result_path: filePath,
+          result_filename: file.name,
+        },
+      }));
+      await supabase.from("matters").update({ notes: notesPayload }).eq("matter_ref", matterRef);
+      setMATTERS((prev) =>
+        prev.map((m) => (m.matter_ref === matterRef || m.id === matterRef ? { ...m, notes: notesPayload } : m))
+      );
+    } finally {
+      setUploadingSearchOrder(false);
     }
   };
 
@@ -11029,60 +11090,232 @@ Return only the email body text, no subject line.`;
 
                 {/* SEARCHES */}
                 {matterTab==="Searches" && (() => {
-                  const isPurchase = (selMatterObj.type || "").toLowerCase().includes("purchase");
-                  const isSale = (selMatterObj.type || "").toLowerCase().includes("sale");
-                  const state = (selMatterObj.state || "NSW").toUpperCase();
-                  const key = isSale ? "Sale" : state === "VIC" && isPurchase ? "VIC_Purchase" : "NSW_Purchase";
-                  const searchTypes = SEARCH_TYPES_BY_MATTER[key] || SEARCH_TYPES_BY_MATTER.NSW_Purchase;
-                  const matterId = selMatterObj.id;
-                  let statusMap = matterSearches[matterId];
-                  if (!statusMap && selMatterObj.notes) {
-                    try {
-                      const parsed = JSON.parse(selMatterObj.notes);
-                      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) statusMap = parsed;
-                    } catch (_) {}
-                  }
-                  if (!statusMap) statusMap = {};
-                  const setSearchStatus = (searchId, status) => {
-                    let base = {};
-                    try {
-                      if (selMatterObj.notes && String(selMatterObj.notes).trim().startsWith("{")) {
-                        base = JSON.parse(selMatterObj.notes);
-                      }
-                    } catch (_) {}
-                    const next = { ...base, [searchId]: status };
-                    setMatterSearches(prev => ({ ...prev, [matterId]: next }));
-                    const notesPayload = JSON.stringify(next);
-                    supabase.from("matters").update({ notes: notesPayload }).eq("matter_ref", matterId).then(() => {});
-                    setMATTERS((prev) => prev.map((m) => (m.id === matterId ? { ...m, notes: notesPayload } : m)));
+                  const stRaw = String(selMatterObj.state || "NSW").toUpperCase();
+                  const isVic = stRaw === "VIC" || stRaw === "VICTORIA";
+                  const matterRef = selMatterObj.matter_ref || selMatterObj.id;
+                  const addr = selMatterObj.address || "";
+                  const notesObj = parseMatterNotesObject(selMatterObj.notes);
+                  const searchOrders =
+                    notesObj._searchOrders && typeof notesObj._searchOrders === "object" && !Array.isArray(notesObj._searchOrders)
+                      ? notesObj._searchOrders
+                      : {};
+
+                  const persistSearchOrders = (mutate) => {
+                    const payload = mergeNotesWithSearchOrders(selMatterObj.notes, mutate);
+                    supabase.from("matters").update({ notes: payload }).eq("matter_ref", matterRef).then(() => {});
+                    setMATTERS((prev) =>
+                      prev.map((m) => (m.matter_ref === matterRef || m.id === matterRef ? { ...m, notes: payload } : m))
+                    );
                   };
-                  const openInfoTrack = (searchId) => {
-                    window.open("https://www.infotrack.com.au", "_blank");
-                    setSearchStatus(searchId, "ordered");
-                    setTimeout(() => alert("API integration coming soon"), 300);
+
+                  const buildSearchOrderMailto = (searchName) => {
+                    const subject = `${searchName} Request — ${addr} | Matter ${matterRef}`;
+                    const body =
+                      "Dear Sir/Madam,\n\n" +
+                      `Please provide a ${searchName} for the following property:\n\n` +
+                      `Property Address: ${addr}\n` +
+                      `Matter Reference: ${matterRef}\n` +
+                      "Conveyancer: Gitu Kaur\n" +
+                      "Firm: Conveyancing Crew\n" +
+                      "Email: gitu@conveyancingcrew.com.au\n\n" +
+                      "Please forward the certificate to gitu@conveyancingcrew.com.au\n\n" +
+                      "Kind regards,\n" +
+                      "Gitu Kaur\n" +
+                      "Conveyancing Crew";
+                    return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                   };
+
+                  const nswRows = [
+                    { name: "Title Search", cost: "Direct $30", provider: "InfoTrack", portal: "nsw_title_search" },
+                    { name: "Section 10.7 Planning Certificate", cost: "Council $53", provider: "NSW Planning Portal", portal: "nsw_planning" },
+                    { name: "Sydney Water Section 66 Certificate", cost: "Direct $40", provider: "Sydney Water", portal: "nsw_sydney_water" },
+                    { name: "Sewer Diagram", cost: "Direct $15", provider: "Sydney Water", portal: "nsw_sydney_water" },
+                    { name: "Land Tax Clearance Certificate", cost: "Direct $15", provider: "Revenue NSW", portal: "nsw_land_tax" },
+                    { name: "Council Certificate (s603)", cost: "Statutory $100", provider: "Your Council", portal: "nsw_council" },
+                    { name: "eCOS Contract", cost: "InfoTrack $20", provider: "InfoTrack eCOS", portal: "nsw_ecos" },
+                  ];
+
+                  const vicRows = [
+                    { name: "Certificate of Title", cost: "Direct $25", provider: "Land Vic", portal: "vic_title_search" },
+                    { name: "Land Information Certificate", cost: "Council $165", provider: "Your Council", portal: "vic_land_info" },
+                    { name: "VicRoads Certificate", cost: "Direct $32", provider: "VicRoads", portal: "vic_vicroads" },
+                    { name: "Water/Sewerage Certificate", cost: "Direct $28", provider: "Your Water Authority", portal: "vic_water" },
+                    { name: "Rates Certificate", cost: "Council $55", provider: "Your Council", portal: "infotrack" },
+                    { name: "Section 32 / eCOS Contract", cost: "InfoTrack $20", provider: "InfoTrack eCOS VIC", portal: "vic_ecos" },
+                    { name: "Planning Overlay Certificate", cost: "Council $165", provider: "VIC Planning Portal", portal: "vic_planning" },
+                  ];
+
+                  const rows = isVic ? vicRows : nswRows;
+
+                  const onOrderClick = (row) => {
+                    window.open(buildSearchURL(row.portal, selMatterObj), "_blank");
+                    persistSearchOrders((orders) => ({
+                      ...orders,
+                      [row.name]: {
+                        ...(orders[row.name] || {}),
+                        status: "pending",
+                        ordered_at: new Date().toISOString(),
+                      },
+                    }));
+                  };
+
                   return (
                     <div>
-                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-                        {searchTypes.map(s => (
-                          <div key={s.id} className="card" style={{padding:14}}>
-                            <div className="card-title" style={{marginBottom:6}}>{s.name}</div>
-                            <div style={{fontSize:11,color:"var(--text-3)",marginBottom:8}}>{s.desc}</div>
-                            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
-                              <span className="tag tag-gray" style={{fontSize:10}}>{s.provider}</span>
-                              <span className="tag tag-gray" style={{fontSize:10}}>⏱ {s.turnaround}</span>
-                            </div>
-                            <div style={{marginBottom:10}}>
-                              <span className={`tag ${(statusMap[s.id] || "not_ordered") === "received" ? "tag-green" : (statusMap[s.id] || "not_ordered") === "ordered" ? "tag-amber" : "tag-gray"}`} style={{fontSize:10}}>
-                                {(statusMap[s.id] || "not_ordered") === "not_ordered" ? "Not Ordered" : statusMap[s.id] === "ordered" ? "Ordered" : "Received"}
-                              </span>
-                            </div>
-                            <button type="button" className="btn-primary" style={{fontSize:11,width:"100%"}} onClick={() => openInfoTrack(s.id)}>
-                              Order via InfoTrack
-                            </button>
-                          </div>
-                        ))}
+                      <input
+                        ref={searchOrderUploadRef}
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        style={{ display: "none" }}
+                        onChange={handleSearchOrderFileChange}
+                      />
+                      <div
+                        style={{
+                          marginBottom: 14,
+                          padding: "12px 16px",
+                          borderRadius: 10,
+                          background: "linear-gradient(135deg, #f0fdf4, #ecfdf5)",
+                          border: "1px solid #bbf7d0",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "#166534",
+                        }}
+                      >
+                        {isVic
+                          ? "💡 Ordering direct saves ~$232 (VIC) vs triSearch per matter"
+                          : "💡 Ordering direct saves ~$402 (NSW) vs triSearch per matter"}
                       </div>
+
+                      <div
+                        className="card"
+                        style={{
+                          overflow: "hidden",
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(160px,1.4fr) minmax(100px,0.7fr) minmax(120px,0.9fr) minmax(140px,1fr) minmax(200px,1.2fr)",
+                            gap: 0,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "var(--text-3)",
+                            textTransform: "uppercase",
+                            letterSpacing: 0.4,
+                            padding: "10px 14px",
+                            background: "var(--surface-2)",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          <div>Search</div>
+                          <div>Cost</div>
+                          <div>Provider</div>
+                          <div>Status</div>
+                          <div>Actions</div>
+                        </div>
+                        {rows.map((row) => {
+                          const o = searchOrders[row.name] || {};
+                          const isReceived = o.status === "received" || Boolean(o.result_path);
+                          const isPending = o.status === "pending" || Boolean(o.ordered_at);
+                          let statusBadge;
+                          if (isReceived) {
+                            statusBadge = (
+                              <span className="tag tag-green" style={{ fontSize: 10 }}>
+                                ✓ Received
+                              </span>
+                            );
+                          } else if (isPending) {
+                            statusBadge = (
+                              <span className="tag tag-amber" style={{ fontSize: 10 }}>
+                                ⏳ Pending
+                              </span>
+                            );
+                          } else {
+                            statusBadge = (
+                              <span className="tag tag-gray" style={{ fontSize: 10 }}>
+                                ⚠️ Not Ordered
+                              </span>
+                            );
+                          }
+                          return (
+                            <div
+                              key={row.name}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "minmax(160px,1.4fr) minmax(100px,0.7fr) minmax(120px,0.9fr) minmax(140px,1fr) minmax(200px,1.2fr)",
+                                gap: 8,
+                                alignItems: "center",
+                                padding: "12px 14px",
+                                borderBottom: "1px solid var(--border-2)",
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ fontWeight: 700, color: "var(--text)" }}>{row.name}</div>
+                              <div style={{ color: "#15803d", fontWeight: 600 }}>{row.cost}</div>
+                              <div style={{ color: "var(--text-2)" }}>{row.provider}</div>
+                              <div>{statusBadge}</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                                <button
+                                  type="button"
+                                  className="btn-ghost"
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "5px 10px",
+                                    border: "1.5px solid #245eb0",
+                                    color: "#245eb0",
+                                    borderRadius: 6,
+                                  }}
+                                  onClick={() => onOrderClick(row)}
+                                >
+                                  Order
+                                </button>
+                                <a
+                                  className="btn-ghost"
+                                  href={buildSearchOrderMailto(row.name)}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "5px 10px",
+                                    border: "1px solid var(--border)",
+                                    color: "var(--text-2)",
+                                    borderRadius: 6,
+                                    textDecoration: "none",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  📧 Email Order
+                                </a>
+                                {isPending && !isReceived && (
+                                  <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    style={{ fontSize: 11, padding: "5px 10px" }}
+                                    disabled={uploadingSearchOrder}
+                                    onClick={() => handleSearchOrderUploadClick(row.name)}
+                                  >
+                                    {uploadingSearchOrder ? "Uploading…" : "Upload Result"}
+                                  </button>
+                                )}
+                                {isReceived && o.result_filename && (
+                                  <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
+                                    {o.result_filename}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ marginTop: 16, fontSize: 12 }}
+                        onClick={() => window.open("https://www.infotrack.com.au", "_blank")}
+                      >
+                        Order Searches (InfoTrack)
+                      </button>
                     </div>
                   );
                 })()}
