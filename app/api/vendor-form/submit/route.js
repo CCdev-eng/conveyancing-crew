@@ -110,17 +110,54 @@ export async function POST(request) {
     // Update matters table - use row data which has ALL fields from partial saves
     try {
       const matterPatch = {}
+
+      // Agent details
       const agentFirst = fullRow.agent_first_name || ""
       const agentLast = fullRow.agent_last_name || ""
       const agentFullName = [agentFirst, agentLast].filter(Boolean).join(" ").trim()
       if (agentFullName) matterPatch.agent_name = agentFullName
       if (fullRow.agent_phone) matterPatch.agent_phone = fullRow.agent_phone
       if (fullRow.agent_email) matterPatch.agent_email = fullRow.agent_email
+
+      // Price
       if (fullRow.expected_price) matterPatch.price = String(fullRow.expected_price)
-      if (fullRow.possession_type) matterPatch.is_tenanted = fullRow.possession_type === "tenanted"
+
+      // Lender - maps to matters.lender column
+      if (fullRow.lender_name) matterPatch.lender = fullRow.lender_name
+
+      // Tenanted status
+      if (fullRow.possession_type) {
+        matterPatch.is_tenanted = fullRow.possession_type === "tenanted"
+      }
+
+      // Special conditions
       if (fullRow.special_conditions) matterPatch.special_conditions = fullRow.special_conditions
 
-      console.log("[submit] matterPatch:", JSON.stringify(matterPatch))
+      // Co-vendor saved to notes JSON
+      const existingMatter = await supabase
+        .from("matters")
+        .select("notes")
+        .eq("matter_ref", matterRef)
+        .single()
+
+      if (existingMatter.data) {
+        let notesObj = {}
+        try { notesObj = JSON.parse(existingMatter.data.notes || "{}") } catch {}
+        if (fullRow.co_vendor_name) notesObj.coVendorName = fullRow.co_vendor_name
+        if (fullRow.agency_name) notesObj.agencyName = fullRow.agency_name
+        if (fullRow.sale_method) notesObj.saleMethod = fullRow.sale_method
+        if (fullRow.expected_listing_date) notesObj.expectedListingDate = fullRow.expected_listing_date
+        if (fullRow.inclusions) notesObj.inclusions = fullRow.inclusions
+        if (fullRow.exclusions) notesObj.exclusions = fullRow.exclusions
+        if (fullRow.building_works_last_7_years !== undefined) notesObj.buildingWorks = fullRow.building_works_last_7_years
+        if (fullRow.building_works_details) notesObj.buildingWorksDetails = fullRow.building_works_details
+        if (fullRow.owner_builder !== undefined) notesObj.ownerBuilder = fullRow.owner_builder
+        notesObj._vendorFormStatus = "submitted"
+        notesObj._vendorFormSubmittedAt = new Date().toISOString()
+        matterPatch.notes = JSON.stringify(notesObj)
+      }
+
+      console.log("[submit] matterPatch keys:", Object.keys(matterPatch).join(","))
 
       if (Object.keys(matterPatch).length > 0) {
         matterPatch.updated_at = new Date().toISOString()
@@ -133,8 +170,6 @@ export async function POST(request) {
         } else {
           console.log("[submit] matter updated successfully:", Object.keys(matterPatch).join(","))
         }
-      } else {
-        console.log("[submit] matterPatch empty - no matter update needed")
       }
     } catch (matterUpdateErr) {
       console.error("[submit] matter update exception:", matterUpdateErr.message)
