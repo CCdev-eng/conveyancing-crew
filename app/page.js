@@ -2125,6 +2125,10 @@ function SaleWorkflow({ matter, supabase, isMobile, onOpenVendorForm }) {
     }),
   };
 
+  function isMatterVicForPrep(m) {
+    const s = String(m?.state ?? "").trim();
+    return s === "VIC" || s === "Victoria";
+  }
   function buildSaleContractPrepPrompt(matter, vi) {
     const state = matter?.state || "NSW";
     const priceRaw = matter?.price ?? matter?.value ?? matter?.purchase_price;
@@ -2209,16 +2213,23 @@ List anything that could delay contract preparation or cause issues. Be specific
 For each required search, show:
 | Search | Direct/Gov Cost | triSearch Cost | Direct Link |
 
-Use these triSearch vs direct prices for comparison:
-- Council certificate: triSearch $190 vs Direct $100
-- Water certificate: triSearch $190 vs Direct $40
-- Land tax clearance: triSearch $80 vs Direct $15
-- Title search: triSearch ~$60 vs InfoTrack direct ~$30
-- Planning certificate: triSearch ~$120 vs Council direct ~$53
-- VicRoads (VIC only): triSearch ~$85 vs Direct $32
-- Land Information Certificate (VIC only): triSearch $220 vs Council direct $165
-
-TOTAL ESTIMATED SAVINGS if ordering direct instead of triSearch: ~$402 per matter for the typical NSW bundle (council + water + land tax + title + planning); add ~$108 vs triSearch when VIC-only VicRoads and Land Information Certificate also apply (~$510 total in that case).
+${
+  isMatterVicForPrep(matter)
+    ? `Use these VIC-specific rows (matter is VIC/Victoria):
+- Certificate of Title | Direct $25 | triSearch ~$60 | Saving $35 | land.vic.gov.au
+- Land Information Certificate | Council ~$165 | triSearch ~$220 | Saving $55 | your local council website
+- VicRoads Certificate | Direct $32 | triSearch ~$85 | Saving $53 | vicroads.vic.gov.au
+- Water/Sewerage Certificate | Direct $28 | triSearch ~$75 | Saving $47 | your water authority (Yarra Valley Water / City West Water / South East Water depending on suburb)
+- Rates Certificate | Council ~$55 | triSearch ~$95 | Saving $40 | your local council
+- TOTAL ESTIMATED SAVINGS vs triSearch: ~$232 per matter`
+    : `Use these NSW-specific rows (matter is NSW/New South Wales or default):
+- Council Certificate (s603) | Statutory $100 | triSearch $190 | Saving $90 | olg.nsw.gov.au / direct to your council
+- Sydney Water Section 66 Certificate | Direct $40 | triSearch $190 | Saving $150 | sydneywater.com.au/tap-in
+- Land Tax Clearance | Direct $15 | triSearch $80 | Saving $65 | revenue.nsw.gov.au
+- Title Search | InfoTrack $30 | triSearch ~$60 | Saving $30 | infotrack.com.au
+- Planning Certificate (s10.7) | Council $53 | triSearch ~$120 | Saving $67 | planningportal.nsw.gov.au
+- TOTAL ESTIMATED SAVINGS vs triSearch: ~$402 per matter`
+}
 
 ## 6. NEXT STEPS CHECKLIST
 Numbered action list of exactly what to do next, in order of priority.
@@ -2650,16 +2661,30 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                     )}
                     {step.key === "sw_05b" && isExp && (
                       <div style={{ marginTop: 14 }}>
-                        <div style={{ fontSize: 12, color: "#1a7a4a", fontWeight: 600, marginBottom: 8 }}>{"💡 Order direct & save ~$402 per matter vs triSearch"}</div>
+                        <div style={{ fontSize: 12, color: "#1a7a4a", fontWeight: 600, marginBottom: 8 }}>
+                          {isMatterVicForPrep(matter)
+                            ? "💡 Order direct & save ~$232 per matter vs triSearch"
+                            : "💡 Order direct & save ~$402 per matter vs triSearch"}
+                        </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                          {[
-                            { label: "🏛️ Council s603 — $100 direct", href: "https://www.olg.nsw.gov.au" },
-                            { label: "💧 Water Certificate — $40 direct", href: "https://www.sydneywater.com.au/accounts-billing/managing-your-account/buying-and-selling-a-property/certificates-documents-diagrams.html" },
-                            { label: "💰 Land Tax Clearance — $15 direct", href: "https://www.revenue.nsw.gov.au" },
-                            { label: "📄 Title Search — InfoTrack", href: "https://www.infotrack.com.au" },
-                            { label: "📋 eCOS Contract — InfoTrack", href: "https://www.infotrack.com.au/products/ecos/" },
-                            { label: "🔍 Section 10.7 — Council", href: "https://www.planningportal.nsw.gov.au" },
-                          ].map((lnk) => (
+                          {(isMatterVicForPrep(matter)
+                            ? [
+                                { label: "🏛️ Title — Land Vic $25", href: "https://www.land.vic.gov.au" },
+                                { label: "🚗 VicRoads Cert — $32", href: "https://www.vicroads.vic.gov.au" },
+                                { label: "💧 Water Cert — $28 (approx. by suburb)", href: "https://www.yvrwater.com.au" },
+                                { label: "📋 Land Info Cert", href: "https://www.land.vic.gov.au/land-titles/search-for-land-information" },
+                                { label: "📄 eCOS VIC Contract", href: "https://www.infotrack.com.au/products/ecos/liv-contract/" },
+                                { label: "🔍 Planning Overlay", href: "https://www.planning.vic.gov.au/maps-and-spatial-data/planning-maps" },
+                              ]
+                            : [
+                                { label: "🏛️ Council s603 — $100 direct", href: "https://www.olg.nsw.gov.au" },
+                                { label: "💧 Water Certificate — $40 direct", href: "https://www.sydneywater.com.au/accounts-billing/managing-your-account/buying-and-selling-a-property/certificates-documents-diagrams.html" },
+                                { label: "💰 Land Tax Clearance — $15 direct", href: "https://www.revenue.nsw.gov.au" },
+                                { label: "📄 Title Search — InfoTrack", href: "https://www.infotrack.com.au" },
+                                { label: "📋 eCOS Contract — InfoTrack", href: "https://www.infotrack.com.au/products/ecos/" },
+                                { label: "🔍 Section 10.7 — Council", href: "https://www.planningportal.nsw.gov.au" },
+                              ]
+                          ).map((lnk) => (
                             <button
                               key={lnk.href + lnk.label}
                               type="button"

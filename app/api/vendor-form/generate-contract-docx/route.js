@@ -51,6 +51,7 @@ function splitLines(s) {
 function normState(state) {
   const s = String(state || "NSW").trim().toUpperCase();
   if (s === "VIC" || s === "VICTORIA") return "VIC";
+  if (s === "NSW" || s === "NEW SOUTH WALES") return "NSW";
   return "NSW";
 }
 
@@ -191,19 +192,20 @@ function vicPrescribedRows(matter, vi) {
 function costTableRows(state) {
   if (state === "VIC") {
     return [
-      ["Certificate of Title", "$25", "$60", "$35", "land.vic.gov.au"],
-      ["Land Information Certificate", "$165", "$220", "$55", "your council"],
-      ["VicRoads Certificate", "$32", "$85", "$53", "vicroads.vic.gov.au"],
-      ["Water Certificate", "$28", "$75", "$47", "your water authority"],
+      ["Certificate of Title", "Direct $25", "triSearch ~$60", "$35", "land.vic.gov.au"],
+      ["Land Information Certificate", "Council ~$165", "triSearch ~$220", "$55", "your local council website"],
+      ["VicRoads Certificate", "Direct $32", "triSearch ~$85", "$53", "vicroads.vic.gov.au"],
+      ["Water/Sewerage Certificate", "Direct $28", "triSearch ~$75", "$47", "your water authority (YVW / SEW / CWW by suburb)"],
+      ["Rates Certificate", "Council ~$55", "triSearch ~$95", "$40", "your local council"],
       ["TOTAL SAVING", "$232", "—", "—", "—"],
     ];
   }
   return [
-    ["Council Certificate (s603)", "$100", "$190", "$90", "olg.nsw.gov.au"],
-    ["Water Certificate", "$40", "$190", "$150", "sydneywater.com.au"],
-    ["Land Tax Clearance", "$15", "$80", "$65", "revenue.nsw.gov.au"],
-    ["Title Search", "$30 (InfoTrack)", "$60", "$30", "infotrack.com.au"],
-    ["Planning Certificate (s10.7)", "$53", "$120", "$67", "planningportal.nsw.gov.au"],
+    ["Council Certificate (s603)", "Statutory $100", "triSearch $190", "$90", "olg.nsw.gov.au / direct to your council"],
+    ["Sydney Water Section 66 Certificate", "Direct $40", "triSearch $190", "$150", "sydneywater.com.au/tap-in"],
+    ["Land Tax Clearance", "Direct $15", "triSearch $80", "$65", "revenue.nsw.gov.au"],
+    ["Title Search", "InfoTrack $30", "triSearch ~$60", "$30", "infotrack.com.au"],
+    ["Planning Certificate (s10.7)", "Council $53", "triSearch ~$120", "$67", "planningportal.nsw.gov.au"],
     ["TOTAL SAVING", "$402", "—", "—", "—"],
   ];
 }
