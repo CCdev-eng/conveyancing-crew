@@ -818,6 +818,7 @@ function mapMatterFromRow(row) {
     deposit: row.deposit,
     depositPaid: row.deposit_paid,
     lender: row.lender,
+    is_tenanted: row.is_tenanted ?? false,
     agent: row.agent_name ?? "",
     agent_name: row.agent_name ?? "",
     agent_email: row.agent_email ?? "",
@@ -2124,12 +2125,113 @@ function SaleWorkflow({ matter, supabase, isMobile, onOpenVendorForm }) {
     }),
   };
 
+  function buildSaleContractPrepPrompt(matter, vi) {
+    const state = matter?.state || "NSW";
+    const priceRaw = matter?.price ?? matter?.value ?? matter?.purchase_price;
+    const priceStr =
+      priceRaw != null && priceRaw !== ""
+        ? "$" + Number(String(priceRaw).replace(/[^0-9.]/g, "") || 0).toLocaleString()
+        : "Not set";
+    const settle = matter?.settlement_date || matter?.settlement || "TBD";
+    const agentPhone = matter?.agent_phone ?? matter?.agentPhone ?? "";
+    const viBlock = vi
+      ? `ownership_type: ${vi.ownership_type ?? ""}
+entity_name: ${vi.entity_name ?? ""}
+entity_abn: ${vi.entity_abn ?? ""}
+co_vendor_name: ${vi.co_vendor_name ?? ""}
+has_mortgage: ${vi.has_mortgage ?? ""}
+lender_name: ${vi.lender_name ?? ""}
+possession_type: ${vi.possession_type ?? ""}
+tenant_name: ${vi.tenant_name ?? ""}
+weekly_rent: ${vi.weekly_rent ?? ""}
+building_works_last_7_years: ${vi.building_works_last_7_years ?? ""}
+building_works_details: ${vi.building_works_details ?? ""}
+owner_builder: ${vi.owner_builder ?? ""}
+pool_or_spa: ${vi.pool_or_spa ?? ""}
+smoke_alarms_compliant: ${vi.smoke_alarms_compliant ?? ""}
+inclusions: ${vi.inclusions ?? ""}
+exclusions: ${vi.exclusions ?? ""}
+sale_method: ${vi.sale_method ?? ""}
+expected_price: ${vi.expected_price ?? ""}
+special_conditions: ${vi.special_conditions ?? ""}
+additional_notes: ${vi.additional_notes ?? ""}`
+      : `Vendor instruction form not yet completed — note this in the VENDOR INSTRUCTION FORM DATA section and in any checklist items that depend on vendor form answers.`;
+
+    return `You are an expert Australian conveyancer preparing a sale contract summary for ${state}.
+
+MATTER DETAILS:
+- Matter: ${matter?.matter_ref ?? ""}
+- Property: ${matter?.address ?? ""}
+- Vendor: ${matter?.client_name ?? matter?.client ?? ""}
+- Price: ${priceStr}
+- Settlement: ${settle}
+- State: ${state}
+- Agent: ${matter?.agent_name ?? matter?.agent ?? "Not set"} | ${agentPhone} | ${matter?.agent_email ?? ""}
+- Lender/Mortgage: ${matter?.lender || "None"}
+- Is Tenanted: ${matter?.is_tenanted ? "Yes" : "No"}
+- Special Conditions: ${matter?.specialConditions ?? matter?.special_conditions ?? "None"}
+
+VENDOR INSTRUCTION FORM DATA:
+${viBlock}
+
+Please generate a comprehensive contract preparation summary with these sections:
+
+## 1. CONTRACT FRONT PAGE — READY TO COPY INTO eCOS/TRISEARCH
+Format all vendor details exactly as they should appear on the contract front page:
+- Vendor full name(s) and address
+- Property address and title reference (note if title search needed)
+- Purchase price and deposit amount (10%)
+- Settlement date
+- Vendor's solicitor/conveyancer details: Gitu Kaur, Conveyancing Crew, gitu@conveyancingcrew.com.au
+
+## 2. PRESCRIBED DOCUMENTS CHECKLIST (${state}-SPECIFIC)
+List every document required by law before the contract can be issued. Mark each as:
+✅ Already have (if data suggests it's available)
+⚠️ Need to order (with estimated turnaround time)
+❌ Missing critical info (explain what's needed)
+
+For NSW include: Title Search, Section 10.7 Planning Certificate, Sydney Water Section 66 Certificate, Sewer Diagram, Land Tax Clearance, smoke alarm compliance, pool certificate (if applicable), building works disclosure (if applicable), FRGW certificate
+For VIC include: Section 32 Vendor Statement, Land Information Certificate, VicRoads Certificate, Owners Corporation Certificate (if strata), building permits disclosure
+
+## 3. SPECIAL CONDITIONS — DRAFT
+Based on the vendor's instructions, draft any special conditions that should be included in the contract. Use plain professional legal language suitable for an Australian contract of sale. Include conditions for:
+- Possession type (vacant or subject to tenancy)
+- Any building works or permits in last 7 years
+- Owner builder warranty insurance (if applicable)
+- Pool/spa compliance (if applicable)
+- Any additional notes from vendor
+- Inclusions and exclusions list
+
+## 4. RED FLAGS & MISSING INFORMATION
+List anything that could delay contract preparation or cause issues. Be specific and actionable.
+
+## 5. SEARCHES TO ORDER — WITH COST COMPARISON
+For each required search, show:
+| Search | Direct/Gov Cost | triSearch Cost | Direct Link |
+Show the following with actual costs:
+- Council Certificate (s603): Gov fee $100 | triSearch ~$190 | Order direct from council
+- Water Certificate: Direct ~$40 | triSearch ~$190 | Sydney Water Tap in
+- Land Tax Clearance: Direct ~$15 | triSearch ~$80 | Revenue NSW
+- Title Search: InfoTrack ~$30 | triSearch ~varies | InfoTrack direct
+- Planning Certificate (s10.7): Council ~$53 | triSearch ~varies | Council direct
+
+TOTAL ESTIMATED SAVINGS if ordering direct: ~$402 per matter
+
+## 6. NEXT STEPS CHECKLIST
+Numbered action list of exactly what to do next, in order of priority.
+
+IMPORTANT: Add this disclaimer at the end:
+"⚖️ This summary is a preparation aid only. Gitu Kaur as the licensed conveyancer remains fully responsible for the accuracy and completeness of the contract of sale and all prescribed documents."
+`;
+  }
+
   const SALE_STEPS_CONFIG = [
     { key: "sw_01", num: "01", phase: 1, phaseLabel: "Pre-Exchange", title: "Enquiry Received", what: "Record how the enquiry came in", tier: "A", tierNote: "Auto-detected from email · tick manually for phone", action: null, autoComplete: true },
     { key: "sw_02", num: "02", phase: 1, title: "Intro Email Sent to Vendor", what: "Send intro email so the vendor can share our details with the agent", tier: "B", action: { type: "email", template: "sw_intro", label: "Send Intro Email", icon: "✉️" } },
     { key: "sw_03", num: "03", phase: 1, title: "Vendor & Property Details Gathered", what: "Collect vendor, property, agent and mortgage details", tier: "D", action: { type: "vendor_form", label: "Send Vendor Form to Client", icon: "📋" } },
     { key: "sw_04", num: "04", phase: 1, title: "Vendor ID Verified (VOI)", what: "Complete vendor verification before preparing the contract", tier: "D", tierNote: "Verify via InfoTrack or in person", action: null },
     { key: "sw_05", num: "05", phase: 1, title: "Section 32 / Vendor Statement Prepared", what: "Prepare vendor statement and prescribed documents for your state", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📋" }, isMilestone: true },
+    { key: "sw_05b", num: "05b", phase: 1, title: "Contract Preparation Summary", what: "AI pulls all vendor and property data to generate a contract preparation checklist, draft special conditions, prescribed documents checklist, and direct ordering links for searches", tier: "C", action: { type: "ai", aiType: "sale_contract_prep", label: "Generate Contract Summary", icon: "📋" }, isMilestone: false },
     { key: "sw_06", num: "06", phase: 1, title: "Contract Searches Ordered & Collated", what: "Order and collate title, council, water, land tax and strata searches as required", tier: "B", action: { type: "url", url: "https://www.infotrack.com.au", label: "Order via InfoTrack", icon: "📦" } },
     { key: "sw_07", num: "07", phase: 1, title: "Contract Sent to Agent", what: "Send contract and vendor statement to the agent", tier: "B", action: { type: "email", template: "sw_contract_sent", label: "Send to Agent", icon: "📤" } },
     { key: "sw_08", num: "08", phase: 1, title: "Mortgage Discharge Initiated", what: "Contact the lender to initiate discharge and confirm PEXA arrangements", tier: "D", tierNote: "Contact lender directly", action: null, isMilestone: true },
@@ -2248,12 +2350,17 @@ function SaleWorkflow({ matter, supabase, isMobile, onOpenVendorForm }) {
     setAiPanel({ type, stepKey });
     setAiLoading(true);
     setAiDraft("");
-    const addr = matter?.address || "";
-    const st = matter?.state || "";
-    const price = matter?.price || matter?.value || matter?.purchase_price || "";
-    const settle = matter?.settlement || "";
-    const prompts = {
-      sale_adjustment: `You are a licensed Australian conveyancer. Generate a vendor settlement adjustment sheet covering council rates, water charges and strata levies (if applicable), each adjusted to the settlement date, with a net proceeds summary for the vendor.
+    let promptText = "";
+    if (type === "sale_contract_prep") {
+      const { data: vi } = await supabase.from("vendor_instructions").select("*").eq("matter_ref", matterRef).maybeSingle();
+      promptText = buildSaleContractPrepPrompt(matter, vi);
+    } else {
+      const addr = matter?.address || "";
+      const st = matter?.state || "";
+      const price = matter?.price || matter?.value || matter?.purchase_price || "";
+      const settle = matter?.settlement || "";
+      const prompts = {
+        sale_adjustment: `You are a licensed Australian conveyancer. Generate a vendor settlement adjustment sheet covering council rates, water charges and strata levies (if applicable), each adjusted to the settlement date, with a net proceeds summary for the vendor.
 
 Property: ${addr}
 State: ${st}
@@ -2261,8 +2368,9 @@ Sale price: $${price || "TBC"}
 Settlement date: ${settle || "TBC"}
 
 Format clearly for email or letter. Follow Australian conveyancing practice. Sign off as Gitu Kaur, Conveyancing Crew.`,
-    };
-    const promptText = prompts[type];
+      };
+      promptText = prompts[type];
+    }
     if (!promptText) {
       setAiDraft("Unknown AI action — please try again.");
       setAiLoading(false);
@@ -2285,7 +2393,10 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
     const clientEmail = matter?.client_email || matter?.email || "";
     setEmailModal({
       to: clientEmail,
-      subject: `Settlement adjustment sheet — ${matter?.address || ""}`,
+      subject:
+        aiPanel.type === "sale_contract_prep"
+          ? `Contract preparation summary — ${matter?.address || ""}`
+          : `Settlement adjustment sheet — ${matter?.address || ""}`,
       body: aiDraft,
       stepKey: aiPanel.stepKey,
     });
@@ -2293,7 +2404,7 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
   };
 
   const PHASE_CONFIG_SW = [
-    { id: 1, name: "Pre-Exchange", color: "#7b5ea7", bg: "#f0ebfa", border: "#c5b8e0", steps: ["sw_01", "sw_02", "sw_03", "sw_04", "sw_05", "sw_06", "sw_07", "sw_08", "sw_09"] },
+    { id: 1, name: "Pre-Exchange", color: "#7b5ea7", bg: "#f0ebfa", border: "#c5b8e0", steps: ["sw_01", "sw_02", "sw_03", "sw_04", "sw_05", "sw_05b", "sw_06", "sw_07", "sw_08", "sw_09"] },
     { id: 2, name: "Post-Exchange", color: "#245eb0", bg: "#e8f0fb", border: "#90b4e0", steps: ["sw_10", "sw_11", "sw_12", "sw_13", "sw_14", "sw_15"] },
     { id: 3, name: "Settlement", color: "#1a7a4a", bg: "#e6f5ee", border: "#6dba92", steps: ["sw_16"] },
     { id: 4, name: "Post-Settlement", color: "#6b7a99", bg: "#eef0f5", border: "#b8c2d8", steps: ["sw_17", "sw_18", "sw_19", "sw_20"] },
@@ -2472,6 +2583,40 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                         onMouseOver={(e) => { e.currentTarget.style.opacity = "0.85"; }} onMouseOut={(e) => { e.currentTarget.style.opacity = "1"; }}>
                         <span>{step.action.icon}</span> {step.action.label}
                       </button>
+                    )}
+                    {step.key === "sw_05b" && (nextAction?.key === step.key || expanded[step.key]) && (
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ fontSize: 12, color: "#1a7a4a", fontWeight: 600, marginBottom: 8 }}>{"💡 Order direct & save ~$402 per matter vs triSearch"}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                          {[
+                            { label: "🏛️ Council s603 — $100 direct", href: "https://www.olg.nsw.gov.au" },
+                            { label: "💧 Water Certificate — $40 direct", href: "https://www.sydneywater.com.au/accounts-billing/managing-your-account/buying-and-selling-a-property/certificates-documents-diagrams.html" },
+                            { label: "💰 Land Tax Clearance — $15 direct", href: "https://www.revenue.nsw.gov.au" },
+                            { label: "📄 Title Search — InfoTrack", href: "https://www.infotrack.com.au" },
+                            { label: "📋 eCOS Contract — InfoTrack", href: "https://www.infotrack.com.au/products/ecos/" },
+                            { label: "🔍 Section 10.7 — Council", href: "https://www.planningportal.nsw.gov.au" },
+                          ].map((lnk) => (
+                            <button
+                              key={lnk.href + lnk.label}
+                              type="button"
+                              onClick={() => window.open(lnk.href, "_blank")}
+                              style={{
+                                fontSize: 11,
+                                padding: "6px 10px",
+                                borderRadius: 6,
+                                border: "1.5px solid rgba(26, 122, 74, 0.45)",
+                                background: "#fff",
+                                color: "#1a7a4a",
+                                cursor: "pointer",
+                                textAlign: "left",
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              {lnk.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
