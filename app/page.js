@@ -2208,14 +2208,17 @@ List anything that could delay contract preparation or cause issues. Be specific
 ## 5. SEARCHES TO ORDER — WITH COST COMPARISON
 For each required search, show:
 | Search | Direct/Gov Cost | triSearch Cost | Direct Link |
-Show the following with actual costs:
-- Council Certificate (s603): Gov fee $100 | triSearch ~$190 | Order direct from council
-- Water Certificate: Direct ~$40 | triSearch ~$190 | Sydney Water Tap in
-- Land Tax Clearance: Direct ~$15 | triSearch ~$80 | Revenue NSW
-- Title Search: InfoTrack ~$30 | triSearch ~varies | InfoTrack direct
-- Planning Certificate (s10.7): Council ~$53 | triSearch ~varies | Council direct
 
-TOTAL ESTIMATED SAVINGS if ordering direct: ~$402 per matter
+Use these triSearch vs direct prices for comparison:
+- Council certificate: triSearch $190 vs Direct $100
+- Water certificate: triSearch $190 vs Direct $40
+- Land tax clearance: triSearch $80 vs Direct $15
+- Title search: triSearch ~$60 vs InfoTrack direct ~$30
+- Planning certificate: triSearch ~$120 vs Council direct ~$53
+- VicRoads (VIC only): triSearch ~$85 vs Direct $32
+- Land Information Certificate (VIC only): triSearch $220 vs Council direct $165
+
+TOTAL ESTIMATED SAVINGS if ordering direct instead of triSearch: ~$402 per matter for the typical NSW bundle (council + water + land tax + title + planning); add ~$108 vs triSearch when VIC-only VicRoads and Land Information Certificate also apply (~$510 total in that case).
 
 ## 6. NEXT STEPS CHECKLIST
 Numbered action list of exactly what to do next, in order of priority.
@@ -2588,7 +2591,7 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                         <span>{step.action.icon}</span> {step.action.label}
                       </button>
                     )}
-                    {step.key === "sw_05b" && (nextAction?.key === step.key || expanded[step.key]) && (
+                    {step.key === "sw_05b" && isExp && (
                       <div style={{ marginTop: 14 }}>
                         <div style={{ fontSize: 12, color: "#1a7a4a", fontWeight: 600, marginBottom: 8 }}>{"💡 Order direct & save ~$402 per matter vs triSearch"}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
