@@ -2424,23 +2424,30 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
       const data = await res.json();
       const draftText = data?.result || data?.text || data?.content || "Could not generate draft — please try again.";
       setAiDraft(draftText);
-      if (type === "sale_contract_prep") {
+      if (type === "sale_contract_prep" && draftText && !draftText.includes("Could not generate")) {
         const ts = new Date().toISOString();
-        await supabase.from("matter_workflow").upsert(
-          {
-            matter_ref: matterRef,
-            step_key: "sw_05b",
-            ai_draft: draftText,
-            ai_draft_updated_at: ts,
-          },
-          { onConflict: "matter_ref,step_key" }
-        );
-        setSavedContractDraft(draftText);
-        setSavedContractDraftUpdatedAt(ts);
-        setWfData((p) => ({
-          ...p,
-          sw_05b: { ...(p.sw_05b || {}), ai_draft: draftText, ai_draft_updated_at: ts },
-        }));
+        const { error: upsertErr } = await supabase
+          .from("matter_workflow")
+          .upsert(
+            {
+              matter_ref: matter.matter_ref,
+              step_key: "sw_05b",
+              ai_draft: draftText,
+              ai_draft_updated_at: ts,
+            },
+            { onConflict: "matter_ref,step_key" }
+          );
+        if (upsertErr) {
+          console.error("[sw_05b] ai_draft save error:", upsertErr.message);
+        } else {
+          console.log("[sw_05b] ai_draft saved successfully");
+          setSavedContractDraft(draftText);
+          setSavedContractDraftUpdatedAt(ts);
+          setWfData((p) => ({
+            ...p,
+            sw_05b: { ...(p.sw_05b || {}), ai_draft: draftText, ai_draft_updated_at: ts },
+          }));
+        }
       }
     } catch { setAiDraft("Error generating draft. Please try again."); }
     setAiLoading(false);
