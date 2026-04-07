@@ -1553,23 +1553,23 @@ function ContractReviewWorkflow({ matter, supabase }) {
 function buildSearchURL(portal, matter) {
   const urls = {
     nsw_planning: `https://www.planningportal.nsw.gov.au/spatialviewer/#/find-a-property/address`,
-    nsw_land_tax: `https://www.revenue.nsw.gov.au/taxes-duties-levies-royalties/land-tax/clearance-certificates`,
-    nsw_sydney_water: `https://tap.sydneywater.com.au/`,
+    nsw_land_tax: `https://my.revenue.nsw.gov.au`,
+    nsw_sydney_water: `https://hazlett.com.au`,
     nsw_title_search: `https://landchecker.com.au/products/document-searches/`,
     nsw_ecos: `https://www.infotrack.com.au/products/ecos/`,
-    nsw_council: `https://www.olg.nsw.gov.au/public/councils/find-my-council/`,
-    nsw_sewer: `https://tap.sydneywater.com.au/`,
+    nsw_council: `https://hazlett.com.au`,
+    nsw_sewer: `https://hazlett.com.au`,
 
     vic_title_search: `https://landchecker.com.au/products/document-searches/`,
     vic_planning: `https://www.planning.vic.gov.au/maps-and-spatial-data/planning-maps`,
-    vic_vicroads: `https://www.vicroads.vic.gov.au/registration/buy-sell-or-transfer-a-vehicle`,
+    vic_vicroads: `https://www.vicroads.vic.gov.au`,
     vic_water_yarra: `https://www.yvw.com.au/accounts-and-billing/selling-or-buying-property`,
     vic_water_citywest: `https://www.citywestwater.com.au/your-account/selling-or-buying`,
     vic_water_southeast: `https://www.southeastwater.com.au/my-account/moving-property`,
     vic_ecos: `https://www.infotrack.com.au/products/ecos/liv-contract/`,
     vic_land_info: `https://www.land.vic.gov.au/land-titles/land-information-certificates`,
     vic_council: `https://www.vic.gov.au/find-your-local-council`,
-    vic_land_title: `https://www.land.vic.gov.au/land-titles/land-title-services`,
+    vic_land_title: `https://landchecker.com.au/products/document-searches/`,
 
     pexa: `https://www.pexa.com.au`,
     infotrack: `https://www.infotrack.com.au`,
@@ -11151,11 +11151,11 @@ Return only the email body text, no subject line.`;
                   const nswRows = [
                     {
                       name: "Title Search",
-                      cost: "Direct $20",
+                      cost: "Direct ~$20",
                       provider: "Landchecker",
                       portal: "nsw_title_search",
-                      orderLabel: "📄 Order via Landchecker — $20",
-                      orderTooltip: "Authorised NSW LRS broker — cheapest available",
+                      orderLabel: "📄 Landchecker — ~$20",
+                      orderTooltip: "",
                     },
                     {
                       name: "Section 10.7 Planning Certificate",
@@ -11167,42 +11167,42 @@ Return only the email body text, no subject line.`;
                     },
                     {
                       name: "Sydney Water Section 66 Certificate",
-                      cost: "Direct $40",
-                      provider: "Sydney Water Tap In",
+                      cost: "Via broker",
+                      provider: "Hazlett",
                       portal: "nsw_sydney_water",
-                      orderLabel: "💧 Sydney Water Tap In — $40",
-                      orderTooltip: "Register free at tap.sydneywater.com.au",
+                      orderLabel: "💧 Hazlett — cheapest broker",
+                      orderTooltip: "",
                     },
                     {
                       name: "Sewer Diagram",
-                      cost: "Direct $15",
-                      provider: "Sydney Water Tap In",
+                      cost: "Via broker",
+                      provider: "Hazlett",
                       portal: "nsw_sewer",
-                      orderLabel: "💧 Sydney Water Tap In — diagrams",
-                      orderTooltip: "Register free at tap.sydneywater.com.au",
+                      orderLabel: "🔧 Hazlett — cheapest broker",
+                      orderTooltip: "",
                     },
                     {
                       name: "Land Tax Clearance Certificate",
                       cost: "Direct $15",
                       provider: "Revenue NSW",
                       portal: "nsw_land_tax",
-                      orderLabel: "💰 Revenue NSW — $15",
-                      orderTooltip: "Register free at revenue.nsw.gov.au",
+                      orderLabel: "💰 Revenue NSW — $15 direct",
+                      orderTooltip: "",
                     },
                     {
                       name: "Council Certificate (s603)",
                       cost: "Statutory $100",
-                      provider: "Your Council",
+                      provider: "Hazlett",
                       portal: "nsw_council",
-                      orderLabel: "🏛️ Find your council — $100",
-                      orderTooltip: "Statutory fee — order direct from your council",
+                      orderLabel: "🏛️ Hazlett — $100 statutory",
+                      orderTooltip: "",
                     },
                     {
                       name: "eCOS Contract",
                       cost: "InfoTrack $20",
                       provider: "InfoTrack eCOS",
                       portal: "nsw_ecos",
-                      orderLabel: "📄 Order via InfoTrack eCOS",
+                      orderLabel: "📝 InfoTrack eCOS — $20",
                       orderTooltip: "",
                     },
                   ];
@@ -11210,18 +11210,18 @@ Return only the email body text, no subject line.`;
                   const vicRows = [
                     {
                       name: "Certificate of Title",
-                      cost: "Direct $20",
+                      cost: "Direct ~$20",
                       provider: "Landchecker",
                       portal: "vic_title_search",
-                      orderLabel: "📄 Order via Landchecker — $20",
-                      orderTooltip: "Authorised VIC broker — cheapest available",
+                      orderLabel: "📄 Landchecker — ~$20",
+                      orderTooltip: "",
                     },
                     {
                       name: "Land Information Certificate",
                       cost: "Council $165",
                       provider: "Land Use Victoria",
                       portal: "vic_land_info",
-                      orderLabel: "📋 Land Information Certificate",
+                      orderLabel: "🏛️ Land Vic direct — $165",
                       orderTooltip: "",
                     },
                     {
@@ -11229,7 +11229,7 @@ Return only the email body text, no subject line.`;
                       cost: "Direct $32",
                       provider: "VicRoads",
                       portal: "vic_vicroads",
-                      orderLabel: "🚗 VicRoads — $32",
+                      orderLabel: "🚗 VicRoads direct — $32",
                       orderTooltip: "",
                     },
                     {
@@ -11253,7 +11253,7 @@ Return only the email body text, no subject line.`;
                       cost: "InfoTrack $20",
                       provider: "InfoTrack eCOS VIC",
                       portal: "vic_ecos",
-                      orderLabel: "📄 Order via InfoTrack eCOS VIC",
+                      orderLabel: "📝 InfoTrack eCOS VIC — $20",
                       orderTooltip: "",
                     },
                     {
@@ -11261,7 +11261,7 @@ Return only the email body text, no subject line.`;
                       cost: "Council $165",
                       provider: "VIC Planning Portal",
                       portal: "vic_planning",
-                      orderLabel: "📋 VIC Planning Maps",
+                      orderLabel: "📋 VIC Planning Portal",
                       orderTooltip: "",
                     },
                   ];
@@ -11302,8 +11302,9 @@ Return only the email body text, no subject line.`;
                           lineHeight: 1.5,
                         }}
                       >
-                        💡 Save up to $449 per matter by ordering direct. Title searches via Landchecker ($20), water via
-                        Sydney Water Tap In ($40), land tax via Revenue NSW ($15). Register once, save every matter.
+                        💡 Save up to $449/matter vs triSearch. Title searches via Landchecker (~$20). Council + water via
+                        Hazlett (cheapest approved broker). Land tax direct from Revenue NSW ($15). Register once at each
+                        provider — takes 5 minutes.
                       </div>
 
                       <div
