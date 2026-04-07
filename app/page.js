@@ -1551,28 +1551,51 @@ function ContractReviewWorkflow({ matter, supabase }) {
 }
 
 function buildSearchURL(portal, matter) {
-  const address = encodeURIComponent(matter?.address || "");
-
   const urls = {
-    nsw_planning: `https://www.planningportal.nsw.gov.au/spatialviewer/#/find-a-property/address?address=${address}`,
-    nsw_land_tax: `https://www.revenue.nsw.gov.au/taxes-duties-levies-royalties/land-tax`,
-    nsw_sydney_water: `https://www.sydneywater.com.au/accounts-billing/managing-your-account/buying-and-selling-a-property/certificates-documents-diagrams.html`,
-    nsw_title_search: `https://www.infotrack.com.au/products/property-certificates/title-search/`,
+    nsw_planning: `https://www.planningportal.nsw.gov.au/spatialviewer/#/find-a-property/address`,
+    nsw_land_tax: `https://www.revenue.nsw.gov.au/taxes-duties-levies-royalties/land-tax/clearance-certificates`,
+    nsw_sydney_water: `https://tap.sydneywater.com.au/`,
+    nsw_title_search: `https://landchecker.com.au/products/document-searches/`,
     nsw_ecos: `https://www.infotrack.com.au/products/ecos/`,
-    nsw_council: `https://www.olg.nsw.gov.au/public/councils/the-role-of-councils/`,
+    nsw_council: `https://www.olg.nsw.gov.au/public/councils/find-my-council/`,
+    nsw_sewer: `https://tap.sydneywater.com.au/`,
 
-    vic_title_search: `https://www.land.vic.gov.au/land-titles/search-for-land-information`,
+    vic_title_search: `https://landchecker.com.au/products/document-searches/`,
     vic_planning: `https://www.planning.vic.gov.au/maps-and-spatial-data/planning-maps`,
-    vic_vicroads: `https://www.vicroads.vic.gov.au/registration/buy-sell-or-transfer-a-vehicle/buy-a-vehicle/get-a-vehicle-history-report`,
-    vic_water: `https://www.yvrwater.com.au/residential/moving-house/`,
+    vic_vicroads: `https://www.vicroads.vic.gov.au/registration/buy-sell-or-transfer-a-vehicle`,
+    vic_water_yarra: `https://www.yvw.com.au/accounts-and-billing/selling-or-buying-property`,
+    vic_water_citywest: `https://www.citywestwater.com.au/your-account/selling-or-buying`,
+    vic_water_southeast: `https://www.southeastwater.com.au/my-account/moving-property`,
     vic_ecos: `https://www.infotrack.com.au/products/ecos/liv-contract/`,
-    vic_land_info: `https://www.land.vic.gov.au`,
+    vic_land_info: `https://www.land.vic.gov.au/land-titles/land-information-certificates`,
+    vic_council: `https://www.vic.gov.au/find-your-local-council`,
+    vic_land_title: `https://www.land.vic.gov.au/land-titles/land-title-services`,
 
     pexa: `https://www.pexa.com.au`,
     infotrack: `https://www.infotrack.com.au`,
+    landchecker: `https://landchecker.com.au/products/document-searches/`,
   };
 
-  return urls[portal] || "https://www.infotrack.com.au";
+  if (portal === "vic_water") {
+    const a = String(matter?.address || "").toLowerCase();
+    if (
+      /footscray|sunshine|williamstown|werribee|hoppers|tarneit|point cook|altona|deerpark|st albans|keilor|melton|caroline springs|laverton|newport|yarraville|seddon|braybrook|deer park/.test(
+        a
+      )
+    ) {
+      return urls.vic_water_citywest;
+    }
+    if (
+      /frankston|carrum|cranbourne|berwick|narre|dandenong|keysborough|chelsea|mentone|moorabbin|springvale|noble park|clayton|oakleigh|mulgrave|glen waverley|rowville|wantirna|ringwood|boronia|ferntree|endeavour|seaford|lyndhurst|hallam|hampton park|cranbourne north/.test(
+        a
+      )
+    ) {
+      return urls.vic_water_southeast;
+    }
+    return urls.vic_water_yarra;
+  }
+
+  return urls[portal] || urls.infotrack;
 }
 
 function PurchaseWorkflow({ matter, supabase, isMobile, referralForMatter, onMatterNotesSaved }) {
@@ -2781,20 +2804,20 @@ Format clearly for email or letter. Follow Australian conveyancing practice. Sig
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                           {(isMatterVicForPrep(matter)
                             ? [
-                                { label: "🏛️ Title — Land Vic $25", portal: "vic_title_search" },
-                                { label: "🚗 VicRoads Cert — $32", portal: "vic_vicroads" },
-                                { label: "💧 Water Cert — $28 (approx. by suburb)", portal: "vic_water" },
-                                { label: "📋 Land Info Cert", portal: "vic_land_info" },
+                                { label: "📄 Title — Landchecker $20", portal: "vic_title_search" },
+                                { label: "🚗 VicRoads — $32", portal: "vic_vicroads" },
+                                { label: "💧 Water (suburb picks authority)", portal: "vic_water" },
+                                { label: "📋 Land Information Certificate", portal: "vic_land_info" },
                                 { label: "📄 eCOS VIC Contract", portal: "vic_ecos" },
-                                { label: "🔍 Planning Overlay", portal: "vic_planning" },
+                                { label: "🔍 VIC Planning Maps", portal: "vic_planning" },
                               ]
                             : [
-                                { label: "🏛️ Council s603 — $100 direct", portal: "nsw_council" },
-                                { label: "💧 Water Certificate — $40 direct", portal: "nsw_sydney_water" },
-                                { label: "💰 Land Tax Clearance — $15 direct", portal: "nsw_land_tax" },
-                                { label: "📄 Title Search — InfoTrack", portal: "nsw_title_search" },
-                                { label: "📋 eCOS Contract — InfoTrack", portal: "nsw_ecos" },
-                                { label: "🔍 Section 10.7 — Council", portal: "nsw_planning" },
+                                { label: "🏛️ Find your council — s603", portal: "nsw_council" },
+                                { label: "💧 Sydney Water Tap In — $40", portal: "nsw_sydney_water" },
+                                { label: "💰 Revenue NSW Land Tax — $15", portal: "nsw_land_tax" },
+                                { label: "📄 Title — Landchecker $20", portal: "nsw_title_search" },
+                                { label: "📋 eCOS Contract", portal: "nsw_ecos" },
+                                { label: "🔍 NSW Planning Portal", portal: "nsw_planning" },
                               ]
                           ).map((lnk) => (
                             <button
@@ -11126,23 +11149,121 @@ Return only the email body text, no subject line.`;
                   };
 
                   const nswRows = [
-                    { name: "Title Search", cost: "Direct $30", provider: "InfoTrack", portal: "nsw_title_search" },
-                    { name: "Section 10.7 Planning Certificate", cost: "Council $53", provider: "NSW Planning Portal", portal: "nsw_planning" },
-                    { name: "Sydney Water Section 66 Certificate", cost: "Direct $40", provider: "Sydney Water", portal: "nsw_sydney_water" },
-                    { name: "Sewer Diagram", cost: "Direct $15", provider: "Sydney Water", portal: "nsw_sydney_water" },
-                    { name: "Land Tax Clearance Certificate", cost: "Direct $15", provider: "Revenue NSW", portal: "nsw_land_tax" },
-                    { name: "Council Certificate (s603)", cost: "Statutory $100", provider: "Your Council", portal: "nsw_council" },
-                    { name: "eCOS Contract", cost: "InfoTrack $20", provider: "InfoTrack eCOS", portal: "nsw_ecos" },
+                    {
+                      name: "Title Search",
+                      cost: "Direct $20",
+                      provider: "Landchecker",
+                      portal: "nsw_title_search",
+                      orderLabel: "📄 Order via Landchecker — $20",
+                      orderTooltip: "Authorised NSW LRS broker — cheapest available",
+                    },
+                    {
+                      name: "Section 10.7 Planning Certificate",
+                      cost: "Council $53",
+                      provider: "NSW Planning Portal",
+                      portal: "nsw_planning",
+                      orderLabel: "📋 NSW Planning Portal — $53",
+                      orderTooltip: "",
+                    },
+                    {
+                      name: "Sydney Water Section 66 Certificate",
+                      cost: "Direct $40",
+                      provider: "Sydney Water Tap In",
+                      portal: "nsw_sydney_water",
+                      orderLabel: "💧 Sydney Water Tap In — $40",
+                      orderTooltip: "Register free at tap.sydneywater.com.au",
+                    },
+                    {
+                      name: "Sewer Diagram",
+                      cost: "Direct $15",
+                      provider: "Sydney Water Tap In",
+                      portal: "nsw_sewer",
+                      orderLabel: "💧 Sydney Water Tap In — diagrams",
+                      orderTooltip: "Register free at tap.sydneywater.com.au",
+                    },
+                    {
+                      name: "Land Tax Clearance Certificate",
+                      cost: "Direct $15",
+                      provider: "Revenue NSW",
+                      portal: "nsw_land_tax",
+                      orderLabel: "💰 Revenue NSW — $15",
+                      orderTooltip: "Register free at revenue.nsw.gov.au",
+                    },
+                    {
+                      name: "Council Certificate (s603)",
+                      cost: "Statutory $100",
+                      provider: "Your Council",
+                      portal: "nsw_council",
+                      orderLabel: "🏛️ Find your council — $100",
+                      orderTooltip: "Statutory fee — order direct from your council",
+                    },
+                    {
+                      name: "eCOS Contract",
+                      cost: "InfoTrack $20",
+                      provider: "InfoTrack eCOS",
+                      portal: "nsw_ecos",
+                      orderLabel: "📄 Order via InfoTrack eCOS",
+                      orderTooltip: "",
+                    },
                   ];
 
                   const vicRows = [
-                    { name: "Certificate of Title", cost: "Direct $25", provider: "Land Vic", portal: "vic_title_search" },
-                    { name: "Land Information Certificate", cost: "Council $165", provider: "Your Council", portal: "vic_land_info" },
-                    { name: "VicRoads Certificate", cost: "Direct $32", provider: "VicRoads", portal: "vic_vicroads" },
-                    { name: "Water/Sewerage Certificate", cost: "Direct $28", provider: "Your Water Authority", portal: "vic_water" },
-                    { name: "Rates Certificate", cost: "Council $55", provider: "Your Council", portal: "infotrack" },
-                    { name: "Section 32 / eCOS Contract", cost: "InfoTrack $20", provider: "InfoTrack eCOS VIC", portal: "vic_ecos" },
-                    { name: "Planning Overlay Certificate", cost: "Council $165", provider: "VIC Planning Portal", portal: "vic_planning" },
+                    {
+                      name: "Certificate of Title",
+                      cost: "Direct $20",
+                      provider: "Landchecker",
+                      portal: "vic_title_search",
+                      orderLabel: "📄 Order via Landchecker — $20",
+                      orderTooltip: "Authorised VIC broker — cheapest available",
+                    },
+                    {
+                      name: "Land Information Certificate",
+                      cost: "Council $165",
+                      provider: "Land Use Victoria",
+                      portal: "vic_land_info",
+                      orderLabel: "📋 Land Information Certificate",
+                      orderTooltip: "",
+                    },
+                    {
+                      name: "VicRoads Certificate",
+                      cost: "Direct $32",
+                      provider: "VicRoads",
+                      portal: "vic_vicroads",
+                      orderLabel: "🚗 VicRoads — $32",
+                      orderTooltip: "",
+                    },
+                    {
+                      name: "Water/Sewerage Certificate",
+                      cost: "Direct $28",
+                      provider: "Your Water Authority",
+                      portal: "vic_water",
+                      orderLabel: "💧 Your water authority — $28",
+                      orderTooltip: "Yarra Valley / City West / South East Water depending on suburb",
+                    },
+                    {
+                      name: "Rates Certificate",
+                      cost: "Council $55",
+                      provider: "Your Council",
+                      portal: "vic_council",
+                      orderLabel: "🏛️ Find your local council — $55",
+                      orderTooltip: "",
+                    },
+                    {
+                      name: "Section 32 / eCOS Contract",
+                      cost: "InfoTrack $20",
+                      provider: "InfoTrack eCOS VIC",
+                      portal: "vic_ecos",
+                      orderLabel: "📄 Order via InfoTrack eCOS VIC",
+                      orderTooltip: "",
+                    },
+                    {
+                      name: "Planning Overlay Certificate",
+                      cost: "Council $165",
+                      provider: "VIC Planning Portal",
+                      portal: "vic_planning",
+                      orderLabel: "📋 VIC Planning Maps",
+                      orderTooltip: "",
+                    },
                   ];
 
                   const rows = isVic ? vicRows : nswRows;
@@ -11173,16 +11294,16 @@ Return only the email body text, no subject line.`;
                           marginBottom: 14,
                           padding: "12px 16px",
                           borderRadius: 10,
-                          background: "linear-gradient(135deg, #f0fdf4, #ecfdf5)",
-                          border: "1px solid #bbf7d0",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#166534",
+                          background: "linear-gradient(135deg, #eff6ff, #f0f9ff)",
+                          border: "1px solid #bfdbfe",
+                          fontSize: 12,
+                          fontWeight: 500,
+                          color: "#1e40af",
+                          lineHeight: 1.5,
                         }}
                       >
-                        {isVic
-                          ? "💡 Ordering direct saves ~$232 (VIC) vs triSearch per matter"
-                          : "💡 Ordering direct saves ~$402 (NSW) vs triSearch per matter"}
+                        💡 Save up to $449 per matter by ordering direct. Title searches via Landchecker ($20), water via
+                        Sydney Water Tap In ($40), land tax via Revenue NSW ($15). Register once, save every matter.
                       </div>
 
                       <div
@@ -11259,16 +11380,20 @@ Return only the email body text, no subject line.`;
                                 <button
                                   type="button"
                                   className="btn-ghost"
+                                  title={row.orderTooltip || undefined}
                                   style={{
                                     fontSize: 11,
                                     padding: "5px 10px",
                                     border: "1.5px solid #245eb0",
                                     color: "#245eb0",
                                     borderRadius: 6,
+                                    maxWidth: "100%",
+                                    textAlign: "left",
+                                    lineHeight: 1.35,
                                   }}
                                   onClick={() => onOrderClick(row)}
                                 >
-                                  Order
+                                  {row.orderLabel || "Order"}
                                 </button>
                                 <a
                                   className="btn-ghost"
