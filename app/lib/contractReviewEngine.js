@@ -20,8 +20,10 @@ export async function splitPdfIntoChunks(pdfBuffer) {
     "| File size:", Math.round(totalBytes / 1024 / 1024) + "MB"
   );
 
-  // File fits in one chunk — send as-is
-  if (totalBytes <= MAX_CHUNK_BYTES) {
+  // File fits in one chunk only if BOTH small enough
+  // AND under Claude's 100 page hard limit
+  const MAX_PAGES_PER_CHUNK = 80; // safe margin below 100
+  if (totalBytes <= MAX_CHUNK_BYTES && totalPages <= MAX_PAGES_PER_CHUNK) {
     return [
       {
         base64: Buffer.from(bytes).toString("base64"),
@@ -35,7 +37,10 @@ export async function splitPdfIntoChunks(pdfBuffer) {
 
   // Calculate pages per chunk from average page size, minimum 5 pages
   const avgBytesPerPage = totalBytes / totalPages;
-  const pagesPerChunk = Math.max(5, Math.floor(MAX_CHUNK_BYTES / avgBytesPerPage));
+  const pagesPerChunk = Math.min(
+    MAX_PAGES_PER_CHUNK,
+    Math.max(5, Math.floor(MAX_CHUNK_BYTES / avgBytesPerPage))
+  );
   console.log(
     "[ReviewEngine] Avg page size:", Math.round(avgBytesPerPage / 1024) + "KB",
     "| Pages per chunk:", pagesPerChunk
